@@ -277,20 +277,36 @@ import (
 func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGTERM)
-	ch := exec.Command("sleep", "60")
+	ch := exec.Command("sh", "-c", "trap '' TERM; exec sleep 60")
 	if err := ch.Start(); err != nil {
 		panic(err)
 	}
 	os.WriteFile(os.Getenv("PIDFILE"), []byte(strconv.Itoa(ch.Process.Pid)), 0o644)
+	if os.Getenv("MODE") == "self" {
+		os.Exit(0)
+	}
 	<-c
 	os.Exit(0)
 }
 `
 
+func waitDead(t *testing.T, pid int) {
+	t.Helper()
+	for i := 0; i < 100; i++ {
+		if syscall.Kill(pid, 0) != nil {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	syscall.Kill(pid, syscall.SIGKILL)
+	t.Error("tiến trình con còn sống sau Stop")
+}
+
+// Tiến trình con bỏ qua SIGTERM, nên chỉ SIGKILL nhóm sau khi leader thoát mới diệt được.
 func TestStopKillsChildrenAfterGracefulExit(t *testing.T) {
 	bin := buildSvc(t, leaderExitsMain)
 	pidFile := filepath.Join(t.TempDir(), "pid")
-	p, err := golang.Runtime{}.Start(context.Background(), bin, map[string]string{"PIDFILE": pidFile}, t.TempDir(), filepath.Join(t.TempDir(), "l.log"))
+	p, err := golang.Runtime{}.Start(context.Background(), bin, map[string]string{"PIDFILE": pidFile, "MODE": "term"}, t.TempDir(), filepath.Join(t.TempDir(), "l.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,19 +314,32 @@ func TestStopKillsChildrenAfterGracefulExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond) // để signal.Notify có hiệu lực
+	time.Sleep(300 * time.Millisecond) // để signal.Notify và trap có hiệu lực
 	if !p.Stop(5 * time.Second) {
 		t.Error("mong đợi thoát êm")
 	}
-	dead := false
-	for i := 0; i < 100 && !dead; i++ {
-		dead = syscall.Kill(child, 0) != nil
-		time.Sleep(25 * time.Millisecond)
+	waitDead(t, child)
+}
+
+func TestStopKillsChildrenAfterLeaderAlreadyExited(t *testing.T) {
+	bin := buildSvc(t, leaderExitsMain)
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	p, err := golang.Runtime{}.Start(context.Background(), bin, map[string]string{"PIDFILE": pidFile, "MODE": "self"}, t.TempDir(), filepath.Join(t.TempDir(), "l.log"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !dead {
-		syscall.Kill(child, syscall.SIGKILL)
-		t.Error("tiến trình con còn sống sau Stop")
+	child, err := strconv.Atoi(waitFile(t, pidFile))
+	if err != nil {
+		t.Fatal(err)
 	}
+	select {
+	case <-p.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("leader không tự thoát")
+	}
+	time.Sleep(300 * time.Millisecond) // để trap của sh có hiệu lực
+	p.Stop(time.Second)
+	waitDead(t, child)
 }
 
 func TestBuildFlagsBeforePackage(t *testing.T) {

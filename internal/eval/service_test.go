@@ -46,11 +46,15 @@ type fakeVerifier struct {
 	err    error
 	calls  int
 	outs   []string
+	onRun  func() // gọi trong Verify (ví dụ hủy ctx như Ctrl-C giữa lúc harness chạy)
 }
 
 func (f *fakeVerifier) Verify(_ context.Context, key model.FeatureKey, out string) (harness.VerifyResult, error) {
 	f.calls++
 	f.outs = append(f.outs, out)
+	if f.onRun != nil {
+		f.onRun()
+	}
 	if f.err != nil {
 		return harness.VerifyResult{}, f.err
 	}
@@ -556,6 +560,43 @@ func TestEvalMissingSchemaDumpFailsSchemaMatch(t *testing.T) {
 	c := hardOf(t, e.run(false), "SCHEMA_MATCH")
 
 	eq(t, "check", c, HardCheck{"SCHEMA_MATCH", false, "Harness không ghi schema.json"})
+}
+
+// Dịch vụ không có database: harness ghi schema rỗng, schema-expected.json (migration-check không migration) cũng
+// rỗng, nên SCHEMA_MATCH đạt.
+func TestEvalEmptySchemaMatchesEmptyExpected(t *testing.T) {
+	e := newEvalEnv(t)
+	empty := run.SchemaSnapshot{}
+	e.must(empty.Write(e.paths.SchemaExpected()))
+	e.v.schema = &empty
+
+	c := hardOf(t, e.run(false), "SCHEMA_MATCH")
+
+	eq(t, "check", c, HardCheck{"SCHEMA_MATCH", true, "Schema khớp thiết kế"})
+}
+
+// Harness panic (harnessVerifier): Build.OK=true, HarnessErr là giá trị panic; BUILD chỉ báo lỗi harness.
+func TestBuildCheckHarnessPanicIsNotBuildFailure(t *testing.T) {
+	vr := harness.VerifyResult{Build: lang.BuildResult{OK: true}, HarnessErr: "boom", Run: harness.RunResult{ExitCode: 2}}
+	eq(t, "check", buildCheck(vr, ".aisdlc/run/PAY-123/harness.log"),
+		HardCheck{"BUILD_AND_TESTS", false, "harness lỗi: boom; xem .aisdlc/run/PAY-123/harness.log"})
+}
+
+// Ctrl-C giữa lúc harness chạy: Run trả lỗi của ctx, không ghi report.
+func TestEvalCanceledDuringVerifyWritesNoReport(t *testing.T) {
+	e := newEvalEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.v.onRun = cancel
+
+	_, err := e.service().Run(ctx, false, "", nil)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(e.paths.EvalDir(), "report.json")); err == nil {
+		t.Error("không được ghi report.json khi bị hủy")
+	}
 }
 
 func TestEvalBashWrittenOutOfScopeFileFailsScope(t *testing.T) {

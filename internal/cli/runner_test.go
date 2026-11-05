@@ -29,6 +29,7 @@ type stuckProcess struct {
 
 func (p *stuckProcess) Done() <-chan struct{} { return p.done }
 func (p *stuckProcess) ExitErr() error        { return nil }
+func (p *stuckProcess) Kill()                 { p.Stop(0) }
 func (p *stuckProcess) Stop(time.Duration) bool {
 	p.once.Do(func() { close(p.done) })
 	return true
@@ -124,7 +125,7 @@ func TestRunnerTimeoutMarksCasesError(t *testing.T) {
 	}
 }
 
-// Ctrl-C: ctx của lệnh đã bị hủy thì harness dừng như quá thời gian.
+// Ctrl-C: ctx của lệnh đã bị hủy thì harness dừng như quá thời gian nhưng với thông điệp hủy riêng.
 func TestRunnerCancelledContextMarksCasesError(t *testing.T) {
 	std, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -134,7 +135,7 @@ func TestRunnerCancelledContextMarksCasesError(t *testing.T) {
 	res, err := r.RunCases("DEMO-1", nil, "cases")
 	must(t, err)
 	eq(t, res.ExitCode, harness.ExitTimeout)
-	allError(t, res.Cases, harness.TimeoutMessage(r.h.Config.TimeoutMinutes))
+	allError(t, res.Cases, harness.CanceledMessage)
 }
 
 // Port MavenRunnerTest.verifyClearsStaleResultsAndReadsThemLikeRunCases: results.json/schema.json cũ trong OutDir,
@@ -162,10 +163,15 @@ func TestRunnerClearsStaleResults(t *testing.T) {
 	stale()
 	vr, err := harnessVerifier{h: r.h}.Verify(context.Background(), "DEMO-1", out)
 	must(t, err)
-	contains(t, vr.HarnessErr, "boom")
-	if vr.Build.OK {
-		t.Error("build không được coi là đạt")
+	eq(t, vr.HarnessErr, "boom")
+	// panic không phải build hỏng: eval chỉ báo lỗi harness, không báo "go build lỗi"
+	if !vr.Build.OK {
+		t.Error("panic của harness không được báo là build lỗi")
 	}
+	log := tailFile(filepath.Join(out, HarnessLog), 200)
+	contains(t, log, "harness lỗi: boom")
+	contains(t, log, "goroutine") // stack của panic
+	contains(t, log, "runtime/debug.Stack")
 	if _, err := os.Stat(filepath.Join(out, "results.json")); err == nil {
 		t.Error("results.json cũ vẫn còn sau Verify")
 	}

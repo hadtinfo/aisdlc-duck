@@ -24,6 +24,9 @@ func (p *process) killGroup(sig syscall.Signal) {
 	_ = syscall.Kill(-p.cmd.Process.Pid, sig)
 }
 
+// Kill SIGKILL cả nhóm ngay, không chờ tiến trình thoát.
+func (p *process) Kill() { p.killGroup(syscall.SIGKILL) }
+
 // Stop gửi SIGTERM cho cả nhóm; quá timeout thì SIGKILL cả nhóm.
 // Trả true nếu tiến trình chính tự thoát trong timeout. Khi tiến trình chính
 // đã thoát (êm hay không), nhóm luôn bị SIGKILL để không sót tiến trình con.

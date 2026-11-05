@@ -65,7 +65,8 @@ func (s *Service) OutDir() string {
 // web (server đã ghim chế độ thì theo server, chưa ghim thì theo config approvals) approval lấy từ web thay cho
 // gates.json và cổng chưa duyệt/đã đổi là lỗi cứng. config approvals: web mà không có nguồn web (web nil) thì fail
 // closed: GATE:WEB lỗi cứng thay cho CASES_LOCKED, không kiểm gates.json.
-// error khi git/gates.json/steps.json lỗi, Verify trả lỗi (không ghi được out) hoặc không ghi được report.
+// error khi git/gates.json/steps.json lỗi, Verify trả lỗi (không ghi được out), ctx bị hủy (Ctrl-C) hoặc không ghi được
+// report.
 func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprovalSource) (EvalReport, error) {
 	from := s.Meta.BaseTree
 	if ci {
@@ -100,6 +101,10 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 	out := s.OutDir()
 	vr, err := s.Verifier.Verify(ctx, s.Meta.Key, out)
 	if err != nil {
+		return EvalReport{}, err
+	}
+	// bị hủy (Ctrl-C) giữa lúc harness chạy: không ghi report từ kết quả dở dang
+	if err := ctx.Err(); err != nil {
 		return EvalReport{}, err
 	}
 	var selected []spec.CaseSpec

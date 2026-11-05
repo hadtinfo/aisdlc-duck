@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"aisdlc/templates"
@@ -175,4 +176,42 @@ func TestTemplateConfigParses(t *testing.T) {
 	eq(t, "Language", c.Language, "go")
 	eq(t, "Main", c.Service.Main, "./cmd/server")
 	eq(t, "Env.DatabaseURL", c.Service.Env.DatabaseURL, "DATABASE_URL")
+}
+
+func TestWrongTypedValuesAreErrors(t *testing.T) {
+	for y, key := range map[string]string{
+		"timeoutMinutes: abc":                  "timeoutMinutes",
+		"service:\n  startTimeoutSeconds: 60s": "service.startTimeoutSeconds",
+		"review:\n  scopeMaxFiles: abc":        "review.scopeMaxFiles",
+		"coverageWarn: [1]":                    "coverageWarn",
+		"ciRequireFeature: maybe":              "ciRequireFeature",
+		"sessionApprove: 3":                    "sessionApprove",
+	} {
+		_, err := ParseRepoConfig(y)
+		if err == nil || !strings.Contains(err.Error(), "Giá trị "+key+" không hợp lệ") {
+			t.Errorf("%q: err = %v", y, err)
+		}
+		root := t.TempDir()
+		writeCfg(t, root, y)
+		if _, err := LoadRepoConfig(root); err == nil || !strings.Contains(err.Error(), "Giá trị "+key+" không hợp lệ") {
+			t.Errorf("Load %q: err = %v", y, err)
+		}
+	}
+	if !strings.Contains(func() string { _, e := ParseRepoConfig("timeoutMinutes: abc"); return e.Error() }(), ": abc") {
+		t.Error("error must show the value")
+	}
+}
+
+func TestNullAndNumericStringsStillAccepted(t *testing.T) {
+	c := mustParse(t, "timeoutMinutes: null\nservice:\n  startTimeoutSeconds: \"45\"\nsessionApprove: \"true\"")
+	if c.TimeoutMinutes != 30 || c.Service.StartTimeoutSeconds != 45 || !c.SessionApprove {
+		t.Errorf("%+v", c)
+	}
+}
+
+func TestExtraEnvNonStringKeys(t *testing.T) {
+	c := mustParse(t, "service:\n  extraEnv: {1: x, A: y}")
+	if !reflect.DeepEqual(c.Service.ExtraEnv, map[string]string{"1": "x", "A": "y"}) {
+		t.Errorf("%v", c.Service.ExtraEnv)
+	}
 }

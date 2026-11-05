@@ -79,28 +79,46 @@ func defaultReview(migrationDir string) ReviewSettings {
 func LoadRepoConfig(repoRoot string) (RepoConfig, error) {
 	file := filepath.Join(repoRoot, "aisdlc", "config.yaml")
 	if _, err := os.Stat(file); err != nil {
-		return configFrom(nil), nil
+		return configFrom(nil)
 	}
 	var n any
 	if err := yamlx.Read(file, &n); err != nil {
 		return RepoConfig{}, err
 	}
-	return configFrom(n), nil
+	return configFrom(n)
 }
 
 // ParseRepoConfig đọc cấu hình từ nội dung config.yaml; chuỗi rỗng/blank thì trả mặc định.
 func ParseRepoConfig(yaml string) (RepoConfig, error) {
 	if strings.TrimSpace(yaml) == "" {
-		return configFrom(nil), nil
+		return configFrom(nil)
 	}
 	var n any
 	if err := yamlx.Parse([]byte(yaml), &n); err != nil {
 		return RepoConfig{}, err
 	}
-	return configFrom(n), nil
+	return configFrom(n)
 }
 
-func configFrom(n any) RepoConfig {
+// rd gom lỗi giá trị sai kiểu; lỗi đầu tiên được giữ.
+type rd struct{ err error }
+
+func (r *rd) bad(path string, v any) {
+	if r.err == nil {
+		r.err = fmt.Errorf("Giá trị %s không hợp lệ: %v", path, v)
+	}
+}
+
+func configFrom(n any) (RepoConfig, error) {
+	r := &rd{}
+	c := r.config(n)
+	if r.err != nil {
+		return RepoConfig{}, r.err
+	}
+	return c, nil
+}
+
+func (r *rd) config(n any) RepoConfig {
 	svc := get(n, "service")
 	env := get(svc, "env")
 	mig := get(n, "migrations")
@@ -108,13 +126,13 @@ func configFrom(n any) RepoConfig {
 	migDir := str(mig, "dir", "db/migrations")
 	return RepoConfig{
 		Language:       str(n, "language", "go"),
-		TimeoutMinutes: num(n, "timeoutMinutes", 30),
+		TimeoutMinutes: r.num(n, "timeoutMinutes", "timeoutMinutes", 30),
 		Service: ServiceConfig{
 			Main:                   str(svc, "main", "./cmd/server"),
 			BuildFlags:             strs(svc, "buildFlags", nil),
 			HealthPath:             str(svc, "healthPath", "/healthz"),
-			StartTimeoutSeconds:    int(num(svc, "startTimeoutSeconds", 60)),
-			ShutdownTimeoutSeconds: int(num(svc, "shutdownTimeoutSeconds", 15)),
+			StartTimeoutSeconds:    int(r.num(svc, "service.startTimeoutSeconds", "startTimeoutSeconds", 60)),
+			ShutdownTimeoutSeconds: int(r.num(svc, "service.shutdownTimeoutSeconds", "shutdownTimeoutSeconds", 15)),
 			Env: ServiceEnv{
 				Port:             str(env, "port", "PORT"),
 				DatabaseURL:      str(env, "databaseUrl", ""),
@@ -132,14 +150,14 @@ func configFrom(n any) RepoConfig {
 		UnitTest:         UnitTestConfig{Packages: strs(ut, "packages", []string{"./..."}), Flags: strs(ut, "flags", nil)},
 		AlwaysAllowed:    strs(n, "alwaysAllowed", nil),
 		Unmanaged:        strs(n, "unmanaged", []string{"*.md", "docs/**"}),
-		BudgetWarnFactor: num(n, "budgetWarnFactor", 1.5),
-		CoverageWarn:     num(n, "coverageWarn", 0.80),
+		BudgetWarnFactor: r.num(n, "budgetWarnFactor", "budgetWarnFactor", 1.5),
+		CoverageWarn:     r.num(n, "coverageWarn", "coverageWarn", 0.80),
 		Checks:           checks(n),
 		BaseRef:          str(n, "baseRef", "origin/main"),
-		CIRequireFeature: boolean(n, "ciRequireFeature", true),
-		Review:           review(get(n, "review"), migDir),
+		CIRequireFeature: r.boolean(n, "ciRequireFeature", "ciRequireFeature", true),
+		Review:           r.review(get(n, "review"), migDir),
 		Approvals:        approvals(n),
-		SessionApprove:   boolean(n, "sessionApprove", false),
+		SessionApprove:   r.boolean(n, "sessionApprove", "sessionApprove", false),
 	}
 }
 
@@ -150,14 +168,14 @@ func approvals(n any) string {
 	return "local"
 }
 
-func review(r any, migDir string) ReviewSettings {
+func (r *rd) review(rv any, migDir string) ReviewSettings {
 	d := defaultReview(migDir)
 	return ReviewSettings{
-		ScopeMaxFiles:  int(num(r, "scopeMaxFiles", float64(d.ScopeMaxFiles))),
-		BudgetMaxFiles: int(num(r, "budgetMaxFiles", float64(d.BudgetMaxFiles))),
-		BudgetMaxLines: int(num(r, "budgetMaxLines", float64(d.BudgetMaxLines))),
-		MigrationDirs:  strs(r, "migrationDirs", d.MigrationDirs),
-		ValueFields:    strs(r, "valueFields", d.ValueFields),
+		ScopeMaxFiles:  int(r.num(rv, "review.scopeMaxFiles", "scopeMaxFiles", float64(d.ScopeMaxFiles))),
+		BudgetMaxFiles: int(r.num(rv, "review.budgetMaxFiles", "budgetMaxFiles", float64(d.BudgetMaxFiles))),
+		BudgetMaxLines: int(r.num(rv, "review.budgetMaxLines", "budgetMaxLines", float64(d.BudgetMaxLines))),
+		MigrationDirs:  strs(rv, "migrationDirs", d.MigrationDirs),
+		ValueFields:    strs(rv, "valueFields", d.ValueFields),
 	}
 }
 
@@ -187,8 +205,10 @@ func str(n any, k, def string) string {
 	return text(v)
 }
 
-func boolean(n any, k string, def bool) bool {
+func (r *rd) boolean(n any, path, k string, def bool) bool {
 	switch b := get(n, k).(type) {
+	case nil:
+		return def
 	case bool:
 		return b
 	case string:
@@ -196,10 +216,11 @@ func boolean(n any, k string, def bool) bool {
 			return p
 		}
 	}
+	r.bad(path, get(n, k))
 	return def
 }
 
-func num(n any, k string, def float64) float64 {
+func (r *rd) num(n any, path, k string, def float64) float64 {
 	switch v := get(n, k).(type) {
 	case nil:
 		return def
@@ -212,10 +233,12 @@ func num(n any, k string, def float64) float64 {
 	case float64:
 		return v
 	case string:
-		f, _ := strconv.ParseFloat(strings.TrimSpace(v), 64)
-		return f
+		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			return f
+		}
 	}
-	return 0
+	r.bad(path, get(n, k))
+	return def
 }
 
 func strs(n any, k string, def []string) []string {
@@ -237,9 +260,14 @@ func strs(n any, k string, def []string) []string {
 
 func strMap(n any, k string) map[string]string {
 	out := map[string]string{}
-	if m, ok := get(n, k).(map[string]any); ok {
+	switch m := get(n, k).(type) {
+	case map[string]any:
 		for key, v := range m {
 			out[key] = text(v)
+		}
+	case map[any]any:
+		for key, v := range m {
+			out[fmt.Sprint(key)] = text(v)
 		}
 	}
 	return out

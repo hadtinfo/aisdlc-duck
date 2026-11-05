@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 
 	"aisdlc/internal/eval"
 	"aisdlc/internal/gate"
+	"aisdlc/internal/gitx"
 	"aisdlc/internal/run"
 	"aisdlc/internal/step"
 )
@@ -37,7 +39,7 @@ func endsWith(t *testing.T, got []string, want ...string) {
 	eqList(t, got[len(got)-len(want):], want...)
 }
 
-// Phần step/status/diff ở task 6.
+// Phần step/status/diff ở TestFullFlowStepAndDiff.
 func TestFullFlowHappyPathWithoutHarness(t *testing.T) {
 	r := newTestRepo(t)
 	r.setupInit()
@@ -328,7 +330,7 @@ func (r *testRepo) feature() *Feature {
 	return f
 }
 
-// acceptAllSteps ghi steps.json với mọi bước ACCEPTED (lệnh step ở task 6).
+// acceptAllSteps ghi steps.json với mọi bước ACCEPTED (nhanh hơn chạy step start/finish/accept từng bước).
 func (r *testRepo) acceptAllSteps() {
 	r.t.Helper()
 	f := r.feature()
@@ -365,4 +367,42 @@ func TestWebModeGateCommandsNeedPhase4(t *testing.T) {
 	eq(t, r.runner.calls == nil, true)
 	eq(t, r.exists("aisdlc/features/PAY-1/gates.json"), false)
 	r.ok(noConsole(), "review", "brd") // chỉ đọc: chạy được
+}
+
+// calledFrom: đang chạy trong hàm có tên kết thúc bằng fn.
+func calledFrom(fn string) bool {
+	pc := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pc[:runtime.Callers(2, pc)])
+	for {
+		f, more := frames.Next()
+		if strings.HasSuffix(f.Function, fn) {
+			return true
+		}
+		if !more {
+			return false
+		}
+	}
+}
+
+// Như catch RuntimeException của Java: git hỏng khi kiểm eval cũ là phát hiện REVIEW_NO_EVAL (exit 1), không exit 2.
+func TestSubmitReviewStaleEvalGitErrorIsFinding(t *testing.T) {
+	r := newTestRepo(t)
+	r.casesApproved()
+	r.acceptAllSteps()
+	f := r.feature()
+	rep := eval.NewEvalReport("PAY-1", testNow, "local", []eval.HardCheck{{ID: "BUILD", Passed: true, Detail: "ok"}},
+		nil, "abc", nil)
+	must(t, rep.Write(filepath.Join(f.Paths.EvalDir(), "report.json")))
+	r.write("aisdlc/features/PAY-1/review-agent.json", validAgentReview)
+	broken := filepath.Join(t.TempDir(), "không-phải-repo")
+	r.git = func(root string) *gitx.Repo {
+		if calledFrom("cli.staleEval") {
+			return gitx.New(broken)
+		}
+		return gitx.New(root)
+	}
+	eq(t, r.run("submit", "review"), 1)
+	contains(t, r.out, "REVIEW_NO_EVAL", "Không đọc được aisdlc/features/PAY-1/eval/report.json; chạy lại `aisdlc eval`: ")
+	notContains(t, r.err, "Lỗi:")
+	eq(t, r.state(gate.REVIEW), "SUBMITTED_WITH_FINDINGS")
 }

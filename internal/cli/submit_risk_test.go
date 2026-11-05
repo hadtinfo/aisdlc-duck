@@ -239,11 +239,7 @@ func TestSubmitCasesPolicyChangedKeepsOverrideAndWarns(t *testing.T) {
 	r.brdApproved()
 	r.ok(noConsole(), "submit", "design")
 	r.ok(typed("PAY-1"), "approve", "design")
-	// như `aisdlc risk set low --reason ...` (lệnh risk ở task 6): risk.yaml có mức đổi tay
-	p, err := risk.ParsePolicy(r.read(policyFile))
-	must(t, err)
-	must(t, r.risk().WithOverride(p, "low", "Dev Một", "Chỉ đọc sổ cái", testNow).
-		Write(filepath.Join(r.root, riskFile)))
+	r.ok(typed("PAY-1"), "risk", "set", "low", "--reason", "Chỉ đọc sổ cái")
 	r.write(policyFile, strings.Replace(r.read(policyFile), "min: 90", "min: 95", 1))
 	r.runner.cases = failingCases
 	if code := r.run("submit", "cases"); code != 0 {

@@ -1,0 +1,8 @@
+{"hooks":{
+  "SessionStart":[{"hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}\"/bin/aisdlc hook session-start","timeout":15}]}],
+  "PreToolUse":[{"matcher":"Edit|Write|MultiEdit|NotebookEdit|Bash","hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}\"/bin/aisdlc hook pre-tool-use","timeout":15}]},
+                {"matcher":"Read|Grep|Glob","hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}\"/bin/aisdlc hook pre-tool-use","timeout":15}]}],
+  "UserPromptSubmit":[{"hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}\"/bin/aisdlc hook user-prompt-submit","timeout":15}]}],
+  "PostToolUse":[{"hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}\"/bin/aisdlc hook post-tool-use","timeout":5}]}],
+  "Stop":[{"hooks":[{"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}\"/bin/aisdlc hook stop","timeout":15}]}]
+}}

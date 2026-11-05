@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Chọn binary Go theo nền tảng (plugin/lib/aisdlc-<os>-<arch>) rồi exec.
+# Thiếu binary: lệnh thường -> lỗi, exit 2. Hook -> chỉ chặn (fail closed) khi đang ở repo AISDLC.
+fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
+  if [ "${1:-}" != "hook" ]; then echo "AISDLC: $MSG" >&2; exit 2; fi
+  local in="" dir="$PWD"
+  IFS= read -r -d '' in || true
+  [[ "$in" =~ \"cwd\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && dir="${BASH_REMATCH[1]}"
+  while [ -n "$dir" ]; do
+    if [ -f "$dir/aisdlc/config.yaml" ]; then
+      echo "AISDLC: $MSG" >&2
+      [ "${2:-}" = "pre-tool-use" ] && exit 2
+      exit 1
+    fi
+    [ "$dir" = "/" ] && break
+    dir="${dir%/*}"; [ -z "$dir" ] && dir="/"
+  done
+  exit 0
+}
+OS="$(uname -s | tr 'A-Z' 'a-z')"
+case "$(uname -m)" in
+  x86_64|amd64) ARCH=amd64 ;;
+  aarch64|arm64) ARCH=arm64 ;;
+  *) ARCH="$(uname -m)" ;;
+esac
+BIN="$(dirname "$(readlink -f "$0")")/../lib/aisdlc-$OS-$ARCH"
+if [ ! -x "$BIN" ]; then
+  MSG="không tìm thấy binary aisdlc cho $OS/$ARCH. Chạy plugin/install.sh."
+  fail "$@"
+fi
+exec "$BIN" "$@"

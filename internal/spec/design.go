@@ -9,8 +9,8 @@ import (
 
 // Budget là ngân sách số file và số dòng của một bước.
 type Budget struct {
-	Files int `yaml:"files"`
-	Lines int `yaml:"lines"`
+	Files int `yaml:"files" json:"files"`
+	Lines int `yaml:"lines" json:"lines"`
 }
 
 // Valid đúng khi cả hai lớn hơn 0.
@@ -95,6 +95,6 @@ func EffectiveSteps(flow model.Flow, design *DesignSpec, cases CasesSpec) []Step
 
 // Finding là một phát hiện của validator.
 type Finding struct {
-	Code    string
-	Message string
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }

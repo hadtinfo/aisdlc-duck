@@ -28,26 +28,31 @@ func unsupported(id, path string, allowed []string) Finding {
 		id, path, strings.Join(allowed, ", "))}
 }
 
+func wrongShape(id, path, shape string) Finding {
+	return Finding{"CASES_STUB_UNSUPPORTED", fmt.Sprintf("Stub %s: \"%s\" sai cấu trúc (%s).", id, path, shape)}
+}
+
+func matcherShape(allowed []string) string {
+	return "đúng một khóa trong " + strings.Join(allowed, ", ")
+}
+
 // checkExactlyOne kiểm một matcher: map có đúng một khóa thuộc allowed.
 func checkExactlyOne(id, path string, v any, allowed []string) []Finding {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return []Finding{unsupported(id, path, allowed)}
+		return []Finding{wrongShape(id, path, matcherShape(allowed))}
 	}
 	var out []Finding
 	good := 0
 	for _, k := range sortedKeys(m) {
 		if containsStr(allowed, k) {
 			good++
-			if good > 1 {
-				out = append(out, unsupported(id, path+"."+k, allowed))
-			}
 		} else {
 			out = append(out, unsupported(id, path+"."+k, allowed))
 		}
 	}
-	if len(m) == 0 {
-		out = append(out, unsupported(id, path, allowed))
+	if len(m) == 0 || good > 1 {
+		out = append(out, wrongShape(id, path, matcherShape(allowed)))
 	}
 	return out
 }
@@ -64,7 +69,7 @@ func validateStub(st StubSpec) []Finding {
 		case "queryParameters", "headers":
 			m, ok := st.Request[k].(map[string]any)
 			if !ok {
-				out = append(out, unsupported(st.ID, path, stubMatcherKeys))
+				out = append(out, wrongShape(st.ID, path, "map tên → matcher, mỗi matcher "+matcherShape(stubMatcherKeys)))
 				continue
 			}
 			for _, name := range sortedKeys(m) {
@@ -73,7 +78,7 @@ func validateStub(st StubSpec) []Finding {
 		case "bodyPatterns":
 			list, ok := st.Request[k].([]any)
 			if !ok {
-				out = append(out, unsupported(st.ID, path, stubBodyKeys))
+				out = append(out, wrongShape(st.ID, path, "danh sách, mỗi phần tử "+matcherShape(stubBodyKeys)))
 				continue
 			}
 			for i, el := range list {

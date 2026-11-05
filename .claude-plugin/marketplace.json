@@ -1,0 +1,8 @@
+{
+  "name": "aisdlc",
+  "description": "Plugin quy trình AISDLC cho Claude Code",
+  "owner": {"name": "AISDLC"},
+  "plugins": [
+    {"name": "aisdlc", "source": "./plugin", "description": "Quy trình AISDLC: cổng duyệt, code theo bước, eval tầng 1"}
+  ]
+}

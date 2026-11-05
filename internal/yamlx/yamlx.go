@@ -5,11 +5,12 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"aisdlc/internal/fsx"
 )
 
 var (
@@ -58,17 +59,12 @@ func Dump(v any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Write ghi v ra path, tạo thư mục cha nếu cần.
+// Write ghi v ra path kiểu atomic, tạo thư mục cha nếu cần.
 func Write(path string, v any) error {
 	data, err := Dump(v)
 	if err != nil {
 		return fmt.Errorf("Không ghi được %s: %v", path, err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("Không ghi được %s: %v", path, err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("Không ghi được %s: %v", path, err)
-	}
-	return nil
+	// fsx.WriteAtomic đã tạo thư mục cha và báo "Không ghi được <path>: ...".
+	return fsx.WriteAtomic(path, data, 0o644)
 }

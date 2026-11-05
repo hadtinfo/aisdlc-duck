@@ -1,0 +1,51 @@
+reset_sql: ["DELETE FROM transfer"]
+stubs:
+  - id: balance-ok
+    request:  { method: GET, urlPath: /accounts/A1/balance }
+    response: { status: 200, jsonBody: { balance: 1000 } }
+  - id: balance-low
+    request:  { method: GET, urlPath: /accounts/A2/balance }
+    response: { status: 200, headers: { Content-Type: application/json }, jsonBody: { balance: 10 } }
+cases:
+  - id: C1
+    step: S1
+    kind: happy
+    title: Số dư đủ thì lưu giao dịch
+    given: { sql: [], stubs: [balance-ok] }
+    when:  { method: POST, path: /api/transfers, body: { fromAccount: A1, toAccount: B1, amount: 100 } }
+    then:
+      status: 200
+      body: { status: OK }
+      db:
+        - query: "SELECT from_account, to_account, amount FROM transfer"
+          rows: [ { FROM_ACCOUNT: A1, to_account: B1, amount: 100 } ]
+  - id: C2
+    step: S1
+    kind: error
+    title: Số dư không đủ thì trả 422
+    given: { sql: [], stubs: [balance-low] }
+    when:  { method: POST, path: /api/transfers, body: { fromAccount: A2, toAccount: B1, amount: 100 } }
+    then:
+      status: 422
+      body: { code: INSUFFICIENT_BALANCE }
+      db:
+        - query: "SELECT count(*) AS n FROM transfer"
+          rows: [ { n: 0 } ]
+  - id: C3
+    step: S1
+    kind: boundary
+    title: Chuyển đúng bằng số dư vẫn được
+    given: { sql: ["INSERT INTO transfer (from_account, to_account, amount) VALUES ('X', 'Y', 1)"], stubs: [balance-ok] }
+    when:  { method: POST, path: /api/transfers, body: { fromAccount: A1, toAccount: B2, amount: 1000 } }
+    then:
+      status: 200
+      db:
+        - query: "SELECT from_account, amount FROM transfer ORDER BY id"
+          rows: [ { from_account: X, amount: 1 }, { from_account: A1, amount: 1000 } ]
+  - id: C9
+    step: S1
+    kind: happy
+    title: Cố ý sai, mong đợi 201
+    given: { sql: [], stubs: [balance-ok] }
+    when:  { method: POST, path: /api/transfers, body: { fromAccount: A1, toAccount: B1, amount: 5 } }
+    then:  { status: 201 }

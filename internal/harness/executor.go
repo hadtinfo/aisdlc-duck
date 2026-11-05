@@ -354,7 +354,7 @@ func fmtRows(rows []map[string]any) string {
 		sort.Strings(keys)
 		kv := make([]string, len(keys))
 		for j, k := range keys {
-			kv[j] = fmt.Sprintf("%s=%v", k, r[k])
+			kv[j] = k + "=" + fmtValue(r[k])
 		}
 		parts[i] = "{" + strings.Join(kv, ", ") + "}"
 	}
@@ -390,4 +390,12 @@ func incomplete(c spec.CaseSpec) string {
 
 func errResult(c spec.CaseSpec, msg string) run.CaseResult {
 	return run.CaseResult{ID: c.ID, Step: c.Step, Outcome: run.CaseOutcomeError, Message: msg}
+}
+
+// fmtValue in giá trị như Java String.valueOf: nil là null.
+func fmtValue(v any) string {
+	if v == nil {
+		return "null"
+	}
+	return fmt.Sprint(v)
 }

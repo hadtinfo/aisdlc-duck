@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -144,9 +146,12 @@ func runEval(ctx *Context, f *Feature, ci bool, base string) (int, error) {
 		Verifier: ctx.Verifier(f.Root, f.Config), Gates: gates, Steps: f.Steps(), Specs: f.Specs(),
 		Adapter: f.Adapter, Now: ctx.Clock()}
 	// chưa có nguồn approval web (giai đoạn 4): CI chế độ web thì Service fail closed (GATE:WEB)
-	r, err := svc.Run(ctx.Std(), ci, base, nil)
-	if err != nil {
-		return 0, err
+	var r eval.EvalReport
+	if err := ctx.interruptible(func() (err error) {
+		r, err = svc.Run(ctx.Std(), ci, base, nil)
+		return err
+	}); err != nil {
+		return 0, err // bị hủy: eval.Service không ghi report
 	}
 	dir := f.Paths.EvalDir()
 	md, err := os.ReadFile(filepath.Join(dir, "report.md"))
@@ -198,8 +203,11 @@ func changedFeatures(root string, changes []gitx.FileChange) ([]model.FeatureKey
 	}
 	dir := filepath.Join(root, filepath.FromSlash(evalFeaturesDir))
 	entries, err := os.ReadDir(dir)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil // như Java: chưa có thư mục tính năng thì không có gì để eval
+	}
+	if err != nil {
+		return nil, err // không đọc được (quyền...): fail closed, không coi như không có tính năng
 	}
 	var out []model.FeatureKey
 	for _, e := range entries { // ReadDir đã sắp theo tên

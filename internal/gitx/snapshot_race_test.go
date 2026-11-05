@@ -34,6 +34,34 @@ func TestSnapshotExcludesAtomicTempFiles(t *testing.T) {
 	}
 }
 
+// Chỉ loại đúng dạng tên file tạm của fsx (".<base>.tmp-<số>"); file người dùng cùng dáng vẫn vào snapshot.
+func TestSnapshotKeepsUserFilesShapedLikeTempFiles(t *testing.T) {
+	f := newFixture(t)
+	f.write(".notes.tmp-draft", "ghi chú")
+	f.write("docs/.notes.tmp-draft", "ghi chú")
+	f.write(".gates.json.tmp-123456", "x")
+	f.write("aisdlc/features/A/.gates.json.tmp-123456", "x")
+	tree := f.snap()
+	files, err := f.repo.ListTree(ctx, tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := map[string]bool{}
+	for _, p := range files {
+		has[p] = true
+	}
+	for _, p := range []string{".notes.tmp-draft", "docs/.notes.tmp-draft"} {
+		if !has[p] {
+			t.Errorf("snapshot thiếu file người dùng %s: %v", p, files)
+		}
+	}
+	for _, p := range []string{".gates.json.tmp-123456", "aisdlc/features/A/.gates.json.tmp-123456"} {
+		if has[p] {
+			t.Errorf("snapshot chứa file tạm %s", p)
+		}
+	}
+}
+
 func TestSnapshotRaceWithAtomicWriters(t *testing.T) {
 	f := newFixture(t)
 	p := filepath.Join(f.dir, "aisdlc", "features", "B", "steps.json")

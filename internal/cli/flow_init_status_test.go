@@ -336,3 +336,15 @@ func TestStatusWebModeFromSignedModeCache(t *testing.T) {
 	eq(t, r.run("status"), 0)
 	contains(t, r.out, "Duyệt: trên web (chưa `aisdlc web login`)")
 }
+
+// Chế độ web: status nói rõ bản Go chưa duyệt được trên web (giai đoạn 4), không chỉ nhắc `aisdlc web login`;
+// chế độ local không có dòng này.
+func TestStatusWebModeSaysGoBuildCannotApproveOnWebYet(t *testing.T) {
+	r := newTestRepo(t)
+	r.webModeWithSignedCache()
+	eq(t, r.run("status"), 0)
+	contains(t, r.out, "Duyệt: trên web\n"+statusWebPhase4Line+"\n")
+	r.write("aisdlc/config.yaml", strings.Replace(r.read("aisdlc/config.yaml"), "approvals: web\n", "", 1))
+	eq(t, r.run("status"), 0)
+	notContains(t, r.out, statusWebPhase4Line)
+}

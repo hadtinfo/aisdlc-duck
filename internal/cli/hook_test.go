@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -473,4 +474,27 @@ func TestMalformedJsonDeniesWhenProcessCwdInRepoEvenIfExtractedCwdOutside(t *tes
 	outside := t.TempDir()
 	r.hook("pre-tool-use", `{"session_id":"abc","cwd":"`+outside+`","tool_name":"Write",`)
 	contains(t, r.out, `"permissionDecision":"deny"`, "aisdlc lỗi: không đọc được JSON của hook (")
+}
+
+// panicReader giả lỗi ngoài phần recover riêng của sự kiện (lúc đọc stdin, trước khi biết repo).
+type panicReader struct{}
+
+func (panicReader) Read([]byte) (int, error) { panic("stdin hỏng") }
+
+// Panic lọt khỏi phần recover của sự kiện: Stop và các sự kiện khác im lặng exit 0, PreToolUse vẫn đóng (exit 2).
+func TestHookPanicOutsideEventRecoverIsSilentExceptPreToolUse(t *testing.T) {
+	r := newTestRepo(t)
+	for _, event := range []string{"stop", "session-start", "post-tool-use", "user-prompt-submit"} {
+		var o, e bytes.Buffer
+		ctx := r.context(noConsole(), "", &o, &e)
+		ctx.in = panicReader{}
+		eq(t, runWith(ctx, nil, "hook", event), 0)
+		eq(t, o.String(), "")
+		eq(t, e.String(), "")
+	}
+	var o, e bytes.Buffer
+	ctx := r.context(noConsole(), "", &o, &e)
+	ctx.in = panicReader{}
+	eq(t, runWith(ctx, nil, "hook", "pre-tool-use"), 2)
+	contains(t, e.String(), "Lỗi: stdin hỏng")
 }

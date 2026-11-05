@@ -3,7 +3,7 @@ package templates
 
 import "embed"
 
-// FS chứa brd.md, design.md, design.yaml, cases.full.yaml, cases.lite.yaml.
+// FS chứa brd.md, design.md, design.yaml, cases.full.yaml, cases.lite.yaml, config.yaml.
 //
 //go:embed *.md *.yaml
 var FS embed.FS

@@ -1,0 +1,66 @@
+# Cấu hình AISDLC cho repo này.
+# Chọn adapter ngôn ngữ; bản đầu chỉ có "go".
+language: go
+# Quá thời gian thì dừng build + test + case (và lệnh trong checks) và coi là lỗi.
+timeoutMinutes: 30
+service:
+  # Package main để build.
+  main: ./cmd/server
+  # Thêm cho go build, ví dụ ["-tags=prod"].
+  buildFlags: []
+  # Endpoint health check trả 2xx khi dịch vụ đã sẵn sàng.
+  healthPath: /healthz
+  startTimeoutSeconds: 60
+  # Sau SIGTERM chờ chừng này giây, quá giờ thì SIGKILL (và coverage là N/A).
+  shutdownTimeoutSeconds: 15
+  # Tên biến môi trường dịch vụ đọc; harness điền giá trị.
+  env:
+    port: PORT
+    # Bỏ trống nếu dịch vụ không dùng DB.
+    databaseUrl: DATABASE_URL
+    # Bỏ trống nếu dịch vụ không dùng Kafka.
+    kafkaBrokers: KAFKA_BROKERS
+    # Các biến trỏ tới hệ thống ngoài; harness điền URL của stub server.
+    externalBaseUrls: []
+  # Giá trị cố định thêm vào môi trường của dịch vụ.
+  extraEnv: {}
+  postgres: { image: "postgres:16-alpine" }
+  # Kafka khởi động khi env.kafkaBrokers có giá trị.
+  kafka: { image: "apache/kafka:3.8.0", topics: [] }
+migrations:
+  # Thư mục migration chính.
+  dir: db/migrations
+  # Bản đầu chỉ có goose.
+  tool: goose
+unitTest:
+  packages: ["./..."]
+  flags: []
+# Path luôn được sửa ở mọi bước (glob, tương đối với gốc repo).
+alwaysAllowed: []
+# Path không tính vào phạm vi và ngân sách.
+unmanaged: ["*.md", "docs/**"]
+budgetWarnFactor: 1.5
+coverageWarn: 0.80
+# Lint/static analysis/quét bảo mật repo đang dùng, ví dụ:
+# checks:
+#   - { name: vet, cmd: "go vet ./..." }
+#   - { name: staticcheck, cmd: "staticcheck ./..." }
+#   - { name: govulncheck, cmd: "govulncheck ./..." }
+checks: []
+baseRef: origin/main
+# Cho phép duyệt cổng ngay trong Claude Code; chỉ có hiệu lực khi đã merge vào baseRef bằng MR riêng.
+# sessionApprove: true
+# CI: thay đổi code mà không thuộc tính năng AISDLC nào thì eval --ci fail.
+ciRequireFeature: true
+# Ngưỡng của review card (thẻ xem nhanh trước khi duyệt cổng); bỏ mục này thì dùng giá trị dưới đây.
+review:
+  # Một bước khớp nhiều file đang có hơn số này thì cảnh báo scope quá rộng.
+  scopeMaxFiles: 30
+  # Budget một bước vượt số file hoặc số dòng này thì cảnh báo.
+  budgetMaxFiles: 10
+  budgetMaxLines: 400
+  # Thư mục migration đã có; scope của bước không nên khớp file trong đây.
+  # Không khai thì lấy migrations.dir.
+  # migrationDirs: ["db/migrations"]
+  # Tên trường tiền/hạn mức để soát số liệu của case so với BRD.
+  valueFields: [amount, limit, balance, fee, rate, max, min]

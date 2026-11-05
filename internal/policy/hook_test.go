@@ -199,7 +199,8 @@ func TestRule2BashUsesHeuristics(t *testing.T) {
 	assertDeny(t, bashCall(e.none(), "aisdlc approve brd"))
 }
 
-// TestBashBypassThroughPreToolUse: cases.yaml đã khóa; Java chỉ không chặn dạng cd + đường dẫn ngắn.
+// TestBashBypassThroughPreToolUse: cases.yaml đã khóa; mọi dạng ghi đều bị chặn (Java không chặn dạng cd +
+// đường dẫn ngắn; bản Go chặn).
 func TestBashBypassThroughPreToolUse(t *testing.T) {
 	e := newEnv(t)
 	s := e.codeReadyLite()
@@ -214,8 +215,12 @@ func TestBashBypassThroughPreToolUse(t *testing.T) {
 			t.Errorf("should block: %s", c)
 		}
 	}
-	// Java không chặn: không chứa đường dẫn đầy đủ của file được bảo vệ
-	assertAllow(t, bashCall(s, "cd aisdlc/features && sed -i s/a/b/ PAY-123/cases.yaml"), "cd + relative")
+	assertDeny(t, bashCall(s, "cd aisdlc/features && sed -i s/a/b/ PAY-123/cases.yaml"), "PAY-123/cases.yaml")
+	// cwd của hook là thư mục con của repo
+	d := PreToolUse(ToolCall{ToolName: "Bash", Command: "sed -i s/a/b/ cases.yaml",
+		Cwd: filepath.Join(e.tmp, "aisdlc/features/PAY-123")}, s)
+	assertDeny(t, d, "aisdlc/features/PAY-123/cases.yaml")
+	assertDeny(t, bashCall(s, "echo x > aisdlc/config.yaml"), "aisdlc/config.yaml")
 }
 
 func TestRule3OutsideRepoAllowed(t *testing.T) {
@@ -638,5 +643,35 @@ func TestErrDenyMatchesJavaCatchAll(t *testing.T) {
 	d := errDeny(errors.New("hỏng\n  file  gates.json"))
 	if d.Reason != "aisdlc lỗi: hỏng file gates.json" {
 		t.Errorf("reason = %q", d.Reason)
+	}
+}
+
+func TestEditConfigYamlDenied(t *testing.T) {
+	e := newEnv(t)
+	g := e.gates(model.FlowFull)
+	e.approve(g, gate.Sequence(model.FlowFull)...)
+	e.commit()
+	s := e.active(model.FlowFull)
+	e.start(s, "S1")
+	open := s
+	open.Config.Unmanaged = []string{"**"} // kể cả khi luật unmanaged cho mọi file
+	for _, tool := range []string{"Edit", "Write", "MultiEdit", "NotebookEdit"} {
+		for _, p := range []string{"aisdlc/config.yaml", "aisdlc/features/../config.yaml", filepath.Join(e.tmp, "aisdlc/config.yaml")} {
+			for _, st := range []PolicyState{s, open, e.none()} {
+				d := PreToolUse(ToolCall{ToolName: tool, FilePath: p}, st)
+				if d.Allow || d.Code != "CONFIG_LOCKED" {
+					t.Errorf("%s %s: %+v", tool, p, d)
+				}
+				if d.Reason != "aisdlc/config.yaml chỉ dev sửa, ngoài Claude Code." {
+					t.Errorf("%s %s: %q", tool, p, d.Reason)
+				}
+			}
+		}
+		for _, st := range []PolicyState{e.none(), s, open} {
+			d := PreToolUse(ToolCall{ToolName: tool, FilePath: "aisdlc/risk-policy.yaml"}, st)
+			if d.Allow || d.Code != "CONFIG_LOCKED" {
+				t.Errorf("%s risk-policy: %+v", tool, d)
+			}
+		}
 	}
 }

@@ -149,7 +149,8 @@ func (h *Harness) Verify(ctx context.Context, key model.FeatureKey, out string) 
 		return VerifyResult{}, err
 	}
 	vr.Run = r.res
-	if r.harnessErr != "" {
+	// build hỏng (không phải lỗi hạ tầng) đã thể hiện qua Build.OK=false, không tính là lỗi harness
+	if r.harnessErr != "" && (berr != nil || b.OK) {
 		errs = append(errs, r.harnessErr)
 	}
 	vr.HarnessErr = strings.Join(errs, "; ")
@@ -161,12 +162,8 @@ func (h *Harness) Verify(ctx context.Context, key model.FeatureKey, out string) 
 	case !built:
 		vr.Coverage = lang.Coverage{NA: buildFailed}
 	case r.started && !r.graceful:
-		if vr.Unit.Profile == "" {
-			vr.Coverage = lang.Coverage{NA: r.killed + ": không có coverage lúc chạy case"}
-		} else {
-			s.logf("coverage chỉ lấy từ unit test (dịch vụ không tắt êm)")
-			vr.Coverage = s.coverage(vr.Unit.Profile, "")
-		}
+		// spec §3: không tắt êm thì coverage N/A, không trả số chỉ từ unit test
+		vr.Coverage = lang.Coverage{NA: r.killed + ": không có coverage lúc chạy case"}
 	default:
 		vr.Coverage = s.coverage(vr.Unit.Profile, s.coverDir())
 	}
@@ -329,12 +326,14 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		for _, c := range cases {
 			s.logf("%s [%s] %s %s", c.ID, c.Step, c.Outcome, c.Message)
 		}
-		if schema != nil && !timedOut {
-			if err := schema.Write(filepath.Join(s.out, "schema.json")); err != nil {
-				return oc, err
-			}
+		// results.json trước: luôn được ghi kể cả khi ghi schema lỗi
+		if err := WriteResults(s.out, string(o.Feature), mode, cases); err != nil {
+			return oc, err
 		}
-		return oc, WriteResults(s.out, string(o.Feature), mode, cases)
+		if schema != nil && !timedOut {
+			return oc, schema.Write(filepath.Join(s.out, "schema.json"))
+		}
+		return oc, nil
 	}
 	fail := func(msg string) (runOutcome, error) {
 		oc.harnessErr = msg
@@ -480,7 +479,7 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		stopped = true
 		oc.graceful = proc.Stop(time.Duration(svc.ShutdownTimeoutSeconds) * time.Second)
 		if !oc.graceful {
-			oc.killed = fmt.Sprintf("dịch vụ không tắt êm sau %d giây, đã kill (SIGKILL)", svc.ShutdownTimeoutSeconds)
+			oc.killed = fmt.Sprintf("dịch vụ không tắt êm khi nhận SIGTERM sau %d giây (đã SIGKILL)", svc.ShutdownTimeoutSeconds)
 			s.logf("%s", oc.killed)
 		}
 	}
@@ -505,6 +504,7 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		if dbURL != "" {
 			pg, err := OpenPgDB(s.ctx, dbURL)
 			if err != nil {
+				stopService()
 				return fail("không kết nối được Postgres: " + err.Error())
 			}
 			defer pg.Close()

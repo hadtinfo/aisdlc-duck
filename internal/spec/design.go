@@ -9,8 +9,8 @@ import (
 
 // Budget là ngân sách số file và số dòng của một bước.
 type Budget struct {
-	Files int `yaml:"files"`
-	Lines int `yaml:"lines"`
+	Files int `yaml:"files" json:"files"`
+	Lines int `yaml:"lines" json:"lines"`
 }
 
 // Valid đúng khi cả hai lớn hơn 0.

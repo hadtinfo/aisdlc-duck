@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 )
 
 // EmptyTree là hash của tree rỗng.
@@ -109,6 +110,7 @@ func (r *Repo) addAll(ctx context.Context, extra []string) error {
 		if !strings.Contains(msg, "unable to stat") && !strings.Contains(msg, "No such file or directory") {
 			return err
 		}
+		time.Sleep(15 * time.Millisecond)
 	}
 	return err
 }

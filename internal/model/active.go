@@ -1,13 +1,14 @@
 package model
 
 import (
-	"aisdlc/internal/fsx"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"aisdlc/internal/fsx"
 )
 
 const maxSessionName = 100

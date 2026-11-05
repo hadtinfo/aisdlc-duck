@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -321,7 +320,7 @@ func (s *Service) load() ([]StepRecord, error) {
 	}
 	var recs []StepRecord
 	if err := json.Unmarshal(b, &recs); err != nil {
-		return nil, fmt.Errorf("steps.json hỏng: %s: %w", file, err)
+		return nil, &corruptError{"steps.json hỏng: " + file, err}
 	}
 	if recs == nil {
 		recs = []StepRecord{}

@@ -3,7 +3,6 @@ package step
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"time"
 
@@ -60,7 +59,7 @@ func (s *ScopeExtras) load() ([]ScopeEntry, error) {
 	}
 	var all []ScopeEntry
 	if err := json.Unmarshal(b, &all); err != nil {
-		return nil, fmt.Errorf("scope-extra.json hỏng: %s: %w", s.file, err)
+		return nil, &corruptError{"scope-extra.json hỏng: " + s.file, err}
 	}
 	if all == nil {
 		all = []ScopeEntry{}

@@ -60,7 +60,7 @@ func (s *ScopeExtras) load() ([]ScopeEntry, error) {
 	}
 	var all []ScopeEntry
 	if err := json.Unmarshal(b, &all); err != nil {
-		return nil, fmt.Errorf("scope-extra.json hỏng: %s", s.file)
+		return nil, fmt.Errorf("scope-extra.json hỏng: %s: %w", s.file, err)
 	}
 	if all == nil {
 		all = []ScopeEntry{}

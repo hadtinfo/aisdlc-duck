@@ -1,9 +1,11 @@
 package model
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -63,5 +65,32 @@ func TestMissingIsEmpty(t *testing.T) {
 	all, err := AllSessions(root)
 	if err != nil || len(all) != 0 {
 		t.Fatal(all, err)
+	}
+}
+
+func TestWriteActiveAtomic(t *testing.T) {
+	root := t.TempDir()
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := WriteActive(root, FeatureKey(fmt.Sprintf("PAY-%d", i+1))); err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	for i := 0; i < 200; i++ {
+		if k, ok, err := ReadActive(root); err != nil || (ok && !strings.HasPrefix(string(k), "PAY-")) {
+			t.Fatalf("k=%q ok=%v err=%v", k, ok, err)
+		}
+	}
+	wg.Wait()
+	if k, ok, err := ReadActive(root); err != nil || !ok || !strings.HasPrefix(string(k), "PAY-") {
+		t.Fatalf("k=%q ok=%v err=%v", k, ok, err)
+	}
+	es, _ := os.ReadDir(filepath.Join(root, ".aisdlc"))
+	if len(es) != 1 {
+		t.Fatalf("còn file tạm: %v", es)
 	}
 }

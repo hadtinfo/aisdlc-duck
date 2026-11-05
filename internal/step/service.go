@@ -321,7 +321,7 @@ func (s *Service) load() ([]StepRecord, error) {
 	}
 	var recs []StepRecord
 	if err := json.Unmarshal(b, &recs); err != nil {
-		return nil, fmt.Errorf("steps.json hỏng: %s", file)
+		return nil, fmt.Errorf("steps.json hỏng: %s: %w", file, err)
 	}
 	if recs == nil {
 		recs = []StepRecord{}
@@ -331,16 +331,7 @@ func (s *Service) load() ([]StepRecord, error) {
 
 func (s *Service) save(recs []StepRecord) error { return writeJSON(s.paths.Steps(), recs) }
 
-// snapshot chụp cây working tree. File tạm của lần ghi atomic ở tính năng khác (cùng repo) có thể biến mất giữa
-// lúc git quét, nên thử lại vài lần khi git báo lỗi.
+// snapshot chụp cây working tree; gitx đã bỏ file tạm atomic và tự thử lại khi git quét trúng chúng.
 func (s *Service) snapshot() (string, error) {
-	var tree string
-	var err error
-	for i := 0; i < 8; i++ {
-		if tree, err = s.git.SnapshotTree(context.Background()); err == nil {
-			return tree, nil
-		}
-		time.Sleep(time.Duration(i+1) * 5 * time.Millisecond)
-	}
-	return "", err
+	return s.git.SnapshotTree(context.Background())
 }

@@ -1,0 +1,18 @@
+scope: ["src/main/java/**/limit/**"]
+budget: { files: 3, lines: 120 }
+# Đánh giá tác động (luồng lite không có design.yaml): xem `aisdlc policy show` để chọn level và labels.
+impact: { level: low, labels: [], reason: "Thay đổi nhỏ, không ghi dữ liệu tiền hay trạng thái." }
+# Bất biến DB (luồng lite khai ở đây; kiểm sau MỌI case, `step` bị bỏ qua). Mỗi mục là một câu SELECT trả về các dòng
+# VI PHẠM (đúng thì 0 dòng), ví dụ:
+#   - { name: "Tổng đã dùng không âm", sql: "SELECT account_id FROM transfer_limit_usage WHERE used_amount < 0" }
+invariants: []
+reset_sql: ["DELETE FROM transfer_limit_usage"]
+stubs: []
+cases:
+  - id: C1
+    step: S1
+    kind: error
+    title: Thiếu accountId thì trả 400
+    given: { sql: [], stubs: [] }
+    when:  { method: POST, path: /api/v1/limits/check, body: { amount: 100 } }
+    then:  { status: 400, body: { code: "VALIDATION_ERROR" } }

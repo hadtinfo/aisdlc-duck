@@ -1,0 +1,27 @@
+# reset_sql chạy trước mọi case, kể cả ở S1: chỉ dùng bảng đã có từ trước. Bảng do migration của bước sau tạo
+# thì dọn trong given.sql của case thuộc bước đó (như C2).
+reset_sql: []
+stubs:
+  - id: core-balance-ok
+    request:  { method: GET, urlPath: /accounts/123/balance }
+    response: { status: 200, jsonBody: { balance: 5000000 } }
+cases:
+  - id: C1
+    step: S1
+    kind: error
+    title: Thiếu accountId thì trả 400
+    given: { sql: [], stubs: [] }
+    when:  { method: POST, path: /api/v1/limits/check, body: { amount: 100 } }
+    then:  { status: 400, body: { code: "VALIDATION_ERROR" } }
+  - id: C2
+    step: S2
+    kind: happy
+    title: Số dư đủ và còn hạn mức thì trả 200
+    given: { sql: ["DELETE FROM transfer_limit_usage"], stubs: [core-balance-ok] }
+    when:  { method: POST, path: /api/v1/limits/check, body: { accountId: "123", amount: 100 } }
+    then:
+      status: 200
+      body: { allowed: true }
+      db:
+        - query: "SELECT used_amount FROM transfer_limit_usage WHERE account_id = '123'"
+          rows: [ { used_amount: 100 } ]

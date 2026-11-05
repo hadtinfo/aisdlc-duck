@@ -78,6 +78,72 @@ func TestDbCheckNormalization(t *testing.T) {
 	}
 }
 
+// json/jsonb và mảng Postgres so như JSON chặt (cấu trúc, đủ khóa, đúng thứ tự mảng; số theo giá trị); thời điểm
+// kỳ vọng không múi giờ là UTC.
+func TestDbCheckJSONArraysAndZonelessTime(t *testing.T) {
+	db := openDB(t, "&TimeZone=Asia/Ho_Chi_Minh")
+	ctx := context.Background()
+	if err := db.Exec(ctx, `CREATE TABLE j (doc jsonb, raw json, tags text[], nums int[], ts timestamptz, lts timestamp,
+		fts timestamptz);
+		INSERT INTO j VALUES ('{"a": 1, "b": [true, "x"], "c": null}', '{"k":"v"}', '{x,"y z"}', '{1,2}',
+		'2026-01-02 10:04:05+07', '2026-01-02 03:04:05', '2026-01-02 03:04:05.123+00')`); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		col  string
+		want any
+		ok   bool
+	}{
+		{"jsonb chuỗi JSON", "doc", `{"b":[true,"x"],"a":1,"c":null}`, true},
+		{"jsonb chuỗi JSON số 1.0", "doc", `{"a":1.0,"b":[true,"x"],"c":null}`, true},
+		{"jsonb YAML map", "doc", map[string]any{"a": 1, "b": []any{true, "x"}, "c": nil}, true},
+		{"jsonb thiếu khóa (không khớp lỏng)", "doc", map[string]any{"a": 1}, false},
+		{"jsonb mảng sai thứ tự", "doc", map[string]any{"a": 1, "b": []any{"x", true}, "c": nil}, false},
+		{"jsonb giá trị khác", "doc", `{"a":2,"b":[true,"x"],"c":null}`, false},
+		{"jsonb chuỗi không phải JSON", "doc", "a=1", false},
+		{"json", "raw", map[string]any{"k": "v"}, true},
+		{"json chuỗi", "raw", `{"k": "v"}`, true},
+		{"text[] YAML list", "tags", []any{"x", "y z"}, true},
+		{"text[] chuỗi JSON", "tags", `["x","y z"]`, true},
+		{"text[] sai thứ tự", "tags", []any{"y z", "x"}, false},
+		{"int[]", "nums", []any{1, 2}, true},
+		{"int[] khác", "nums", []any{1, 2, 3}, false},
+		{"timestamptz không múi giờ = UTC", "ts", "2026-01-02T03:04:05", true},
+		{"timestamptz cách bằng dấu cách", "ts", "2026-01-02 03:04:05", true},
+		{"timestamptz không múi giờ khác", "ts", "2026-01-02T10:04:05", false},
+		{"timestamp không múi giờ", "lts", "2026-01-02T03:04:05", true},
+		{"phần lẻ giây", "fts", "2026-01-02T03:04:05.123", true},
+		{"phần lẻ giây cách", "fts", "2026-01-02 03:04:05.123", true},
+		{"phần lẻ giây khác", "fts", "2026-01-02T03:04:05.12", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg, err := db.Check(ctx, spec.DbExpect{Query: "SELECT " + tc.col + " FROM j", Rows: []map[string]any{{tc.col: tc.want}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (msg == "") != tc.ok {
+				t.Errorf("msg=%q ok=%v", msg, tc.ok)
+			}
+		})
+	}
+	// thông điệp in JSON gọn cho cả kỳ vọng lẫn thực tế
+	msg, err := db.Check(ctx, spec.DbExpect{Query: "SELECT doc, tags FROM j",
+		Rows: []map[string]any{{"doc": map[string]any{"a": 2}}}})
+	if err != nil || msg != `dòng 0 cột doc: mong đợi {"a":2}, nhận {"a":1,"b":[true,"x"],"c":null}` {
+		t.Errorf("msg=%q err=%v", msg, err)
+	}
+	msg, err = db.Check(ctx, spec.DbExpect{Query: "SELECT tags FROM j", Rows: []map[string]any{{"tags": []any{"x"}}}})
+	if err != nil || msg != `dòng 0 cột tags: mong đợi ["x"], nhận ["x","y z"]` {
+		t.Errorf("msg=%q err=%v", msg, err)
+	}
+	rows, err := db.Violations(ctx, "SELECT doc, tags FROM j", 5)
+	if err != nil || fmtRows(rows) != `[{doc={"a":1,"b":[true,"x"],"c":null}, tags=["x","y z"]}]` {
+		t.Errorf("rows=%s err=%v", fmtRows(rows), err)
+	}
+}
+
 func TestDbCheckMessages(t *testing.T) {
 	db := openDB(t, "")
 	ctx := context.Background()

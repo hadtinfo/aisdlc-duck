@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"sort"
@@ -46,6 +47,7 @@ const (
 	kindNumber // text là số thập phân
 	kindTime   // text là RFC 3339 UTC
 	kindDate   // text là YYYY-MM-DD
+	kindJSON   // json/jsonb (object, mảng) và mảng Postgres: text là JSON gọn
 )
 
 type value struct {
@@ -55,7 +57,7 @@ type value struct {
 }
 
 // normValue chuẩn hóa giá trị pgx: nil -> null, thời gian -> RFC 3339 UTC (date: YYYY-MM-DD), uuid -> dạng chuẩn,
-// số -> chuỗi thập phân.
+// số -> chuỗi thập phân, json/jsonb object/mảng và mảng Postgres (text[], int[]...) -> JSON gọn.
 func normValue(oid uint32, v any) value {
 	switch x := v.(type) {
 	case nil:
@@ -86,6 +88,12 @@ func normValue(oid uint32, v any) value {
 		}
 		s := x.UTC().Format(time.RFC3339Nano)
 		return value{kindTime, s, s}
+	case map[string]any, []any:
+		b, err := json.Marshal(x)
+		if err != nil {
+			return value{kindText, fmt.Sprint(x), x}
+		}
+		return value{kindJSON, string(b), string(b)}
 	case [16]byte:
 		s := fmt.Sprintf("%x-%x-%x-%x-%x", x[0:4], x[4:6], x[6:8], x[8:10], x[10:16])
 		return value{kindText, s, s}
@@ -150,16 +158,92 @@ func (d *PgDB) Check(ctx context.Context, e spec.DbExpect) (string, error) {
 			}
 			want := e.Rows[i][k]
 			if !matches(want, got) {
-				return fmt.Sprintf("dòng %d cột %s: mong đợi %s, nhận %s", i, k, fmtValue(want), got.text), nil
+				return fmt.Sprintf("dòng %d cột %s: mong đợi %s, nhận %s", i, k, fmtExpected(want), got.text), nil
 			}
 		}
 	}
 	return "", nil
 }
 
+// fmtExpected in giá trị kỳ vọng: object/mảng YAML in dạng JSON gọn như giá trị thực.
+func fmtExpected(want any) string {
+	switch want.(type) {
+	case map[string]any, []any:
+		return render(want)
+	}
+	return fmtValue(want)
+}
+
+// zonelessLayouts: thời điểm kỳ vọng không ghi múi giờ được hiểu là UTC (giá trị in ra luôn là UTC).
+var zonelessLayouts = []string{"2006-01-02T15:04:05.999999999", "2006-01-02 15:04:05.999999999"}
+
+// parseExpectedTime: RFC 3339 (có múi giờ, kể cả cách bằng dấu cách) hoặc không múi giờ (UTC).
+func parseExpectedTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	for _, l := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999Z07:00"} {
+		if t, err := time.Parse(l, s); err == nil {
+			return t, true
+		}
+	}
+	for _, l := range zonelessLayouts {
+		if t, err := time.ParseInLocation(l, s, time.UTC); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// jsonMatches so JSON chặt: kỳ vọng là chuỗi thì phân tích như văn bản JSON (không phải JSON thì so nguyên văn),
+// là object/mảng YAML thì so cấu trúc. Khác CompareJSON (khớp lỏng của body HTTP): object phải có đúng các khóa đó,
+// mảng đúng độ dài và thứ tự; chỉ số được so theo giá trị (1 = 1.0).
+func jsonMatches(want any, got string) bool {
+	var w any
+	var err error
+	if s, ok := want.(string); ok {
+		if w, err = decode([]byte(s)); err != nil {
+			return s == got
+		}
+	} else if w, err = normalize(want); err != nil {
+		return false
+	}
+	g, err := decode([]byte(got))
+	return err == nil && jsonEqual(w, g)
+}
+
+func jsonEqual(a, b any) bool {
+	switch x := a.(type) {
+	case map[string]any:
+		y, ok := b.(map[string]any)
+		if !ok || len(x) != len(y) {
+			return false
+		}
+		for k, v := range x {
+			if yv, ok := y[k]; !ok || !jsonEqual(v, yv) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		y, ok := b.([]any)
+		if !ok || len(x) != len(y) {
+			return false
+		}
+		for i := range x {
+			if !jsonEqual(x[i], y[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return equalScalar(a, b)
+}
+
 func matches(want any, got value) bool {
 	if want == nil {
 		return got.kind == kindNull
+	}
+	if got.kind == kindJSON {
+		return jsonMatches(want, got.text)
 	}
 	ws := fmt.Sprint(want)
 	switch got.kind {
@@ -183,9 +267,9 @@ func matches(want any, got value) bool {
 		}
 		return w != nil && w.Cmp(g) == 0
 	case kindTime:
-		w, err := time.Parse(time.RFC3339Nano, ws)
+		w, ok := parseExpectedTime(ws)
 		g, _ := time.Parse(time.RFC3339Nano, got.text)
-		if err != nil {
+		if !ok {
 			return ws == got.text
 		}
 		return w.Equal(g)

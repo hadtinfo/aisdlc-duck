@@ -159,6 +159,7 @@ func status(ctx *Context, fo *FeatureOption, asJSON bool) (int, error) {
 			suffix = " (chưa `aisdlc web login`)"
 		}
 		ctx.Println("Duyệt: trên web" + suffix)
+		ctx.Println(statusWebPhase4Line)
 	}
 	on := "tắt"
 	if sa.Enabled {

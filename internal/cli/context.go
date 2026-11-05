@@ -41,6 +41,10 @@ func asAbort(err error, a **Abort) bool { return errors.As(err, a) }
 // WebPhase4Msg là thông báo khi lệnh cần gọi web ở chế độ duyệt trên web (bản Go chưa có web client).
 const WebPhase4Msg = "Chế độ duyệt trên web chưa có trong bản Go (giai đoạn 4)."
 
+// statusWebPhase4Line: dòng `aisdlc status` in ở chế độ duyệt trên web.
+const statusWebPhase4Line = "Bản Go này chưa nộp/duyệt được trên web (giai đoạn 4): submit, approve, reject, reopen," +
+	" risk set/reclassify sẽ dừng; trạng thái chỉ đọc từ cache đã ký."
+
 const (
 	noConsoleMsg = "Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). " +
 		"Agent không được chạy lệnh này."

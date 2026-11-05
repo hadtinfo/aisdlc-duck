@@ -95,8 +95,10 @@ func (r *Repo) snapshot(ctx context.Context, excludeDir string) (string, error) 
 	return strings.TrimSpace(out), err
 }
 
-// atomicTempExclude loại file tạm của fsx.WriteAtomic (".<base>.tmp-*") khỏi snapshot.
-const atomicTempExclude = ":(exclude,glob)**/.*.tmp-*"
+// atomicTempExclude loại file tạm của fsx.WriteAtomic khỏi snapshot. os.CreateTemp với mẫu
+// ".<base>.tmp-*" thay "*" bằng một dãy chữ số, nên chỉ loại tên ".<base>.tmp-<số>…";
+// file người dùng như ".notes.tmp-draft" vẫn vào snapshot.
+const atomicTempExclude = ":(exclude,glob)**/.*.tmp-[0-9]*"
 
 // addAll chạy "git add -A" bỏ file tạm atomic. Nếu file tạm vẫn biến mất giữa lúc git quét thì thử lại
 // tối đa 5 lần; lỗi khác trả ngay.

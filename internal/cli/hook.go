@@ -63,7 +63,9 @@ func newHookCmd(ctx *Context) *cobra.Command {
 	}
 	event := func(use, short string, aliases []string, run func(h *hook) int) *cobra.Command {
 		return &cobra.Command{Use: use, Short: short, Aliases: aliases, Args: cobra.NoArgs,
-			RunE: Wrap(ctx, func(*cobra.Command, []string) (int, error) { return run(&hook{ctx: ctx}), nil })}
+			RunE: Wrap(ctx, func(*cobra.Command, []string) (int, error) {
+				return runHookEvent(ctx, use == "pre-tool-use", run), nil
+			})}
 	}
 	cmd.AddCommand(
 		event("pre-tool-use", "Hook PreToolUse: chặn ghi sai quy trình.", []string{"pre-tool-use-read"},
@@ -76,6 +78,23 @@ func newHookCmd(ctx *Context) *cobra.Command {
 			(*hook).silent),
 	)
 	return cmd
+}
+
+// runHookEvent chạy một sự kiện hook và chặn panic lọt khỏi phần recover riêng của sự kiện: PreToolUse vẫn đóng
+// (in "Lỗi: …" và exit 2, Claude Code chặn tool), sự kiện khác im lặng exit 0 (không chặn được dừng hay mở
+// session thì thôi).
+func runHookEvent(ctx *Context, preToolUse bool, run func(h *hook) int) (code int) {
+	defer func() {
+		if p := recover(); p != nil {
+			if preToolUse {
+				fmt.Fprintf(ctx.err, "Lỗi: %v\n", p)
+				code = ExitUsage
+				return
+			}
+			code = ExitOK
+		}
+	}()
+	return run(&hook{ctx: ctx})
 }
 
 func (h *hook) read() *hookInput {

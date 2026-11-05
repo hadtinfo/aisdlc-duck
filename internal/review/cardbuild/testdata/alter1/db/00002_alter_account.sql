@@ -1,0 +1,4 @@
+ALTER TABLE account ADD COLUMN status VARCHAR(10) NOT NULL;
+ALTER TABLE account ADD COLUMN status VARCHAR(10);
+ALTER TABLE account ADD COLUMN note TEXT;
+ALTER TABLE account ADD COLUMN customer_id INT REFERENCES customer(id);

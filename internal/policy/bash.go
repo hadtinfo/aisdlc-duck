@@ -184,6 +184,10 @@ type shellDir struct {
 	known bool
 }
 
+// shellReserved: từ khóa shell có thể đứng trước tên lệnh trong một đoạn ({ cd x; }, if ..; then cd x, ! cd x).
+var shellReserved = map[string]bool{"{": true, "}": true, "!": true, "time": true, "then": true, "do": true,
+	"else": true, "elif": true, "if": true, "while": true, "until": true, "builtin": true, "command": true}
+
 // writes duyệt lệnh theo từng đoạn (tách theo &&, ||, ;, |, &, xuống dòng và subshell), theo dõi cd/pushd/popd,
 // và trả đường dẫn đã chuẩn hóa của file được bảo vệ mà một đoạn có vẻ ghi vào.
 func (m *pathMatcher) writes(command, cwd string) (string, bool) {
@@ -195,16 +199,38 @@ func (m *pathMatcher) writes(command, cwd string) (string, bool) {
 			cur.cwd = filepath.Join(m.roots[0], cwd)
 		}
 	}
+	return m.writesFrom(command, cur)
+}
+
+// writesFrom: như writes, bắt đầu từ thư mục cur. Thư mục thành không xác định cho mọi đoạn sau (kể cả sau
+// subshell) khi gặp cd/pushd/popd không theo dõi chắc được: không đứng đầu đoạn ("echo cd x"), chạy có điều
+// kiện hoặc lặp (sau &&, ||, then, else, do...), hoặc trong pipeline/nền (|, &: chạy ở subshell). Thân heredoc
+// được xét như một lệnh riêng với thư mục không xác định (bash <<EOF có thể chạy nó).
+func (m *pathMatcher) writesFrom(command string, cur shellDir) (string, bool) {
 	var dirStack, subStack []shellDir
 	hit, found := "", false
+	lost := false // đã gặp cd không theo dõi được
+	prevSep := "" // toán tử đứng trước đoạn hiện tại
 	var words []shellWord
 	splitShell(command, &words,
-		func() { // hết một đoạn
-			if !found {
+		func(sep string) { // hết một đoạn
+			if !found && len(words) > 0 {
+				if lost {
+					cur = shellDir{}
+				}
 				if p, ok := m.segmentWrites(words, cur); ok {
 					hit, found = p, true
 				}
-				cur, dirStack = changeDir(words, cur, dirStack)
+				_, cond := commandWords(words)
+				cond = cond || prevSep == "&&" || prevSep == "||" || prevSep == "|" || sep == "|" || sep == "&"
+				var applied bool
+				cur, dirStack, applied = changeDir(words, cur, dirStack)
+				if mentionsCd(words) && (!applied || cond) {
+					lost = true
+				}
+			}
+			if len(words) > 0 {
+				prevSep = sep
 			}
 			words = words[:0]
 		},
@@ -213,8 +239,27 @@ func (m *pathMatcher) writes(command, cwd string) (string, bool) {
 			if n := len(subStack); n > 0 {
 				cur, subStack = subStack[n-1], subStack[:n-1]
 			}
+			if lost {
+				cur = shellDir{}
+			}
+		},
+		func(body string) {
+			if !found {
+				if p, ok := m.writesFrom(body, shellDir{}); ok {
+					hit, found = p, true
+				}
+			}
 		})
 	return hit, found
+}
+
+func mentionsCd(words []shellWord) bool {
+	for _, w := range words {
+		if !w.redirect && (w.text == "cd" || w.text == "pushd" || w.text == "popd") {
+			return true
+		}
+	}
+	return false
 }
 
 // segmentWrites: đích chuyển hướng ghi luôn được xét; các từ khác chỉ xét khi đoạn có động từ ghi (bashWrite).
@@ -235,7 +280,7 @@ func (m *pathMatcher) segmentWrites(words []shellWord, d shellDir) (string, bool
 		switch {
 		case w.redirect:
 			cands = []string{w.text}
-		case !cmdSeen && !assignHead.MatchString(w.text):
+		case !cmdSeen && !assignHead.MatchString(w.text) && !shellReserved[w.text]:
 			cmdSeen = true // tên lệnh, không phải đích ghi
 			continue
 		case !strings.HasPrefix(w.text, "-"):
@@ -287,32 +332,43 @@ func (m *pathMatcher) wordWrites(word string, d shellDir, redirect bool) (string
 	return "", false
 }
 
-// changeDir áp dụng cd/pushd/popd của một đoạn lệnh lên thư mục hiện tại.
-func changeDir(words []shellWord, d shellDir, stack []shellDir) (shellDir, []shellDir) {
-	var args []string
+// commandWords: các từ (không tính đích chuyển hướng) sau khi bỏ phép gán A=b và từ khóa shell đứng đầu; cond
+// là true nếu một từ khóa đứng đầu làm lệnh chạy có điều kiện hoặc lặp (then, else, elif, do, while, until).
+func commandWords(words []shellWord) (args []string, cond bool) {
 	for _, w := range words {
 		if !w.redirect {
 			args = append(args, w.text)
 		}
 	}
-	for len(args) > 0 && (assignHead.MatchString(args[0]) || args[0] == "builtin" || args[0] == "command") {
+	for len(args) > 0 && (assignHead.MatchString(args[0]) || shellReserved[args[0]]) {
+		switch args[0] {
+		case "then", "else", "elif", "do", "while", "until":
+			cond = true
+		}
 		args = args[1:]
 	}
+	return args, cond
+}
+
+// changeDir áp dụng cd/pushd/popd của một đoạn lệnh lên thư mục hiện tại. applied=false nếu đoạn không bắt
+// đầu (sau từ khóa shell) bằng cd/pushd/popd.
+func changeDir(words []shellWord, d shellDir, stack []shellDir) (shellDir, []shellDir, bool) {
+	args, _ := commandWords(words)
 	if len(args) == 0 {
-		return d, stack
+		return d, stack, false
 	}
 	cmd := args[0]
 	switch cmd {
 	case "popd":
 		if n := len(stack); n > 0 {
-			return stack[n-1], stack[:n-1]
+			return stack[n-1], stack[:n-1], true
 		}
-		return shellDir{}, stack
+		return shellDir{}, stack, true
 	case "pushd":
 		stack = append(stack, d)
 	case "cd":
 	default:
-		return d, stack
+		return d, stack, false
 	}
 	dir, has := "", false
 	for i := 1; i < len(args); i++ {
@@ -332,28 +388,38 @@ func changeDir(words []shellWord, d shellDir, stack []shellDir) (shellDir, []she
 	// không đối số (HOME; pushd đảo ngăn xếp), có $ hoặc `, ~, - (OLDPWD), +N: không xác định
 	if !has || dir == "" || strings.ContainsAny(dir, "$`") || strings.HasPrefix(dir, "~") || dir == "-" ||
 		cmd == "pushd" && strings.HasPrefix(dir, "+") {
-		return shellDir{}, stack
+		return shellDir{}, stack, true
 	}
 	if filepath.IsAbs(dir) {
-		return shellDir{cwd: filepath.Clean(dir), known: true}, stack
+		return shellDir{cwd: filepath.Clean(dir), known: true}, stack, true
 	}
 	if !d.known {
-		return d, stack
+		return d, stack, true
 	}
-	return shellDir{cwd: filepath.Join(d.cwd, dir), known: true}, stack
+	return shellDir{cwd: filepath.Join(d.cwd, dir), known: true}, stack, true
 }
 
-// splitShell tách lệnh thành từ (bỏ nháy '..', "..", \x) và đoạn. end() được gọi ở cuối mỗi đoạn; open() và
-// close() khi vào/ra subshell (( ), $( ), ` `), kể cả $( ) và ` ` trong nháy kép. Đây là heuristic, không phải
-// parser shell đầy đủ (không hiểu heredoc, ${..}, comment): sai lệch chỉ làm chặn thừa hoặc rơi về phép so
-// chuỗi con của bản Java.
-func splitShell(command string, words *[]shellWord, end, open, close func()) {
+// heredocSpec: một heredoc đang chờ thân (<<DELIM hoặc <<-DELIM, bỏ tab đầu dòng).
+type heredocSpec struct {
+	delim string
+	strip bool
+}
+
+// splitShell tách lệnh thành từ (bỏ nháy '..', "..", $'..', $"..", \x) và đoạn. end(sep) được gọi ở cuối mỗi
+// đoạn với toán tử kết thúc nó (";", "\n", "&&", "||", "|", "&", "(", ")", "`", "$(" hoặc "" ở cuối lệnh);
+// open() và close() khi vào/ra subshell (( ), $( ), ` `), kể cả $( ) và ` ` trong nháy kép. Comment (# ở đầu
+// từ, ngoài nháy) bị bỏ tới hết dòng. Thân heredoc (<<DELIM) không được tách cùng lệnh mà chuyển cho
+// heredoc(body). Đây là heuristic, không phải parser shell đầy đủ (không hiểu ${..}, case..esac, $((..)), mảng):
+// khi cách tách lệch với shell, kết quả có thể lệch theo cả hai chiều; phép so chuỗi con của bản Java vẫn chạy
+// độc lập.
+func splitShell(command string, words *[]shellWord, end func(sep string), open, close func(), heredoc func(body string)) {
 	rs := []rune(command)
 	var cur strings.Builder
 	inWord := false
 	redirectNext := false // từ kế tiếp là đích chuyển hướng ghi
 	dupNext := false      // từ kế tiếp đứng sau >& hoặc <&: số fd thì bỏ
 	var ctx []rune        // ngữ cảnh lồng nhau: 'p' subshell ngoặc, 'b' backtick, 'd' nháy kép
+	var pending []heredocSpec
 	top := func() rune {
 		if len(ctx) == 0 {
 			return 0
@@ -372,16 +438,110 @@ func splitShell(command string, words *[]shellWord, end, open, close func()) {
 		cur.Reset()
 		inWord = false
 	}
-	endSeg := func() {
+	endSeg := func(sep string) {
 		flush()
 		redirectNext, dupNext = false, false
-		end()
+		end(sep)
 	}
 	fdWord := func() { // N> hoặc N<: từ đang có toàn chữ số là fd, không phải tên file
 		if inWord && digits.MatchString(cur.String()) {
 			cur.Reset()
 			inWord = false
 		}
+	}
+	// readDelim đọc từ phân cách của heredoc bắt đầu ở j (bỏ nháy và \), trả vị trí sau nó.
+	readDelim := func(j int) (string, int) {
+		for j < len(rs) && (rs[j] == ' ' || rs[j] == '\t') {
+			j++
+		}
+		var b strings.Builder
+		for j < len(rs) && !strings.ContainsRune(" \t\r\n;|&<>()", rs[j]) {
+			switch c := rs[j]; c {
+			case '\'', '"':
+				k := j + 1
+				for k < len(rs) && rs[k] != c {
+					b.WriteRune(rs[k])
+					k++
+				}
+				j = k + 1
+			case '\\':
+				if j+1 < len(rs) {
+					b.WriteRune(rs[j+1])
+				}
+				j += 2
+			default:
+				b.WriteRune(c)
+				j++
+			}
+		}
+		return b.String(), j
+	}
+	// readBodies đọc thân các heredoc đang chờ, bắt đầu ở j (đầu dòng); trả vị trí sau dòng phân cách cuối.
+	readBodies := func(j int) int {
+		for _, h := range pending {
+			var body strings.Builder
+			for j < len(rs) {
+				k := j
+				for k < len(rs) && rs[k] != '\n' {
+					k++
+				}
+				line := string(rs[j:k])
+				j = k + 1
+				cmp := line
+				if h.strip {
+					cmp = strings.TrimLeft(cmp, "\t")
+				}
+				if strings.TrimSuffix(cmp, "\r") == h.delim {
+					break
+				}
+				body.WriteString(line)
+				body.WriteByte('\n')
+			}
+			heredoc(body.String())
+		}
+		pending = pending[:0]
+		return j
+	}
+	// ansiC đọc $'..' bắt đầu sau dấu ' ở j, xử lý escape; trả vị trí của dấu ' đóng.
+	ansiC := func(j int) int {
+		for j < len(rs) && rs[j] != '\'' {
+			if rs[j] != '\\' || j+1 >= len(rs) {
+				cur.WriteRune(rs[j])
+				j++
+				continue
+			}
+			j++
+			switch c := rs[j]; c {
+			case 'n':
+				cur.WriteByte('\n')
+			case 't':
+				cur.WriteByte('\t')
+			case 'r':
+				cur.WriteByte('\r')
+			case 'x':
+				v, k := 0, j+1
+				for ; k < len(rs) && k < j+3 && isHex(rs[k]); k++ {
+					v = v*16 + hexVal(rs[k])
+				}
+				if k == j+1 {
+					cur.WriteString(`\x`)
+				} else {
+					cur.WriteRune(rune(v))
+					j = k - 1
+				}
+			case '0', '1', '2', '3', '4', '5', '6', '7':
+				v, k := 0, j
+				for ; k < len(rs) && k < j+3 && rs[k] >= '0' && rs[k] <= '7'; k++ {
+					v = v*8 + int(rs[k]-'0')
+				}
+				cur.WriteRune(rune(v))
+				j = k - 1
+			default: // \' \\ \" và còn lại: giữ ký tự
+				cur.WriteRune(c)
+			}
+			j++
+		}
+		return j
 	}
 	for i := 0; i < len(rs); i++ {
 		ch := rs[i]
@@ -398,12 +558,12 @@ func splitShell(command string, words *[]shellWord, end, open, close func()) {
 				cur.WriteRune(rs[i])
 			case ch == '$' && next == '(':
 				i++
-				endSeg()
+				endSeg("$(")
 				ctx = append(ctx, 'p')
 				open()
 				continue
 			case ch == '`':
-				endSeg()
+				endSeg("`")
 				ctx = append(ctx, 'b')
 				open()
 				continue
@@ -414,6 +574,10 @@ func splitShell(command string, words *[]shellWord, end, open, close func()) {
 			continue
 		}
 		switch {
+		case ch == '#' && !inWord: // comment tới hết dòng (không ăn dấu xuống dòng)
+			for i+1 < len(rs) && rs[i+1] != '\n' {
+				i++
+			}
 		case ch == '\\':
 			if next == '\n' {
 				i++
@@ -422,6 +586,13 @@ func splitShell(command string, words *[]shellWord, end, open, close func()) {
 				cur.WriteRune(rs[i])
 				inWord = true
 			}
+		case ch == '$' && next == '\'':
+			i = ansiC(i + 2)
+			inWord = true
+		case ch == '$' && next == '"':
+			i++
+			ctx = append(ctx, 'd')
+			inWord = true
 		case ch == '\'':
 			j := i + 1
 			for j < len(rs) && rs[j] != '\'' {
@@ -435,21 +606,21 @@ func splitShell(command string, words *[]shellWord, end, open, close func()) {
 			inWord = true
 		case ch == '$' && next == '(':
 			i++
-			endSeg()
+			endSeg("$(")
 			ctx = append(ctx, 'p')
 			open()
 		case ch == '(':
-			endSeg()
+			endSeg("(")
 			ctx = append(ctx, 'p')
 			open()
 		case ch == ')':
-			endSeg()
+			endSeg(")")
 			if top() == 'p' {
 				ctx = ctx[:len(ctx)-1]
 				close()
 			}
 		case ch == '`':
-			endSeg()
+			endSeg("`")
 			if top() == 'b' {
 				ctx = ctx[:len(ctx)-1]
 				close()
@@ -474,20 +645,44 @@ func splitShell(command string, words *[]shellWord, end, open, close func()) {
 		case ch == '<':
 			fdWord()
 			flush()
-			switch next {
-			case '>': // <> mở đọc-ghi
+			switch {
+			case next == '>': // <> mở đọc-ghi
 				i++
 				redirectNext = true
-			case '&':
+			case next == '&':
 				i++
 				dupNext = true
-			default:
-				for i+1 < len(rs) && rs[i+1] == '<' {
+			case next == '<' && i+2 < len(rs) && rs[i+2] == '<': // <<< chuỗi: từ kế tiếp là dữ liệu
+				i += 2
+			case next == '<': // heredoc
+				i++
+				h := heredocSpec{}
+				if i+1 < len(rs) && rs[i+1] == '-' {
+					h.strip = true
 					i++
 				}
+				var j int
+				h.delim, j = readDelim(i + 1)
+				pending = append(pending, h)
+				i = j - 1
 			}
-		case ch == ';' || ch == '|' || ch == '&' || ch == '\n':
-			endSeg()
+		case ch == '\n':
+			endSeg("\n")
+			if len(pending) > 0 {
+				i = readBodies(i+1) - 1
+			}
+		case ch == ';':
+			endSeg(";")
+		case ch == '&' || ch == '|':
+			sep := string(ch)
+			if next == ch || ch == '|' && next == '&' { // && || |&
+				sep += string(next)
+				i++
+			}
+			if sep == "|&" {
+				sep = "|"
+			}
+			endSeg(sep)
 		case ch == ' ' || ch == '\t' || ch == '\r':
 			flush()
 		default:
@@ -495,5 +690,22 @@ func splitShell(command string, words *[]shellWord, end, open, close func()) {
 			inWord = true
 		}
 	}
-	endSeg()
+	endSeg("")
+	if len(pending) > 0 { // heredoc không có dòng thân
+		readBodies(len(rs))
+	}
+}
+
+func isHex(r rune) bool {
+	return r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'
+}
+
+func hexVal(r rune) int {
+	switch {
+	case r >= 'a':
+		return int(r-'a') + 10
+	case r >= 'A':
+		return int(r-'A') + 10
+	}
+	return int(r - '0')
 }

@@ -82,7 +82,7 @@ func (r *Repo) snapshot(ctx context.Context, excludeDir string) (string, error) 
 			return "", err
 		}
 	}
-	if _, err := r.run(ctx, extra, "add", "-A"); err != nil {
+	if err := r.addAll(ctx, extra); err != nil {
 		return "", err
 	}
 	if excludeDir != "" {
@@ -92,6 +92,25 @@ func (r *Repo) snapshot(ctx context.Context, excludeDir string) (string, error) 
 	}
 	out, err := r.run(ctx, extra, "write-tree")
 	return strings.TrimSpace(out), err
+}
+
+// atomicTempExclude loại file tạm của fsx.WriteAtomic (".<base>.tmp-*") khỏi snapshot.
+const atomicTempExclude = ":(exclude,glob)**/.*.tmp-*"
+
+// addAll chạy "git add -A" bỏ file tạm atomic. Nếu file tạm vẫn biến mất giữa lúc git quét thì thử lại
+// tối đa 5 lần; lỗi khác trả ngay.
+func (r *Repo) addAll(ctx context.Context, extra []string) error {
+	var err error
+	for i := 0; i < 5; i++ {
+		if _, err = r.run(ctx, extra, "add", "-A", "--", ".", atomicTempExclude); err == nil {
+			return nil
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "unable to stat") && !strings.Contains(msg, "No such file or directory") {
+			return err
+		}
+	}
+	return err
 }
 
 // Patch trả unified diff đầy đủ giữa hai tree.

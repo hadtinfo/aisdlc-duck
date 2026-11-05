@@ -50,8 +50,9 @@ func (Runtime) Build(ctx context.Context, repoRoot string, svc model.ServiceConf
 		return lang.BuildResult{}, err
 	}
 	bin := filepath.Join(absOut, "svc")
-	args := []string{"build", "-cover", "-covermode=atomic", "-coverpkg=" + mod + "/...", "-o", bin, svc.Main}
-	args = append(args, svc.BuildFlags...)
+	args := []string{"build", "-cover", "-covermode=atomic", "-coverpkg=" + mod + "/..."}
+	args = append(args, svc.BuildFlags...) // cờ phải đứng trước package
+	args = append(args, "-o", bin, svc.Main)
 	cmd := exec.CommandContext(ctx, goBin, args...)
 	cmd.Dir = repoRoot
 	var out bytes.Buffer

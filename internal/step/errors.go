@@ -7,3 +7,12 @@ type Error struct{ Msg string }
 func (e *Error) Error() string { return e.Msg }
 
 func errf(msg string) error { return &Error{Msg: msg} }
+
+// corruptError có Error() đúng nguyên văn như Java; Unwrap trả nguyên nhân (lỗi parse JSON).
+type corruptError struct {
+	msg   string
+	cause error
+}
+
+func (e *corruptError) Error() string { return e.msg }
+func (e *corruptError) Unwrap() error { return e.cause }

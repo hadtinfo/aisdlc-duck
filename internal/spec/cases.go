@@ -51,11 +51,22 @@ type When struct {
 
 // UnmarshalYAML đặt Repeat và Parallel nhỏ hơn hoặc bằng 0 thành 1.
 func (w *When) UnmarshalYAML(n *yaml.Node) error {
-	type plain When
-	var p plain
-	if err := n.Decode(&p); err != nil {
+	var raw struct {
+		Method   string            `yaml:"method"`
+		Path     string            `yaml:"path"`
+		Headers  map[string]string `yaml:"headers"`
+		Body     yaml.Node         `yaml:"body"`
+		Repeat   int               `yaml:"repeat"`
+		Parallel int               `yaml:"parallel"`
+	}
+	if err := n.Decode(&raw); err != nil {
 		return err
 	}
+	body, err := yamlx.JSONValue(&raw.Body)
+	if err != nil {
+		return err
+	}
+	p := When{raw.Method, raw.Path, raw.Headers, body, raw.Repeat, raw.Parallel}
 	if p.Repeat <= 0 {
 		p.Repeat = 1
 	}
@@ -72,10 +83,76 @@ type DbExpect struct {
 	Rows  []map[string]any `yaml:"rows"`
 }
 
+// UnmarshalYAML giữ rows ở dạng JSON-compatible (ngày giữ nguyên chuỗi).
+func (d *DbExpect) UnmarshalYAML(n *yaml.Node) error {
+	var raw struct {
+		Query string    `yaml:"query"`
+		Rows  yaml.Node `yaml:"rows"`
+	}
+	if err := n.Decode(&raw); err != nil {
+		return err
+	}
+	rows, err := jsonRows(&raw.Rows)
+	if err != nil {
+		return err
+	}
+	*d = DbExpect{Query: raw.Query, Rows: rows}
+	return nil
+}
+
+func jsonRows(n *yaml.Node) ([]map[string]any, error) {
+	v, err := yamlx.JSONValue(n)
+	if err != nil || v == nil {
+		return nil, err
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("dòng %d: rows phải là danh sách", n.Line)
+	}
+	out := make([]map[string]any, 0, len(list))
+	for _, e := range list {
+		m, ok := e.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("dòng %d: mỗi phần tử của rows phải là mapping", n.Line)
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+func jsonMap(n *yaml.Node) (map[string]any, error) {
+	v, err := yamlx.JSONValue(n)
+	if err != nil || v == nil {
+		return nil, err
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("dòng %d: giá trị phải là mapping", n.Line)
+	}
+	return m, nil
+}
+
 // MessageExpect là kỳ vọng message.
 type MessageExpect struct {
 	Topic string `yaml:"topic"`
 	Value any    `yaml:"value"`
+}
+
+// UnmarshalYAML giữ value ở dạng JSON-compatible.
+func (m *MessageExpect) UnmarshalYAML(n *yaml.Node) error {
+	var raw struct {
+		Topic string    `yaml:"topic"`
+		Value yaml.Node `yaml:"value"`
+	}
+	if err := n.Decode(&raw); err != nil {
+		return err
+	}
+	v, err := yamlx.JSONValue(&raw.Value)
+	if err != nil {
+		return err
+	}
+	*m = MessageExpect{Topic: raw.Topic, Value: v}
+	return nil
 }
 
 // Then là kỳ vọng của case. Status = 0 nghĩa là không khai báo.
@@ -85,6 +162,26 @@ type Then struct {
 	DB           []DbExpect      `yaml:"db"`
 	Messages     []MessageExpect `yaml:"messages"`
 	StatusCounts map[int]int     `yaml:"statusCounts"`
+}
+
+// UnmarshalYAML giữ body ở dạng JSON-compatible.
+func (t *Then) UnmarshalYAML(n *yaml.Node) error {
+	var raw struct {
+		Status       int             `yaml:"status"`
+		Body         yaml.Node       `yaml:"body"`
+		DB           []DbExpect      `yaml:"db"`
+		Messages     []MessageExpect `yaml:"messages"`
+		StatusCounts map[int]int     `yaml:"statusCounts"`
+	}
+	if err := n.Decode(&raw); err != nil {
+		return err
+	}
+	body, err := yamlx.JSONValue(&raw.Body)
+	if err != nil {
+		return err
+	}
+	*t = Then{raw.Status, body, raw.DB, raw.Messages, raw.StatusCounts}
+	return nil
 }
 
 // CaseSpec là một case.
@@ -116,6 +213,28 @@ type StubSpec struct {
 	ID       string         `yaml:"id"`
 	Request  map[string]any `yaml:"request"`
 	Response map[string]any `yaml:"response"`
+}
+
+// UnmarshalYAML giữ request/response ở dạng JSON-compatible.
+func (s *StubSpec) UnmarshalYAML(n *yaml.Node) error {
+	var raw struct {
+		ID       string    `yaml:"id"`
+		Request  yaml.Node `yaml:"request"`
+		Response yaml.Node `yaml:"response"`
+	}
+	if err := n.Decode(&raw); err != nil {
+		return err
+	}
+	req, err := jsonMap(&raw.Request)
+	if err != nil {
+		return err
+	}
+	resp, err := jsonMap(&raw.Response)
+	if err != nil {
+		return err
+	}
+	*s = StubSpec{ID: raw.ID, Request: req, Response: resp}
+	return nil
 }
 
 // CasesSpec là nội dung cases.yaml. Scope, Budget, Impact, Invariants chỉ dùng cho luồng LITE.

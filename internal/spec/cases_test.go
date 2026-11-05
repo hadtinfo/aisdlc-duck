@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -100,5 +101,54 @@ func TestStatusCountsIntKeys(t *testing.T) {
 	c := parseCases(t, "cases:\n  - id: C1\n    then: {statusCounts: {200: 1, 409: 4}}\n")
 	if got := c.Cases[0].Then.StatusCounts; !reflect.DeepEqual(got, map[int]int{200: 1, 409: 4}) {
 		t.Errorf("got %v", got)
+	}
+}
+
+func TestUntypedValuesStayJSONCompatible(t *testing.T) {
+	c := parseCases(t, `
+stubs:
+  - id: s1
+    request: {method: GET, url: /x, 7: seven}
+    response:
+      status: 200
+      jsonBody: {when: 2026-11-05, 1: one}
+cases:
+  - id: C1
+    when:
+      method: POST
+      path: /x
+      body: {date: 2026-11-05, at: 2026-11-05T10:00:00Z, 5: five}
+    then:
+      status: 200
+      body: {day: 2026-11-05}
+      db:
+        - query: select 1
+          rows:
+            - {d: 2026-11-05, n: 3}
+      messages:
+        - topic: t
+          value: {ts: 2026-11-05T10:00:00Z}
+`)
+	cs := c.Cases[0]
+	if got := cs.Then.DB[0].Rows[0]["d"]; got != "2026-11-05" {
+		t.Errorf("rows date = %#v", got)
+	}
+	if got := cs.When.Body.(map[string]any)["date"]; got != "2026-11-05" {
+		t.Errorf("when.body date = %#v", got)
+	}
+	if got := cs.When.Body.(map[string]any)["5"]; got != "five" {
+		t.Errorf("when.body int key = %#v", got)
+	}
+	if cs.When.Repeat != 1 || cs.Then.Status != 200 {
+		t.Errorf("when/then = %+v %+v", cs.When, cs.Then)
+	}
+	if got := c.Stubs[0].Response["jsonBody"].(map[string]any)["when"]; got != "2026-11-05" {
+		t.Errorf("stub jsonBody = %#v", got)
+	}
+	if got := c.Stubs[0].Request["7"]; got != "seven" {
+		t.Errorf("stub request int key = %#v", got)
+	}
+	if _, err := json.Marshal(c); err != nil {
+		t.Errorf("marshal: %v", err)
 	}
 }

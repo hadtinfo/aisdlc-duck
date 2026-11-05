@@ -192,3 +192,30 @@ func TestStubNestedUnsupported(t *testing.T) {
 		t.Fatalf("%v", f)
 	}
 }
+
+func TestStubWrongShapeMessage(t *testing.T) {
+	cases := []struct{ stub, want string }{
+		{"  - id: st\n    request: {queryParameters: [a]}\n",
+			`Stub st: "request.queryParameters" sai cấu trúc (map tên → matcher, mỗi matcher đúng một khóa trong equalTo, matches).`},
+		{"  - id: st\n    request: {bodyPatterns: {contains: a}}\n",
+			`Stub st: "request.bodyPatterns" sai cấu trúc (danh sách, mỗi phần tử đúng một khóa trong equalToJson, contains).`},
+		{"  - id: st\n    request: {headers: {H: {}}}\n",
+			`Stub st: "request.headers.H" sai cấu trúc (đúng một khóa trong equalTo, matches).`},
+		{"  - id: st\n    request: {headers: {H: x}}\n",
+			`Stub st: "request.headers.H" sai cấu trúc (đúng một khóa trong equalTo, matches).`},
+		// hai khóa đều được hỗ trợ: sai cấu trúc, không phải khóa lạ
+		{"  - id: st\n    request: {queryParameters: {q: {equalTo: a, matches: b}}}\n",
+			`Stub st: "request.queryParameters.q" sai cấu trúc (đúng một khóa trong equalTo, matches).`},
+	}
+	for _, c := range cases {
+		f := stubCases(t, c.stub)
+		if len(f) != 1 || f[0].Code != "CASES_STUB_UNSUPPORTED" || f[0].Message != c.want {
+			t.Errorf("%q: got %v want %s", c.stub, f, c.want)
+		}
+	}
+	// khóa lạ thật sự giữ câu cũ
+	f := stubCases(t, "  - id: st\n    request: {cookies: x}\n")
+	if len(f) != 1 || !strings.HasPrefix(f[0].Message, `Stub st: khóa "request.cookies" không được hỗ trợ (chỉ hỗ trợ `) {
+		t.Errorf("%v", f)
+	}
+}

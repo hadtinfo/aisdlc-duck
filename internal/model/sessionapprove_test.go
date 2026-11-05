@@ -90,3 +90,14 @@ func TestSessionApproveBrokenYamlAtBaseIsOff(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+func TestSessionApproveWrongTypedValueAtBaseIsOff(t *testing.T) {
+	dir, repo := saRepo(t)
+	writeCfg(t, dir, "sessionApprove: true\ntimeoutMinutes: abc\n")
+	saCommit(t, dir)
+	w := mustParse(t, "baseRef: main\n")
+	s := ReadSessionApprove(context.Background(), repo, w)
+	if s.Enabled || s.Reason != "không đọc được aisdlc/config.yaml ở main" {
+		t.Fatalf("%+v", s)
+	}
+}

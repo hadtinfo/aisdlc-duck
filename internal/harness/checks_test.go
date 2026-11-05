@@ -181,3 +181,14 @@ func TestLaterStepChecksSkipEarlierCases(t *testing.T) {
 		t.Errorf("S2: %+v", got)
 	}
 }
+
+func TestInvariantViolationPrintsNullForNil(t *testing.T) {
+	r := newRig(t)
+	q := "SELECT id, note FROM t"
+	r.db.violations = map[string][]map[string]any{q: {{"id": 2, "note": nil}}}
+	r.ex.Checks = []spec.Invariant{{Name: "n", SQL: q}}
+	got := r.ex.Execute(context.Background(), invCase("S1"))
+	if got.Message != "Bất biến 'n' vi phạm: [{id=2, note=null}]" {
+		t.Errorf("%+v", got)
+	}
+}

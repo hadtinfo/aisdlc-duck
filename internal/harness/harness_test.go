@@ -414,7 +414,7 @@ func (p *preInfra) Kafka(context.Context, string, []string, string) (string, fun
 	return "", nil, errors.New("không dùng Kafka")
 }
 
-// prebuiltRuntime trả bản build làm sẵn và ghi lại tiến trình đã khởi động.
+// prebuiltRuntime trả bản build làm sẵn (build rỗng: build thật) và ghi lại tiến trình đã khởi động.
 type prebuiltRuntime struct {
 	golang.Runtime
 	build   lang.BuildResult
@@ -423,7 +423,10 @@ type prebuiltRuntime struct {
 	procs   []lang.Process
 }
 
-func (p *prebuiltRuntime) Build(context.Context, string, model.ServiceConfig, string) (lang.BuildResult, error) {
+func (p *prebuiltRuntime) Build(ctx context.Context, root string, svc model.ServiceConfig, out string) (lang.BuildResult, error) {
+	if p.build.Binary == "" {
+		return p.Runtime.Build(ctx, root, svc, out)
+	}
 	return p.build, nil
 }
 
@@ -484,6 +487,7 @@ func runStuckCase(t *testing.T, minutes float64, cancelAfter time.Duration) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = stop(context.Background()) }) // Run lỗi sớm vẫn không để sót container
 	infra := &preInfra{url: pg.URL, stop: stop}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -636,6 +640,9 @@ func TestVerifyBuildFailure(t *testing.T) {
 	}
 	allErrorWith(t, vr.Run.Cases, demo1, "build lỗi")
 	allErrorWith(t, readResultsFile(t, out).Cases, demo1, "build lỗi")
+	if vr.HarnessErr != "" || vr.Run.ExitCode != 2 {
+		t.Errorf("build hỏng không phải lỗi harness: HarnessErr=%q exit=%d", vr.HarnessErr, vr.Run.ExitCode)
+	}
 	if !strings.Contains(readLog(t, out), "syntax error") {
 		t.Error("harness.log thiếu output build")
 	}
@@ -683,63 +690,43 @@ func TestVerifyAllGreen(t *testing.T) {
 	infra.requireCleaned(t)
 }
 
-// noProfileRuntime chạy unit test thật nhưng bỏ coverprofile.
-type noProfileRuntime struct{ golang.Runtime }
-
-func (n noProfileRuntime) UnitTests(ctx context.Context, root string, ut model.UnitTestConfig, out string) (lang.UnitResult, error) {
-	r, err := n.Runtime.UnitTests(ctx, root, ut, out)
-	r.Profile = ""
-	return r, err
-}
-
-// Review Focus 3: dịch vụ phớt lờ SIGTERM.
+// Review Focus 3: dịch vụ phớt lờ SIGTERM. Theo spec §3, coverage là N/A kể cả khi có unit profile; case vẫn giữ.
 func TestVerifyServiceIgnoresSigterm(t *testing.T) {
 	harnesstest.RequireDocker(t)
 	t.Parallel()
-	ignore := func(c *model.RepoConfig) {
+	h, infra := newSampleHarness(t, func(c *model.RepoConfig) {
 		c.Service.ExtraEnv = map[string]string{"SAMPLE_IGNORE_SIGTERM": "1"}
 		c.Service.ShutdownTimeoutSeconds = 1
-	}
-	check := func(t *testing.T, h *Harness, out string, vr VerifyResult) {
-		t.Helper()
-		if got := rows(vr.Run.Cases); !slices.Equal(got, []string{"C1/S1/PASSED", "C2/S1/PASSED", "C3/S1/PASSED", "C9/S1/FAILED"}) {
-			t.Errorf("cases = %v\nlog:\n%s", got, readLog(t, out))
-		}
-		if log := readLog(t, out); !strings.Contains(log, "không tắt êm") {
-			t.Errorf("harness.log thiếu thông điệp kill:\n%s", log)
-		}
-	}
-	t.Run("có unit profile: chỉ dùng unit profile", func(t *testing.T) {
-		t.Parallel()
-		h, infra := newSampleHarness(t, ignore)
-		out := outDir(t)
-		vr, err := h.Verify(context.Background(), "DEMO-1", out)
-		if err != nil {
-			t.Fatal(err)
-		}
-		check(t, h, out, vr)
-		if vr.Coverage.NA != "" || vr.Coverage.Lines == nil {
-			t.Fatalf("coverage = %+v", vr.Coverage)
-		}
-		line := insertLine(t, h.Root)
-		if hit, ok := vr.Coverage.Lines[transferGo][line]; !ok || hit {
-			t.Errorf("dòng INSERT chỉ được case phủ, coverage chỉ từ unit phải là false (ok=%v hit=%v)", ok, hit)
-		}
-		infra.requireCleaned(t)
 	})
-	t.Run("không có unit profile: N/A", func(t *testing.T) {
-		t.Parallel()
-		h, infra := newSampleHarness(t, ignore)
-		h.Runtime = noProfileRuntime{}
-		out := outDir(t)
-		vr, err := h.Verify(context.Background(), "DEMO-1", out)
-		if err != nil {
-			t.Fatal(err)
-		}
-		check(t, h, out, vr)
-		if !strings.Contains(vr.Coverage.NA, "không tắt êm") {
-			t.Errorf("coverage NA = %q", vr.Coverage.NA)
-		}
-		infra.requireCleaned(t)
-	})
+	rt := &prebuiltRuntime{} // build thật, ghi lại tiến trình
+	h.Runtime = rt
+	out := outDir(t)
+	vr, err := h.Verify(context.Background(), "DEMO-1", out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rows(vr.Run.Cases); !slices.Equal(got, []string{"C1/S1/PASSED", "C2/S1/PASSED", "C3/S1/PASSED", "C9/S1/FAILED"}) {
+		t.Errorf("cases = %v\nlog:\n%s", got, readLog(t, out))
+	}
+	if vr.Unit.Profile == "" {
+		t.Fatal("cần unit profile để kiểm coverage không lấy số chỉ từ unit test")
+	}
+	if !strings.Contains(vr.Coverage.NA, "không tắt êm") || vr.Coverage.Lines != nil {
+		t.Errorf("coverage = %+v", vr.Coverage)
+	}
+	if log := readLog(t, out); !strings.Contains(log, "không tắt êm") {
+		t.Errorf("harness.log thiếu thông điệp kill:\n%s", log)
+	}
+	if len(rt.procs) != 1 {
+		t.Fatalf("dịch vụ phải được khởi động một lần (%d)", len(rt.procs))
+	}
+	select {
+	case <-rt.procs[0].Done():
+	default:
+		t.Error("tiến trình dịch vụ còn chạy")
+	}
+	if pids := processesRunning(t, vr.Build.Binary); len(pids) > 0 {
+		t.Errorf("còn tiến trình dịch vụ: %v", pids)
+	}
+	infra.requireCleaned(t)
 }

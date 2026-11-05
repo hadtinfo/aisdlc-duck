@@ -95,6 +95,6 @@ func EffectiveSteps(flow model.Flow, design *DesignSpec, cases CasesSpec) []Step
 
 // Finding là một phát hiện của validator.
 type Finding struct {
-	Code    string
-	Message string
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }

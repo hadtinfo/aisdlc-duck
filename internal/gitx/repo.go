@@ -94,12 +94,17 @@ func (r *Repo) snapshot(ctx context.Context, excludeDir string) (string, error) 
 	return strings.TrimSpace(out), err
 }
 
-// Patch trả unified diff giữa hai tree. Nếu có paths thì chỉ gồm các đường dẫn
-// đó (khớp nguyên văn).
-func (r *Repo) Patch(ctx context.Context, from, to string, paths ...string) (string, error) {
+// Patch trả unified diff đầy đủ giữa hai tree.
+func (r *Repo) Patch(ctx context.Context, from, to string) (string, error) {
+	return r.run(ctx, nil, "-c", "core.quotepath=false", "diff", "-M", "--no-color", "--no-ext-diff",
+		"--src-prefix=a/", "--dst-prefix=b/", from, to)
+}
+
+// PatchPaths như Patch nhưng chỉ gồm các đường dẫn paths (khớp nguyên văn);
+// paths rỗng thì trả "" mà không gọi git.
+func (r *Repo) PatchPaths(ctx context.Context, from, to string, paths []string) (string, error) {
 	if len(paths) == 0 {
-		return r.run(ctx, nil, "-c", "core.quotepath=false", "diff", "-M", "--no-color", "--no-ext-diff",
-			"--src-prefix=a/", "--dst-prefix=b/", from, to)
+		return "", nil
 	}
 	args := []string{"--literal-pathspecs", "-c", "core.quotepath=false", "diff", "-M", "--no-color",
 		"--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", from, to, "--"}

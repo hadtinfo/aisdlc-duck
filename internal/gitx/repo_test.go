@@ -377,7 +377,7 @@ func TestPatchShowsUnifiedDiffBetweenTrees(t *testing.T) {
 		}
 	}
 	f.write("q.txt", "other\n")
-	p, err = f.repo.Patch(ctx, before, f.snap(), "p.txt")
+	p, err = f.repo.PatchPaths(ctx, before, f.snap(), []string{"p.txt"})
 	if err != nil || strings.Contains(p, "q.txt") || !strings.Contains(p, "p.txt") {
 		t.Fatalf("filtered patch: %q %v", p, err)
 	}
@@ -439,5 +439,25 @@ func TestListTreeRemoteURLCurrentBranch(t *testing.T) {
 	f.git("checkout", "-q", "--detach")
 	if _, ok, _ := f.repo.CurrentBranch(ctx); ok {
 		t.Fatal("detached should be absent")
+	}
+}
+
+func TestPatchPathsEmptyReturnsEmpty(t *testing.T) {
+	f := newFixture(t)
+	// ref không tồn tại: nếu có gọi git thì sẽ lỗi
+	p, err := f.repo.PatchPaths(ctx, "no-such-ref", "no-such-ref", nil)
+	if p != "" || err != nil {
+		t.Fatalf("got %q %v", p, err)
+	}
+}
+
+func TestPatchPathsLimitsOutputToListedPath(t *testing.T) {
+	f := newFixture(t)
+	before := f.snap()
+	f.write("a.txt", "1\n")
+	f.write("b.txt", "2\n")
+	p, err := f.repo.PatchPaths(ctx, before, f.snap(), []string{"b.txt"})
+	if err != nil || !strings.Contains(p, "b/b.txt") || strings.Contains(p, "a.txt") {
+		t.Fatalf("got %q %v", p, err)
 	}
 }

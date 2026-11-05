@@ -219,6 +219,17 @@ func TestBashHardeningEdgeCases(t *testing.T) {
 		"bash <<EOF\ncd aisdlc && echo x > config.yaml\nEOF",
 		"sh <<'X'\necho x > aisdlc/config.yaml\nX",
 		"env -i FOO=1 /bin/bash <<EOF\ncd aisdlc; rm config.yaml\nEOF",
+		// heredoc tới shell qua pipe, $( ), hoặc qua lệnh bọc
+		"cat <<EOF | bash\ncd aisdlc; rm config.yaml\nEOF",
+		"cat <<EOF | sh\ncd aisdlc; echo x > config.yaml\nEOF",
+		"bash -c \"$(cat <<EOF\ncd aisdlc; rm config.yaml\nEOF\n)\"",
+		"sudo bash <<EOF\ncd aisdlc; rm config.yaml\nEOF",
+		"exec bash <<EOF\ncd aisdlc; rm config.yaml\nEOF",
+		"nohup sh <<EOF\ncd aisdlc; rm config.yaml\nEOF",
+		"cat <<EOF | grep -v x | sudo -u root bash\ncd aisdlc; rm config.yaml\nEOF",
+		"timeout -s KILL 10 nice -n 5 stdbuf -oL bash <<EOF\ncd aisdlc; rm config.yaml\nEOF",
+		"time -p cd aisdlc; echo x > config.yaml",
+		"sudo -u root cd aisdlc && echo x > config.yaml",
 		// ANSI-C quoting
 		"cd aisdlc && echo x > $'config.yaml'",
 		`cd aisdlc && echo x > $'conf\x69g.yaml'`,

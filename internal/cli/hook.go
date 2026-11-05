@@ -144,7 +144,13 @@ func (h *hook) preToolUse() int {
 			_ = policy.ClearGrant(root, h.grantSession(in))
 		}
 	}()
-	out, ok := h.decide(in, root, found)
+	inRepo := found
+	if !found && in.json == nil {
+		// JSON hỏng: như Java, "trong repo AISDLC" cũng tính theo cwd của tiến trình (cwd trích bằng regex chỉ dùng
+		// cho ClearGrant)
+		_, inRepo = FindRepo(h.ctx.Cwd())
+	}
+	out, ok := h.decide(in, root, inRepo)
 	if ok {
 		issued = out.decision == "ask"
 		h.printDecision(out)

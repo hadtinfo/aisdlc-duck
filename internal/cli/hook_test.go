@@ -464,3 +464,13 @@ func TestHelpListsHook(t *testing.T) {
 	eq(t, r.run("--help"), 0)
 	contains(t, r.out, "hook")
 }
+
+// JSON hỏng: Java quyết "trong repo AISDLC" theo cwd của tiến trình; cwd trích bằng regex (ngoài repo) không được
+// làm mất lớp chặn đó.
+func TestMalformedJsonDeniesWhenProcessCwdInRepoEvenIfExtractedCwdOutside(t *testing.T) {
+	r := newTestRepo(t)
+	r.ok(noConsole(), "setup")
+	outside := t.TempDir()
+	r.hook("pre-tool-use", `{"session_id":"abc","cwd":"`+outside+`","tool_name":"Write",`)
+	contains(t, r.out, `"permissionDecision":"deny"`, "aisdlc lỗi: không đọc được JSON của hook (")
+}

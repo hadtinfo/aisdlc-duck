@@ -217,10 +217,14 @@ func TestBashHardeningEdgeCases(t *testing.T) {
 		"cat <<EOF\ndon't\nEOF\ncd aisdlc && echo x > config.yaml\n'",
 		"cat <<-'EOF'\n\tdon't\n\tEOF\ncd aisdlc && echo x > config.yaml",
 		"bash <<EOF\ncd aisdlc && echo x > config.yaml\nEOF",
+		"sh <<'X'\necho x > aisdlc/config.yaml\nX",
+		"env -i FOO=1 /bin/bash <<EOF\ncd aisdlc; rm config.yaml\nEOF",
 		// ANSI-C quoting
 		"cd aisdlc && echo x > $'config.yaml'",
 		`cd aisdlc && echo x > $'conf\x69g.yaml'`,
 		`cd aisdlc && echo x > $"config.yaml"`,
+		`cd aisdlc && echo x > $'\u0063onfig.yaml'`,
+		`echo x > $'aisdlc/\U00000063onfig.yaml'`,
 	} {
 		_, ok := BashCheck(c, hardened, root, root)
 		eq(t, c, ok, true)
@@ -236,6 +240,9 @@ func TestBashHardeningEdgeCases(t *testing.T) {
 		"cat <<EOF > /tmp/notes\ncd aisdlc\nEOF\necho x > config.yaml",
 		"{ cd /tmp; rm gates.json; }",
 		"grep -c x <<< 'config.yaml'",
+		// thân heredoc của lệnh không phải shell là dữ liệu (mẫu commit của Claude Code)
+		"git commit -m \"$(cat <<'EOF'\nfix(policy): chặn cp đè config.yaml\n\nCo-Authored-By: X\nEOF\n)\"",
+		"cat > /tmp/notes.md <<'EOF'\n- mv risk.yaml sang chỗ khác\nEOF",
 		"test -d build && cd build && make > out.log",
 		"cd internal && go test ./... 2>&1 | tee /tmp/t.log",
 	} {

@@ -29,20 +29,14 @@ func entries(ctx context.Context, src lang.FileSource) (map[string]bool, int, er
 		if err != nil {
 			return nil, n, err
 		}
-		mf, err := modfile.ParseLax(f, data, nil)
+		mf, err := modfile.Parse(f, data, nil)
 		if err != nil {
 			return nil, n, err
 		}
 		for _, r := range mf.Require {
 			set[r.Mod.Path] = true
 		}
-		// ParseLax bỏ qua replace nên đọc replace bằng Parse; Parse lỗi (cú pháp
-		// mới mà x/mod chưa biết) thì chỉ mất replace, require vẫn có từ ParseLax.
-		strict, serr := modfile.Parse(f, data, nil)
-		if serr != nil {
-			continue
-		}
-		for _, r := range strict.Replace {
+		for _, r := range mf.Replace {
 			set[fmt.Sprintf("replace %s => %s", ref(r.Old.Path, r.Old.Version), ref(r.New.Path, r.New.Version))] = true
 		}
 	}

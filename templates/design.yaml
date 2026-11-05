@@ -1,0 +1,17 @@
+steps:
+  - id: S1
+    title: Validate request
+    scope: ["src/main/java/**/limit/web/**", "src/main/resources/application*.yml"]
+    budget: { files: 3, lines: 120 }
+  - id: S2
+    title: Tính hạn mức và ghi nhận
+    scope: ["src/main/java/**/limit/service/**", "src/main/resources/db/migration/**"]
+    budget: { files: 4, lines: 200 }
+# Đánh giá tác động (bắt buộc): chạy `aisdlc policy show` để xem thang mức và nhãn mà chính sách dùng.
+# level: một mức trong thang; labels: nhãn khớp rule label (vd. money-movement); reason: một câu, sai thì hậu quả gì.
+impact: { level: low, labels: [], reason: "Thay đổi nhỏ, không ghi dữ liệu tiền hay trạng thái." }
+# Bất biến DB kiểm sau case (khai khi tính năng ghi dữ liệu tiền hoặc trạng thái). Mỗi mục là một câu SELECT
+# trả về các dòng VI PHẠM (đúng thì 0 dòng). Không có `step`: kiểm sau mọi case; `step: Sx`: chỉ kiểm sau case của
+# bước Sx và các bước sau (dùng khi bảng chỉ có từ bước Sx), ví dụ:
+#   - { name: "Tổng đã dùng không âm", sql: "SELECT account_id FROM transfer_limit_usage WHERE used_amount < 0", step: S2 }
+invariants: []

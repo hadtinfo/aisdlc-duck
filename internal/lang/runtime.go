@@ -33,6 +33,7 @@ type Process interface {
 	Done() <-chan struct{}                      // đóng khi tiến trình thoát
 	ExitErr() error                             // sau Done
 	Stop(timeout time.Duration) (graceful bool) // SIGTERM nhóm, chờ timeout, quá thì SIGKILL nhóm
+	Kill()                                      // SIGKILL nhóm ngay, không chờ (Ctrl-C lần hai)
 }
 
 // Runtime gom phần build, test và chạy tiến trình phụ thuộc ngôn ngữ.

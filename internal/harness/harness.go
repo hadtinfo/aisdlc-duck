@@ -23,7 +23,7 @@ import (
 	"aisdlc/internal/spec"
 )
 
-// ExitTimeout là ExitCode khi harness quá timeoutMinutes hoặc bị hủy.
+// ExitTimeout là ExitCode khi harness quá timeoutMinutes hoặc bị hủy (thông điệp case phân biệt hai trường hợp).
 const ExitTimeout = 124
 
 const (
@@ -95,6 +95,9 @@ type VerifyResult struct {
 	TimedOut   bool
 }
 
+// CanceledMessage là thông điệp của case khi harness bị hủy (Ctrl-C/SIGTERM) chứ không phải quá thời gian.
+const CanceledMessage = "Harness bị hủy (Ctrl-C), đã dừng"
+
 // TimeoutMessage là thông điệp của case khi harness bị dừng vì quá timeoutMinutes.
 func TimeoutMessage(minutes float64) string {
 	return "Harness chạy quá thời gian (" + fmtMinutes(minutes) + " phút), đã dừng"
@@ -158,7 +161,7 @@ func (h *Harness) Verify(ctx context.Context, key model.FeatureKey, out string) 
 
 	switch {
 	case vr.TimedOut:
-		vr.Coverage = lang.Coverage{NA: TimeoutMessage(h.Config.TimeoutMinutes)}
+		vr.Coverage = lang.Coverage{NA: s.stopMessage()}
 	case !built:
 		vr.Coverage = lang.Coverage{NA: buildFailed}
 	case r.started && !r.graceful:
@@ -205,6 +208,14 @@ func (h *Harness) open(ctx context.Context, out string) (*session, error) {
 		s.ctx, s.cancel = context.WithCancel(ctx)
 	}
 	return s, nil
+}
+
+// stopMessage: thông điệp khi s.ctx đã dừng — hủy (Ctrl-C, ctx của lệnh bị hủy) khác quá timeoutMinutes.
+func (s *session) stopMessage() string {
+	if errors.Is(s.ctx.Err(), context.Canceled) {
+		return CanceledMessage
+	}
+	return TimeoutMessage(s.h.Config.TimeoutMinutes)
 }
 
 func (s *session) close() {
@@ -306,7 +317,7 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		timedOut := s.ctx.Err() != nil
 		switch {
 		case timedOut:
-			msg := TimeoutMessage(h.Config.TimeoutMinutes)
+			msg := s.stopMessage()
 			for i := range cases {
 				cases[i].Outcome, cases[i].Message = run.CaseOutcomeError, msg
 			}
@@ -471,6 +482,7 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		return fail(err.Error())
 	}
 	oc.started = true
+	untrack := track(proc)
 	stopped := false
 	stopService := func() {
 		if stopped {
@@ -478,6 +490,7 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		}
 		stopped = true
 		oc.graceful = proc.Stop(time.Duration(svc.ShutdownTimeoutSeconds) * time.Second)
+		untrack()
 		if !oc.graceful {
 			oc.killed = fmt.Sprintf("dịch vụ không tắt êm khi nhận SIGTERM sau %d giây (đã SIGKILL)", svc.ShutdownTimeoutSeconds)
 			s.logf("%s", oc.killed)
@@ -526,9 +539,12 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		}
 	}
 
-	// 10. dump schema, tắt dịch vụ, ghi kết quả
-	if dbURL != "" && s.ctx.Err() == nil {
-		if snap, err := DumpSchema(s.ctx, dbURL); err != nil {
+	// 10. dump schema, tắt dịch vụ, ghi kết quả. Không có database: schema rỗng, như migration-check khi không có
+	// migration nào, để SCHEMA_MATCH so được.
+	if s.ctx.Err() == nil {
+		if dbURL == "" {
+			schema = &run.SchemaSnapshot{}
+		} else if snap, err := DumpSchema(s.ctx, dbURL); err != nil {
 			s.logf("không dump được schema: %v", err)
 		} else {
 			schema = &snap

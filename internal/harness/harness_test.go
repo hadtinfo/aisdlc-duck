@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -466,9 +468,9 @@ func processesRunning(t *testing.T, binary string) []string {
 	return pids
 }
 
-// runStuckCase chạy DEMO-1 với stub chậm 10s; build và Postgres làm sẵn ngoài Run để hạn (hoặc lệnh hủy) rơi vào
+// runStuckCase chạy DEMO-1 với stub chậm 60s; build và Postgres làm sẵn ngoài Run để hạn (hoặc lệnh hủy) rơi vào
 // lúc case đang chờ stub. cancelAfter > 0 thì hủy ctx sau khoảng đó kể từ khi dịch vụ khởi động (như Ctrl-C).
-// Kiểm mọi case ERROR TimeoutMessage, ExitTimeout, không còn tiến trình hay container.
+// Kiểm mọi case ERROR TimeoutMessage (hủy: CanceledMessage), ExitTimeout, không còn tiến trình hay container.
 func runStuckCase(t *testing.T, minutes float64, cancelAfter time.Duration) {
 	h, _ := newSampleHarness(t, func(c *model.RepoConfig) {
 		c.TimeoutMinutes = minutes
@@ -476,7 +478,7 @@ func runStuckCase(t *testing.T, minutes float64, cancelAfter time.Duration) {
 	})
 	editFile(t, filepath.Join(h.Root, "aisdlc/features/DEMO-1/cases.yaml"),
 		"response: { status: 200, jsonBody: { balance: 1000 } }",
-		"response: { status: 200, fixedDelayMilliseconds: 10000, jsonBody: { balance: 1000 } }")
+		"response: { status: 200, fixedDelayMilliseconds: 60000, jsonBody: { balance: 1000 } }")
 
 	b, err := golang.Runtime{}.Build(context.Background(), h.Root, h.Config.Service, t.TempDir())
 	if err != nil || !b.OK {
@@ -503,14 +505,21 @@ func runStuckCase(t *testing.T, minutes float64, cancelAfter time.Duration) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(start); elapsed > 9*time.Second {
-		t.Errorf("Run mất %s: hạn/hủy không dừng được case đang chờ stub 10s", elapsed)
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Errorf("Run mất %s: hạn/hủy không dừng được case đang chờ stub 60s", elapsed)
 	}
 	if len(rt.procs) != 1 {
 		t.Fatalf("dịch vụ phải được khởi động một lần (%d)\nlog:\n%s", len(rt.procs), readLog(t, out))
 	}
-	allErrorWith(t, res.Cases, demo1, TimeoutMessage(minutes))
-	allErrorWith(t, readResultsFile(t, out).Cases, demo1, TimeoutMessage(minutes))
+	msg := TimeoutMessage(minutes)
+	if cancelAfter > 0 {
+		msg = CanceledMessage
+	}
+	allErrorWith(t, res.Cases, demo1, msg)
+	allErrorWith(t, readResultsFile(t, out).Cases, demo1, msg)
+	if _, err := os.Stat(filepath.Join(out, "schema.json")); err == nil {
+		t.Error("dừng giữa chừng không được ghi schema.json")
+	}
 	if res.ExitCode != ExitTimeout {
 		t.Errorf("exit = %d", res.ExitCode)
 	}
@@ -528,11 +537,12 @@ func runStuckCase(t *testing.T, minutes float64, cancelAfter time.Duration) {
 	harnesstest.RequireNoContainers(t, runID)
 }
 
-// Review Focus 2: quá timeoutMinutes giữa lúc chạy case.
+// Review Focus 2: quá timeoutMinutes giữa lúc chạy case. Hạn 9s (tính từ đầu Run) đủ rộng để dịch vụ đã build sẵn
+// khởi động xong trên máy chậm, mà vẫn rơi vào lúc case chờ stub 60s.
 func TestRunTimeoutKillsServiceAndContainers(t *testing.T) {
 	harnesstest.RequireDocker(t)
 	t.Parallel()
-	runStuckCase(t, 0.05, 0)
+	runStuckCase(t, 0.15, 0)
 }
 
 // Review Focus 2: ctx bị hủy (Ctrl-C) giữa lúc chạy case.
@@ -540,6 +550,158 @@ func TestRunCancelKillsServiceAndContainers(t *testing.T) {
 	harnesstest.RequireDocker(t)
 	t.Parallel()
 	runStuckCase(t, 30, 1500*time.Millisecond)
+}
+
+// Hủy (ctx của lệnh bị hủy, Ctrl-C) có thông điệp riêng, khác quá thời gian; ExitCode vẫn là ExitTimeout. Không cần
+// Docker.
+func TestRunCanceledUsesCanceledMessage(t *testing.T) {
+	t.Parallel()
+	root := harnesstest.CopySample(t)
+	cfg, err := model.LoadRepoConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Service.Env.DatabaseURL = ""
+	h := &Harness{Root: root, Config: cfg, Adapter: golang.Adapter{}, Runtime: &fakeRuntime{build: lang.BuildResult{OK: true}},
+		Infra: failInfra{}, Now: time.Now}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	out := outDir(t)
+	res, err := h.Run(ctx, Options{Feature: "DEMO-1", Mode: ModeCases, Out: out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allErrorWith(t, res.Cases, demo1, CanceledMessage)
+	allErrorWith(t, readResultsFile(t, out).Cases, demo1, CanceledMessage)
+	if res.ExitCode != ExitTimeout {
+		t.Errorf("exit = %d", res.ExitCode)
+	}
+	if log := readLog(t, out); !strings.Contains(log, CanceledMessage) || strings.Contains(log, "quá thời gian") {
+		t.Errorf("harness.log:\n%s", log)
+	}
+	vr, err := h.Verify(ctx, "DEMO-1", outDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vr.TimedOut || vr.Coverage.NA != CanceledMessage {
+		t.Errorf("verify = %+v", vr)
+	}
+}
+
+// httpRuntime là dịch vụ giả trong tiến trình: trả 200 rỗng ở mọi đường dẫn nên healthy ngay; không cần Docker
+// hay go build.
+type httpRuntime struct {
+	mu    sync.Mutex
+	procs []*httpProcess
+}
+
+func (f *httpRuntime) Build(context.Context, string, model.ServiceConfig, string) (lang.BuildResult, error) {
+	return lang.BuildResult{OK: true, Binary: "/khong-co/svc"}, nil
+}
+
+func (f *httpRuntime) UnitTests(context.Context, string, model.UnitTestConfig, string) (lang.UnitResult, error) {
+	return lang.UnitResult{}, nil
+}
+
+func (f *httpRuntime) Start(_ context.Context, _ string, env map[string]string, _, _ string) (lang.Process, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:"+env["PORT"])
+	if err != nil {
+		return nil, err
+	}
+	p := &httpProcess{srv: &http.Server{Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})},
+		done: make(chan struct{})}
+	go func() { _ = p.srv.Serve(ln) }()
+	f.mu.Lock()
+	f.procs = append(f.procs, p)
+	f.mu.Unlock()
+	return p, nil
+}
+
+func (f *httpRuntime) Coverage(context.Context, string, string, string, string) (lang.Coverage, error) {
+	return lang.Coverage{NA: "httpRuntime"}, nil
+}
+
+type httpProcess struct {
+	srv        *http.Server
+	once       sync.Once
+	done       chan struct{}
+	liveAtStop bool // còn trong danh sách dịch vụ đang chạy (KillServices) lúc Stop
+	kills      atomic.Int32
+}
+
+func (p *httpProcess) Done() <-chan struct{} { return p.done }
+func (p *httpProcess) ExitErr() error        { return nil }
+func (p *httpProcess) Kill()                 { p.kills.Add(1); p.Stop(0) }
+func (p *httpProcess) Stop(time.Duration) bool {
+	p.once.Do(func() {
+		live.Lock()
+		_, p.liveAtStop = live.procs[p]
+		live.Unlock()
+		_ = p.srv.Close()
+		close(p.done)
+	})
+	return true
+}
+
+// Dịch vụ không khai databaseUrl: không có Postgres, schema.json là schema rỗng (như migration-check khi không có
+// migration), để SCHEMA_MATCH của eval so được. Không cần Docker.
+func TestRunNoDatabaseWritesEmptySchema(t *testing.T) {
+	t.Parallel()
+	root := harnesstest.CopySample(t)
+	cfg, err := model.LoadRepoConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Service.Env.DatabaseURL = ""
+	rt := &httpRuntime{}
+	h := &Harness{Root: root, Config: cfg, Adapter: golang.Adapter{}, Runtime: rt, Infra: failInfra{}, Now: time.Now}
+
+	out := outDir(t)
+	res, err := h.Run(context.Background(), Options{Feature: "DEMO-1", Mode: ModeCases, Out: out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ExitCode != 1 || len(res.Cases) != len(demo1) {
+		t.Fatalf("res = %+v\nlog:\n%s", res, readLog(t, out))
+	}
+	if s := readSchema(t, out); len(s.Tables) != 0 {
+		t.Errorf("schema = %+v", s)
+	}
+	if len(rt.procs) != 1 || !rt.procs[0].liveAtStop {
+		t.Errorf("dịch vụ phải được ghi nhận đang chạy cho tới khi dừng: %d", len(rt.procs))
+	}
+
+	out = outDir(t)
+	vr, err := h.Verify(context.Background(), "DEMO-1", out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vr.HarnessErr != "" || vr.TimedOut {
+		t.Errorf("verify = %+v", vr)
+	}
+	if s := readSchema(t, out); len(s.Tables) != 0 {
+		t.Errorf("schema = %+v", s)
+	}
+	live.Lock()
+	n := len(live.procs)
+	live.Unlock()
+	if n != 0 {
+		t.Errorf("còn %d dịch vụ trong danh sách đang chạy sau Run", n)
+	}
+}
+
+// KillServices diệt ngay mọi dịch vụ đã track mà chưa bỏ track.
+func TestKillServices(t *testing.T) {
+	a := &httpProcess{srv: &http.Server{}, done: make(chan struct{})}
+	b := &httpProcess{srv: &http.Server{}, done: make(chan struct{})}
+	untrackA := track(a)
+	untrackB := track(b)
+	untrackB()
+	KillServices()
+	untrackA()
+	if a.kills.Load() != 1 || b.kills.Load() != 0 {
+		t.Errorf("kills a=%d b=%d", a.kills.Load(), b.kills.Load())
+	}
 }
 
 func TestTimeoutMessage(t *testing.T) {

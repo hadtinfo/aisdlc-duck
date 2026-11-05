@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
 	"aisdlc/internal/eval"
 	"aisdlc/internal/fsx"
 	"aisdlc/internal/harness"
+	"aisdlc/internal/lang"
 	"aisdlc/internal/lang/langs"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
@@ -78,7 +80,7 @@ func (r *harnessCaseRunner) RunCases(key model.FeatureKey, steps []string, mode 
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			res, err = r.crashed(key, steps, m, out, p), nil
+			res, err = r.crashed(key, steps, m, out, p, debug.Stack()), nil
 		}
 	}()
 	rr, err := r.h.Run(r.std, harness.Options{Feature: key, Steps: steps, Mode: m, Out: out})
@@ -89,8 +91,8 @@ func (r *harnessCaseRunner) RunCases(key model.FeatureKey, steps []string, mode 
 }
 
 // crashed: kết quả khi harness panic — đọc results.json harness để lại như MavenRunner (không có thì NoResults).
-func (r *harnessCaseRunner) crashed(key model.FeatureKey, steps []string, mode, out string, p any) run.CaseRunResult {
-	appendLog(out, fmt.Sprintf("%s%v", harnessPanic, p))
+func (r *harnessCaseRunner) crashed(key model.FeatureKey, steps []string, mode, out string, p any, stack []byte) run.CaseRunResult {
+	appendLog(out, panicLog(p, stack))
 	var selected []spec.CaseSpec
 	if mode != harness.ModeMigrationCheck {
 		paths := model.FeaturePaths{RepoRoot: r.root, Key: key}
@@ -109,8 +111,9 @@ func (r *harnessCaseRunner) OutputTail(key model.FeatureKey, n int) string {
 	return tailFile(filepath.Join(r.OutDir(key), HarnessLog), n)
 }
 
-// harnessVerifier là eval.Verifier thật (harness.Verify). Panic giữa chừng thành HarnessErr (build không đạt) và
-// results.json/schema.json cũ không còn để eval đọc nhầm.
+// harnessVerifier là eval.Verifier thật (harness.Verify). Panic giữa chừng thành HarnessErr (không phải build hỏng:
+// Build.OK=true để BUILD_AND_TESTS chỉ báo lỗi harness), stack ghi vào harness.log; results.json/schema.json cũ không
+// còn để eval đọc nhầm.
 type harnessVerifier struct {
 	h   *harness.Harness
 	err error // language không hỗ trợ
@@ -130,12 +133,17 @@ func (v harnessVerifier) Verify(ctx context.Context, key model.FeatureKey, out s
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			msg := fmt.Sprintf("%s%v", harnessPanic, p)
-			appendLog(out, msg)
-			vr, err = harness.VerifyResult{HarnessErr: msg, Run: harness.RunResult{ExitCode: 2}}, nil
+			appendLog(out, panicLog(p, debug.Stack()))
+			vr, err = harness.VerifyResult{Build: lang.BuildResult{OK: true}, HarnessErr: fmt.Sprint(p),
+				Run: harness.RunResult{ExitCode: 2}, Coverage: lang.Coverage{NA: harnessPanic + fmt.Sprint(p)}}, nil
 		}
 	}()
 	return v.h.Verify(ctx, key, out)
+}
+
+// panicLog: stack của panic rồi dòng "harness lỗi: <giá trị>" ở cuối, để OutputTail (20 dòng cuối) vẫn có lý do.
+func panicLog(p any, stack []byte) string {
+	return fmt.Sprintf("stack:\n%s%s%v", stack, harnessPanic, p)
 }
 
 // clearResults xóa results.json và schema.json cũ trong out trước khi harness chạy (harness cũng xóa cả out khi

@@ -1,0 +1,27 @@
+# Job eval AISDLC. Thêm vào .gitlab-ci.yml:  include: { local: aisdlc/gitlab-ci.aisdlc.yml }
+# Cần biến CI/CD AISDLC_BIN: URL tải binary aisdlc cho linux/amd64 (artifact nội bộ, ví dụ package registry).
+# Chế độ web (approvals: web trong config.yaml): thêm biến CI/CD AISDLC_WEB_URL (URL web) và AISDLC_CI_TOKEN (token CI,
+# đặt Masked); thiếu biến hoặc web không trả lời thì job FAIL. Chế độ local không cần hai biến này.
+# Harness chạy Postgres/Kafka bằng testcontainers qua Docker-in-Docker. GIT_DEPTH: 0 để merge-base chạy được
+# (không shallow clone).
+aisdlc-eval:
+  stage: test
+  image: golang:1.26
+  services:
+    - docker:dind
+  variables:
+    GIT_DEPTH: "0"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_HOST_OVERRIDE: docker
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - test -n "$AISDLC_BIN" || { echo "Thiếu biến AISDLC_BIN (URL binary aisdlc)"; exit 1; }
+    - curl -fsSL -o /usr/local/bin/aisdlc "$AISDLC_BIN" && chmod +x /usr/local/bin/aisdlc
+    - git fetch origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+    - aisdlc eval --ci --base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+  artifacts:
+    when: always
+    paths:
+      - aisdlc/features/*/eval/

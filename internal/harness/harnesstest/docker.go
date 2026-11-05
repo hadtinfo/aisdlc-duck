@@ -53,8 +53,19 @@ func SampleDir() string {
 // CopySample chép dịch vụ mẫu vào t.TempDir(), git init và commit (git hermetic), trả thư mục gốc của bản chép.
 func CopySample(t *testing.T) string {
 	t.Helper()
+	return CopyDir(t, SampleDir())
+}
+
+// FixtureDir là dịch vụ mẫu e2e (e2e/fixture-service ở gốc repo).
+func FixtureDir() string {
+	_, file, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", "e2e", "fixture-service")
+}
+
+// CopyDir chép thư mục src vào t.TempDir(), git init và commit (git hermetic), trả thư mục gốc của bản chép.
+func CopyDir(t *testing.T, src string) string {
+	t.Helper()
 	dst := t.TempDir()
-	src := SampleDir()
 	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

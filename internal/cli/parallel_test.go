@@ -8,32 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
-
 	"aisdlc/internal/model"
 )
 
-// ParallelFeatureTest. Test Java nào gọi `submit brd` chỉ để phân giải tính năng thì ở đây gọi lệnh thăm dò
-// `feature-probe` (cùng đường FeatureOption.Feature → Context.Feature); task 5 có `submit` thật.
-
-func featureProbe(ctx *Context) *cobra.Command {
-	var fo FeatureOption
-	c := &cobra.Command{Use: "feature-probe", Args: cobra.NoArgs}
-	fo.AddTo(c)
-	c.RunE = Wrap(ctx, func(cmd *cobra.Command, args []string) (int, error) {
-		f, err := fo.Feature(ctx)
-		if err != nil {
-			return 0, err
-		}
-		ctx.Println("probe " + f.Key.String())
-		return ExitOK, nil
-	})
-	return c
-}
+// ParallelFeatureTest. Test nào cần phân giải tính năng gọi `submit brd` như Java: brd.md vẫn là template nên lệnh
+// chạy tới cuối với exit 1 (có phát hiện).
 
 func parallelRepo(t *testing.T) *testRepo {
 	r := newTestRepo(t)
-	r.extra = append(r.extra, featureProbe)
 	r.ok(noConsole(), "setup")
 	return r
 }
@@ -69,23 +51,23 @@ func TestTwoSessionsSameDirKeepTheirFeature(t *testing.T) {
 func TestNoSessionTwoOpenNoConsoleExits2(t *testing.T) {
 	r := parallelRepo(t)
 	r.twoFeatures()
-	eq(t, r.run("feature-probe"), 2)
+	eq(t, r.run("submit", "brd"), 2)
 	contains(t, r.err, "PAY-1", "PAY-2", "--feature")
 }
 
 func TestNoSessionTwoOpenConsolePicks(t *testing.T) {
 	r := parallelRepo(t)
 	r.twoFeatures()
-	if r.runC(typed("2"), "feature-probe") == 2 {
-		t.Fatalf("exit 2: %s", r.err)
-	}
+	eq(t, r.runC(typed("2"), "submit", "brd"), 1)
 	if !strings.HasPrefix(r.out, "[PAY-2]") {
 		t.Fatalf("out: %s", r.out)
 	}
 	// gõ key thay vì số cũng được; lựa chọn sai thì exit 2
-	r.ok(typed("PAY-1"), "feature-probe")
-	contains(t, r.out, "probe PAY-1")
-	eq(t, r.runC(typed("9"), "feature-probe"), 2)
+	eq(t, r.runC(typed("PAY-1"), "submit", "brd"), 1)
+	if !strings.HasPrefix(r.out, "[PAY-1]") {
+		t.Fatalf("out: %s", r.out)
+	}
+	eq(t, r.runC(typed("9"), "submit", "brd"), 2)
 	contains(t, r.err, `Lựa chọn không hợp lệ: "9"`)
 }
 
@@ -102,11 +84,11 @@ func TestExplicitFeatureWins(t *testing.T) {
 func TestExplicitFeatureOnSubcommand(t *testing.T) {
 	r := parallelRepo(t)
 	r.twoFeatures()
-	r.run("feature-probe", "--feature", "PAY-2")
+	eq(t, r.run("submit", "brd", "--feature", "PAY-2"), 1)
 	if !strings.HasPrefix(r.out, "[PAY-2]") {
 		t.Fatalf("out: %s", r.out)
 	}
-	eq(t, r.run("feature-probe", "--feature", "pay-2"), 2)
+	eq(t, r.run("submit", "brd", "--feature", "pay-2"), 2)
 }
 
 func TestUnboundSessionOneOpenUsesIt(t *testing.T) {
@@ -195,9 +177,7 @@ func TestFeatureAtBaseRefIsNotOpen(t *testing.T) {
 	r := parallelRepo(t)
 	r.pay1MergedToBase("")
 	eqList(t, r.open(), "PAY-2")
-	if r.runC(noConsole(), "feature-probe") == 2 { // không còn mơ hồ
-		t.Fatalf("exit 2: %s", r.err)
-	}
+	eq(t, r.runC(noConsole(), "submit", "brd"), 1) // không còn mơ hồ
 	if !strings.HasPrefix(r.out, "[PAY-2]") {
 		t.Fatalf("out: %s", r.out)
 	}

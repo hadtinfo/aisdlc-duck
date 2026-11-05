@@ -36,6 +36,18 @@ func LoadWebConfig(ctx *Context) (WebConfig, bool) {
 	return WebConfig{}, false
 }
 
+// envTokenWarning: token đăng nhập web đặt trong env (agent đọc được).
+const envTokenWarning = "AISDLC_WEB_TOKEN đang đặt trong môi trường. Token đăng nhập" +
+	" (login) không dùng cho CLI và agent đọc được biến này: xóa nó khỏi môi trường, dùng `aisdlc web login`" +
+	" với token ingest."
+
+// warnEnvToken in envTokenWarning ra stderr khi biến token web đang đặt; không bao giờ in giá trị token.
+func warnEnvToken(ctx *Context) {
+	if _, ok := ctx.Env("AISDLC_WEB_TOKEN"); ok {
+		ctx.Eprintln("aisdlc web: " + envTokenWarning)
+	}
+}
+
 func webConfigFromFile(ctx *Context) (WebConfig, bool) {
 	home, ok := ctx.Home()
 	if !ok {

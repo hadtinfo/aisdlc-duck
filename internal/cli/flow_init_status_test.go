@@ -175,8 +175,10 @@ func TestActiveFeatureMissingOnThisBranchGivesReadableMessage(t *testing.T) {
 	r.run("setup")
 	r.run("init", "PAY-1")
 	must(t, os.RemoveAll(filepath.Join(r.root, "aisdlc/features/PAY-1")))
-	eq(t, r.run("status"), 2)
-	contains(t, r.err, "PAY-1", "nhánh này", "aisdlc use <KEY>", "aisdlc init <KEY>")
+	for _, cmd := range [][]string{{"status"}, {"submit", "brd"}} {
+		eq(t, r.run(cmd...), 2)
+		contains(t, r.err, "PAY-1", "nhánh này", "aisdlc use <KEY>", "aisdlc init <KEY>")
+	}
 	if c := r.run("init", "PAY-2"); c != 0 {
 		t.Fatalf("%s%s", r.out, r.err)
 	}
@@ -214,7 +216,7 @@ func TestStatusWarnsWhenWebEnabledAndNoOriginRemote(t *testing.T) {
 func TestHelpListsCommands(t *testing.T) {
 	r := newTestRepo(t)
 	eq(t, r.run("--help"), 0)
-	contains(t, r.out, "setup", "init", "use", "status")
+	contains(t, r.out, "setup", "init", "use", "status", "submit", "approve", "reject", "reopen", "review")
 }
 
 func TestStatusTextAndJSONOfFreshFeature(t *testing.T) {

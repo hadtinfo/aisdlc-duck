@@ -417,10 +417,7 @@ func (c *Context) ConfirmDev(key model.FeatureKey, action policy.DevCommand, gat
 		return "", abort(3, noGrantMsg)
 	}
 	granted, err := policy.ConsumeGrant(root, session, key.String(), action.GrantKey(), gateHash, c.now())
-	if err != nil {
-		return "", err
-	}
-	if !granted {
+	if err != nil || !granted { // như DevGrants.consume: mọi lỗi là không có phiếu
 		return "", abort(3, noGrantMsg)
 	}
 	return gate.ApprovalClaudeCode, nil

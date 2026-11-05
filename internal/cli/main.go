@@ -35,8 +35,15 @@ func Run(ctx *Context, args ...string) int {
 	return runWith(ctx, nil, args...)
 }
 
-// runWith như Run, thêm các lệnh extra vào cây (test dùng).
-func runWith(ctx *Context, extra []func(*Context) *cobra.Command, args ...string) int {
+// runWith như Run, thêm các lệnh extra vào cây (test dùng). Panic thành "Lỗi: <giá trị>" và exit 2 (hook vẫn chặn,
+// fail closed).
+func runWith(ctx *Context, extra []func(*Context) *cobra.Command, args ...string) (code int) {
+	defer func() {
+		if p := recover(); p != nil {
+			fmt.Fprintf(ctx.err, "Lỗi: %v\n", p)
+			code = ExitUsage
+		}
+	}()
 	if args == nil {
 		args = []string{} // nil thì cobra đọc os.Args
 	}
@@ -64,7 +71,8 @@ func newRoot(ctx *Context) *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.Flags().BoolP("version", "V", false, "In phiên bản rồi thoát.")
-	root.AddCommand(newSetupCmd(ctx), newInitCmd(ctx), newUseCmd(ctx), newStatusCmd(ctx))
+	root.AddCommand(newSetupCmd(ctx), newInitCmd(ctx), newUseCmd(ctx), newStatusCmd(ctx),
+		newSubmitCmd(ctx), newApproveCmd(ctx), newRejectCmd(ctx), newReopenCmd(ctx), newReviewCmd(ctx))
 	return root
 }
 

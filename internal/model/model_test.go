@@ -1,11 +1,14 @@
 package model
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestFeatureKeyRejectsLowercase(t *testing.T) {
@@ -140,5 +143,23 @@ func TestNfcNormalizes(t *testing.T) {
 	nfd := "é"
 	if NFC(nfd) != "é" {
 		t.Fatal("NFC không chuẩn hóa")
+	}
+}
+
+func TestFlowUnmarshalValidates(t *testing.T) {
+	var f Flow
+	if err := yaml.Unmarshal([]byte("lite"), &f); err != nil || f != FlowLite {
+		t.Errorf("yaml lite: %v %q", err, f)
+	}
+	if err := json.Unmarshal([]byte(`" full "`), &f); err != nil || f != FlowFull {
+		t.Errorf("json full: %v %q", err, f)
+	}
+	err := yaml.Unmarshal([]byte("BOGUS"), &f)
+	if err == nil || !strings.Contains(err.Error(), "BOGUS") {
+		t.Errorf("yaml bogus: %v", err)
+	}
+	err = json.Unmarshal([]byte(`"x"`), &f)
+	if err == nil || !strings.Contains(err.Error(), `"x"`) {
+		t.Errorf("json bogus: %v", err)
 	}
 }

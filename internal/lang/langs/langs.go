@@ -3,6 +3,7 @@ package langs
 
 import (
 	"fmt"
+	"strings"
 
 	"aisdlc/internal/lang"
 	"aisdlc/internal/lang/golang"
@@ -10,7 +11,7 @@ import (
 
 // For trả adapter theo tên ngôn ngữ.
 func For(language string) (lang.Adapter, error) {
-	switch language {
+	switch strings.ToLower(strings.TrimSpace(language)) {
 	case "go":
 		return golang.Adapter{}, nil
 	}

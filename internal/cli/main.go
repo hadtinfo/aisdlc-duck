@@ -2,9 +2,12 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -27,7 +30,28 @@ func Main() {
 		fmt.Fprintln(os.Stderr, "Lỗi: "+err.Error())
 		os.Exit(ExitUsage)
 	}
-	os.Exit(Run(NewContext(os.Stdin, os.Stdout, os.Stderr, SystemConsole(), cwd), os.Args[1:]...))
+	args := os.Args[1:]
+	ctx := NewContext(os.Stdin, os.Stdout, os.Stderr, SystemConsole(), cwd)
+	stop := func() {}
+	if handlesSignals(args) {
+		var std context.Context
+		std, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		// tín hiệu đầu hủy ctx (harness dọn tiến trình con và container); từ tín hiệu thứ hai thoát ngay như mặc định
+		go func() {
+			<-std.Done()
+			stop()
+		}()
+		ctx.WithStd(std)
+	}
+	code := Run(ctx, args...)
+	stop()
+	os.Exit(code)
+}
+
+// handlesSignals: lệnh CLI bắt Ctrl-C/SIGTERM để hủy ctx thay vì chết ngay; hook (`aisdlc hook ...`) giữ hành vi
+// mặc định để không bao giờ treo vì tín hiệu.
+func handlesSignals(args []string) bool {
+	return len(args) == 0 || args[0] != "hook"
 }
 
 // Run chạy một lệnh trong tiến trình và trả mã thoát.

@@ -83,3 +83,28 @@ func TestChangedCoverageNoMeasurableIsNA(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 }
+
+func TestChangedCoverageStrictIgnoresBlocklessFileInMeasuredPackage(t *testing.T) {
+	// limit/types.go chỉ có kiểu/hằng nên không có block coverage, nhưng package limit có đo: bỏ qua (như Java bỏ
+	// interface/package-info trong module có báo cáo). m/empty.go không có dòng đổi: bỏ qua.
+	changed := map[string]map[int]bool{
+		"limit/limit.go": {5: true, 6: true, 7: true, 9: true},
+		"limit/types.go": {1: true, 2: true, 3: true},
+		"m/empty.go":     {},
+	}
+	c := eval.ComputeChangedCoverage(changed, cov(), isSrc, true)
+	if c.Covered != 3 || c.Measurable != 4 || len(c.Unmeasured) != 0 || c.UnmeasuredCount != 0 {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestChangedCoverageStrictCountsAllUnmeasured(t *testing.T) {
+	changed := map[string]map[int]bool{}
+	for _, n := range []string{"u1", "u2", "u3", "u4", "u5", "u6", "u7"} {
+		changed["m/"+n+".go"] = map[int]bool{1: true}
+	}
+	c := eval.ComputeChangedCoverage(changed, cov(), isSrc, true)
+	if c.UnmeasuredCount != 7 || len(c.Unmeasured) != 6 {
+		t.Fatalf("%+v", c)
+	}
+}

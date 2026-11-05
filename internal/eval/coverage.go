@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"path"
 	"sort"
 
 	"aisdlc/internal/lang"
@@ -12,6 +13,7 @@ const maxNamedUnmeasured = 5
 type ChangedCoverage struct {
 	Covered, Measurable int
 	Unmeasured          []string // file nguồn có dòng đổi mà không có trong Coverage.Lines; tối đa 5 tên + "…"
+	UnmeasuredCount     int      // tổng số file chưa đo (để báo "(+N)" như Java)
 	NA                  string   // "" hoặc lý do
 }
 
@@ -24,8 +26,10 @@ func (c ChangedCoverage) Percent() float64 {
 }
 
 // ComputeChangedCoverage giao dòng đổi với dòng đo được. Chỉ file nguồn (isSource) được tính.
-// strict: file nguồn không có trong cov.Lines tính mọi dòng đổi là chưa chạy và được nêu tên;
-// không strict thì bỏ qua file đó.
+// strict: file nguồn có dòng đổi, không có trong cov.Lines và nằm ở package (thư mục) không có file nào được đo thì
+// mọi dòng đổi tính là chưa chạy và được nêu tên (như module không có báo cáo JaCoCo của Java). File vắng mặt mà
+// package của nó có đo (chỉ có kiểu/hằng, không có block coverage) thì bỏ qua. Không strict thì bỏ qua mọi file
+// không đo.
 func ComputeChangedCoverage(changed map[string]map[int]bool, cov lang.Coverage, isSource func(string) bool, strict bool) ChangedCoverage {
 	var c ChangedCoverage
 	if cov.NA != "" {
@@ -39,11 +43,15 @@ func ComputeChangedCoverage(changed map[string]map[int]bool, cov lang.Coverage, 
 		}
 	}
 	sort.Strings(files)
+	measuredDirs := map[string]bool{}
+	for f := range cov.Lines {
+		measuredDirs[path.Dir(f)] = true
+	}
 	var unmeasured []string
 	for _, f := range files {
 		measured, ok := cov.Lines[f]
 		if !ok {
-			if strict {
+			if strict && len(changed[f]) > 0 && !measuredDirs[path.Dir(f)] {
 				c.Measurable += len(changed[f])
 				unmeasured = append(unmeasured, f)
 			}
@@ -58,6 +66,7 @@ func ComputeChangedCoverage(changed map[string]map[int]bool, cov lang.Coverage, 
 			}
 		}
 	}
+	c.UnmeasuredCount = len(unmeasured)
 	if len(unmeasured) > maxNamedUnmeasured {
 		c.Unmeasured = append(unmeasured[:maxNamedUnmeasured:maxNamedUnmeasured], "…")
 	} else {

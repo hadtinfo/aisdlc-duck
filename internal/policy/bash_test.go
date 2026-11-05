@@ -199,6 +199,28 @@ func TestBashHardeningEdgeCases(t *testing.T) {
 		"pushd aisdlc && popd && pushd aisdlc/features && rm PAY-9/steps.json",
 		"cd ~ && rm config.yaml",
 		"cd /abs/repo/aisdlc && sed -i s/a/b/ config.yaml",
+		// từ khóa shell đứng trước cd
+		"{ cd aisdlc; echo x > config.yaml; }",
+		"if true; then cd aisdlc; fi; echo x > config.yaml",
+		"for d in aisdlc; do cd $d; done; echo x > config.yaml",
+		"! cd aisdlc; echo x > config.yaml",
+		"time cd aisdlc; echo x > config.yaml",
+		"echo cd aisdlc; echo x > config.yaml", // có cd nhưng không áp dụng được: thư mục không xác định
+		// cd có điều kiện, trong pipeline hoặc chạy nền: không chắc đã đổi thư mục
+		"false && cd /tmp; cd aisdlc; echo x > config.yaml",
+		"echo | cd /tmp; cd aisdlc; echo x > config.yaml",
+		"cd /tmp & cd aisdlc; echo x > config.yaml",
+		"if false; then cd /tmp; fi; cd aisdlc; echo x > config.yaml",
+		// comment và heredoc không làm lệch nháy/ngoặc
+		"true # '\ncd aisdlc && echo x > config.yaml # '",
+		"true # (\ncd aisdlc\ntrue # )\necho x > config.yaml",
+		"cat <<EOF\ndon't\nEOF\ncd aisdlc && echo x > config.yaml\n'",
+		"cat <<-'EOF'\n\tdon't\n\tEOF\ncd aisdlc && echo x > config.yaml",
+		"bash <<EOF\ncd aisdlc && echo x > config.yaml\nEOF",
+		// ANSI-C quoting
+		"cd aisdlc && echo x > $'config.yaml'",
+		`cd aisdlc && echo x > $'conf\x69g.yaml'`,
+		`cd aisdlc && echo x > $"config.yaml"`,
 	} {
 		_, ok := BashCheck(c, hardened, root, root)
 		eq(t, c, ok, true)
@@ -210,6 +232,12 @@ func TestBashHardeningEdgeCases(t *testing.T) {
 		"(cd aisdlc) && echo x > config.yaml",
 		"cd /tmp && rm gates.json",
 		"go test ./... 2>&1 | tee /tmp/out.log",
+		"echo 'a#b' > /tmp/x # cd aisdlc; rm config.yaml",
+		"cat <<EOF > /tmp/notes\ncd aisdlc\nEOF\necho x > config.yaml",
+		"{ cd /tmp; rm gates.json; }",
+		"grep -c x <<< 'config.yaml'",
+		"test -d build && cd build && make > out.log",
+		"cd internal && go test ./... 2>&1 | tee /tmp/t.log",
 	} {
 		_, ok := BashCheck(c, hardened, root, root)
 		eq(t, c, ok, false)

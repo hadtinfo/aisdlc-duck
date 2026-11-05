@@ -437,3 +437,24 @@ func TestRiskYamlEditBreaksCasesApproval(t *testing.T) {
 	}
 	eqState(t, f.mustState(s, CASES), Stale)
 }
+
+func TestTimesStoredInUTC(t *testing.T) {
+	f := setup(t)
+	ict := time.FixedZone("ICT", 7*3600)
+	s := NewService(f.p, model.FlowFull, f.cfg, NewLocalGateStore(f.p), func() time.Time { return t0.In(ict) })
+	f.approveClean(s, BRD)
+	b, err := os.ReadFile(f.p.Gates())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "+07:00") || strings.Count(string(b), `"at": "2026-11-02T03:00:00Z"`) != 2 {
+		t.Errorf("gates.json không phải UTC:\n%s", b)
+	}
+}
+
+func TestNilServiceCodeReadyFailsClosed(t *testing.T) {
+	var s *Service
+	if ok, err := s.CodeReady(); ok || err != nil {
+		t.Errorf("ok=%v err=%v", ok, err)
+	}
+}

@@ -72,7 +72,7 @@ func (f RiskFile) WithOverride(p RiskPolicy, to, by, reason string, at time.Time
 		from = f.Override.From
 	}
 	f.Level = to
-	f.Override = &Override{From: from, To: to, By: by, Reason: reason, At: at}
+	f.Override = &Override{From: from, To: to, By: by, Reason: reason, At: at.UTC()}
 	f.Requirements = reqsOf(p, to)
 	f.Flow = FlowOf(p, to)
 	return f

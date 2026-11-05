@@ -67,16 +67,16 @@ func (r Requirement) flat() map[string]any {
 
 // Mã yêu cầu trong thư viện.
 const (
-	RulePosNeg = "rule-pos-neg"
-	Boundary   = "boundary"
-	Idempotent = "idempotent"
-	Concurrent = "concurrent"
-	Invariant  = "invariant"
-	Coverage   = "coverage"
-	SQLZero    = "sql-zero"
+	ReqRulePosNeg = "rule-pos-neg"
+	ReqBoundary   = "boundary"
+	ReqIdempotent = "idempotent"
+	ReqConcurrent = "concurrent"
+	ReqInvariant  = "invariant"
+	ReqCoverage   = "coverage"
+	ReqSQLZero    = "sql-zero"
 )
 
-var requirementIDs = []string{RulePosNeg, Boundary, Idempotent, Concurrent, Invariant, Coverage, SQLZero}
+var requirementIDs = []string{ReqRulePosNeg, ReqBoundary, ReqIdempotent, ReqConcurrent, ReqInvariant, ReqCoverage, ReqSQLZero}
 
 // RequirementKnown cho biết id có trong thư viện không.
 func RequirementKnown(id string) bool {
@@ -91,11 +91,11 @@ func RequirementKnown(id string) bool {
 // RequirementRequiredParams là các tham số bắt buộc của yêu cầu.
 func RequirementRequiredParams(id string) []string {
 	switch id {
-	case Concurrent:
+	case ReqConcurrent:
 		return []string{"threads"}
-	case Coverage:
+	case ReqCoverage:
 		return []string{"min"}
-	case SQLZero:
+	case ReqSQLZero:
 		return []string{"name", "sql"}
 	}
 	return nil
@@ -104,23 +104,23 @@ func RequirementRequiredParams(id string) []string {
 // RequirementDisplayName là tên hiển thị tiếng Việt.
 func RequirementDisplayName(r Requirement) string {
 	switch r.ID {
-	case RulePosNeg:
+	case ReqRulePosNeg:
 		return "Case đúng và case sai cho mỗi rule BRD"
-	case Boundary:
+	case ReqBoundary:
 		return "Case biên cho rule gắn thẻ [biên]"
-	case Idempotent:
+	case ReqIdempotent:
 		return "Case gửi trùng"
-	case Concurrent:
+	case ReqConcurrent:
 		return "Case đồng thời " + strconv.Itoa(r.IntParam("threads", 0)) + " luồng"
-	case Invariant:
+	case ReqInvariant:
 		return "Bất biến DB sau mọi case"
-	case Coverage:
+	case ReqCoverage:
 		return "Coverage dòng mới tối thiểu " + strconv.Itoa(r.IntParam("min", 0)) + "%"
-	case SQLZero:
+	case ReqSQLZero:
 		if s, ok := r.StrParam("name"); ok {
 			return s
 		}
-		return SQLZero
+		return ReqSQLZero
 	}
 	return r.ID
 }

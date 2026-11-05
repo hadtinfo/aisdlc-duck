@@ -217,7 +217,7 @@ func TestHelpListsCommands(t *testing.T) {
 	r := newTestRepo(t)
 	eq(t, r.run("--help"), 0)
 	contains(t, r.out, "setup", "init", "use", "status", "submit", "approve", "reject", "reopen", "review", "step",
-		"scope", "diff", "risk", "policy", "eval", "web")
+		"scope", "diff", "risk", "policy", "eval", "web", "hook")
 }
 
 func TestStatusTextAndJSONOfFreshFeature(t *testing.T) {

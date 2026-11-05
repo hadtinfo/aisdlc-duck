@@ -74,7 +74,7 @@ func newRoot(ctx *Context) *cobra.Command {
 	root.AddCommand(newSetupCmd(ctx), newInitCmd(ctx), newUseCmd(ctx), newStatusCmd(ctx),
 		newSubmitCmd(ctx), newApproveCmd(ctx), newRejectCmd(ctx), newReopenCmd(ctx), newReviewCmd(ctx),
 		newStepCmd(ctx), newScopeCmd(ctx), newDiffCmd(ctx), newRiskCmd(ctx), newPolicyCmd(ctx), newEvalCmd(ctx),
-		newWebCmd(ctx))
+		newWebCmd(ctx), newHookCmd(ctx))
 	return root
 }
 

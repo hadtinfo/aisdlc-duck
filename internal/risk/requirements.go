@@ -20,10 +20,10 @@ const (
 
 // RequirementStatus là kết quả kiểm một yêu cầu.
 type RequirementStatus struct {
-	ID     string
-	Name   string
-	Status RequirementState
-	Detail string
+	ID     string           `json:"id"`
+	Name   string           `json:"name"`
+	Status RequirementState `json:"status"`
+	Detail string           `json:"detail"`
 }
 
 var (

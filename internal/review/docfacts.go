@@ -10,7 +10,8 @@ import (
 
 // Assumption là một giả định agent tự chốt; Source rỗng khi dòng không ghi nguồn hợp lệ.
 type Assumption struct {
-	Text, Source string
+	Text   string `json:"text"`
+	Source string `json:"source"`
 }
 
 // Rule là một quy tắc nghiệp vụ; ID rỗng khi dòng không có mã BR-n.

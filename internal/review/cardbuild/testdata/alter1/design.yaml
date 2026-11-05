@@ -1,0 +1,9 @@
+steps:
+  - id: S1
+    title: Kiểm tra request
+    scope: ["internal/**/limit/web/**"]
+    budget: { files: 1, lines: 40 }
+  - id: S2
+    title: Tính hạn mức theo bảng daily_limit
+    scope: ["internal/**/limit/**", "db/migrations/**"]
+    budget: { files: 3, lines: 80 }

@@ -228,6 +228,12 @@ func TestBashHardeningEdgeCases(t *testing.T) {
 		"nohup sh <<EOF\ncd aisdlc; rm config.yaml\nEOF",
 		"cat <<EOF | grep -v x | sudo -u root bash\ncd aisdlc; rm config.yaml\nEOF",
 		"timeout -s KILL 10 nice -n 5 stdbuf -oL bash <<EOF\ncd aisdlc; rm config.yaml\nEOF",
+		// heredoc tới shell qua file, <( ), pipeline nối dòng sau thân, nhóm { }
+		"cat <<EOF > s.sh\ncd aisdlc; rm config.yaml\nEOF\nbash s.sh",
+		"bash <(cat <<EOF\ncd aisdlc; rm config.yaml\nEOF\n)",
+		"cat <<EOF |\ncd aisdlc; rm config.yaml\nEOF\nbash",
+		"{ cat <<EOF; } | bash\ncd aisdlc; rm config.yaml\nEOF",
+		"source >(cat <<EOF\ncd aisdlc; rm config.yaml\nEOF\n)",
 		"time -p cd aisdlc; echo x > config.yaml",
 		"sudo -u root cd aisdlc && echo x > config.yaml",
 		// ANSI-C quoting
@@ -254,6 +260,8 @@ func TestBashHardeningEdgeCases(t *testing.T) {
 		// thân heredoc của lệnh không phải shell là dữ liệu (mẫu commit của Claude Code)
 		"git commit -m \"$(cat <<'EOF'\nfix(policy): chặn cp đè config.yaml\n\nCo-Authored-By: X\nEOF\n)\"",
 		"cat > /tmp/notes.md <<'EOF'\n- mv risk.yaml sang chỗ khác\nEOF",
+		"gh pr create --body \"$(cat <<'EOF'\ncd aisdlc; rm config.yaml\nEOF\n)\"",
+		"{ cat <<EOF; } | grep x\ncd aisdlc; rm config.yaml\nEOF",
 		"test -d build && cd build && make > out.log",
 		"cd internal && go test ./... 2>&1 | tee /tmp/t.log",
 	} {

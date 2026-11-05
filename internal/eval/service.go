@@ -62,8 +62,9 @@ func (s *Service) OutDir() string {
 }
 
 // Run: local tính phạm vi từ feature.baseTree; CI từ merge-base với baseRef ("" là baseRef của config). Ở CI chế độ
-// web (web khác nil; server đã ghim chế độ thì theo server, chưa ghim thì theo config approvals) approval lấy từ web
-// thay cho gates.json và cổng chưa duyệt/đã đổi là lỗi cứng. web nil thì không bao giờ là chế độ web.
+// web (server đã ghim chế độ thì theo server, chưa ghim thì theo config approvals) approval lấy từ web thay cho
+// gates.json và cổng chưa duyệt/đã đổi là lỗi cứng. config approvals: web mà không có nguồn web (web nil) thì fail
+// closed: GATE:WEB lỗi cứng thay cho CASES_LOCKED, không kiểm gates.json.
 // error khi git/gates.json/steps.json lỗi, Verify trả lỗi (không ghi được out) hoặc không ghi được report.
 func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprovalSource) (EvalReport, error) {
 	from := s.Meta.BaseTree
@@ -85,7 +86,7 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 	// approval đọc trước khi eval ghi lại eval/report.json (artifact của REVIEW)
 	var webHard []HardCheck
 	webMode := false
-	if ci && web != nil {
+	if ci {
 		if webMode, webHard, err = s.webApprovals(ctx, web, to); err != nil {
 			return EvalReport{}, err
 		}
@@ -146,7 +147,7 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 			return EvalReport{}, gerr
 		}
 	}
-	hard = append(hard, buildCheck(vr), s.schemaMatch(out))
+	hard = append(hard, buildCheck(vr, s.Paths.Rel(filepath.Join(out, "harness.log"))), s.schemaMatch(out))
 	sc, err := s.scope(ctx, from, to)
 	if err != nil {
 		return EvalReport{}, err
@@ -216,16 +217,24 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 	return report, nil
 }
 
-// webApprovals: web trả lời sai/không trả lời không bao giờ được bỏ qua ở chế độ web. Chỉ gọi khi web khác nil
-// (giai đoạn 4).
+// webApprovals: web trả lời sai/không trả lời không bao giờ được bỏ qua ở chế độ web. Không có nguồn web mà config
+// nói web thì fail closed.
 func (s *Service) webApprovals(ctx context.Context, web CIApprovalSource, evaluatedTree string) (bool, []HardCheck, error) {
+	configWeb := s.Config.Approvals == "web"
+	if web == nil {
+		if !configWeb {
+			return false, nil, nil
+		}
+		return true, []HardCheck{{"GATE:WEB", false,
+			"Thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN để hỏi web (chế độ web)"}}, nil
+	}
 	got, err := web.Approvals(ctx, s.Meta.Key, evaluatedTree)
 	if err != nil {
 		// có nguồn thì không có chế độ bỏ qua: config.yaml của đầu MR không được tắt kiểm tra
 		return true, []HardCheck{{"GATE:WEB", false, "Không hỏi được web (" + err.Error() + "), chạy lại job"}}, nil
 	}
 	// server đã ghim chế độ (lead quyết) → theo server; chưa ghim → theo config.yaml (web thì fail closed)
-	webMode := s.Config.Approvals == "web"
+	webMode := configWeb
 	if got.Pinned {
 		webMode = got.Mode == "web"
 	}

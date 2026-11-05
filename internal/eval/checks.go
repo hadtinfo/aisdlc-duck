@@ -107,17 +107,16 @@ func (s *Service) casesLocked() (HardCheck, error) {
 }
 
 // buildCheck: build, unit test và harness. Case fail không làm hỏng check này (CASES_ALL_PASS báo); lỗi harness
-// (hạ tầng, dịch vụ) thì có, kể cả khi mọi case pass.
-func buildCheck(vr harness.VerifyResult) HardCheck {
+// (hạ tầng, dịch vụ) thì có, kể cả khi mọi case pass. Lỗi kèm "; xem <harness.log>" như Java (maven.log).
+func buildCheck(vr harness.VerifyResult, log string) HardCheck {
 	const id = "BUILD_AND_TESTS"
 	var problems []string
 	if vr.TimedOut {
 		problems = append(problems, "quá thời gian")
 	}
 	if !vr.Build.OK {
-		problems = append(problems, "go build lỗi")
-	}
-	if len(vr.Unit.Failed) > 0 {
+		problems = append(problems, "go build lỗi") // build hỏng thì không chạy unit test
+	} else if len(vr.Unit.Failed) > 0 {
 		problems = append(problems, "unit test fail: "+list(vr.Unit.Failed))
 	} else if vr.Unit.Exit != 0 {
 		problems = append(problems, "go test thoát mã "+strconv.Itoa(vr.Unit.Exit))
@@ -128,7 +127,7 @@ func buildCheck(vr harness.VerifyResult) HardCheck {
 	if len(problems) == 0 {
 		return HardCheck{id, true, "build và unit test đạt"}
 	}
-	return HardCheck{id, false, strings.Join(problems, "; ")}
+	return HardCheck{id, false, strings.Join(problems, "; ") + "; xem " + log}
 }
 
 func (s *Service) schemaMatch(out string) HardCheck {

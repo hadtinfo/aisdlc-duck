@@ -419,21 +419,28 @@ func TestEvalCiWarnsOnMissingOrDriftedApprovalOfOtherGates(t *testing.T) {
 	eq(t, "ci passed", ci.Passed, true)
 }
 
-// Java webModeWithoutSourceNamesVariables: giai đoạn này chưa có nguồn web (web == nil), nên webMode luôn false
-// và CI kiểm gates.json như chế độ local (giai đoạn 4 cài nguồn web).
-func TestEvalWebConfigWithoutSourceChecksLocalGates(t *testing.T) {
+func TestEvalWebModeWithoutSourceNamesVariables(t *testing.T) {
 	e := newEvalEnv(t)
 	e.config("unmanaged: [\"*.md\"]\napprovals: web\n")
 	e.sh("add", "aisdlc/config.yaml")
 	e.sh("commit", "-q", "-m", "web mode")
 
-	r := e.run(true)
+	r, err := e.service().Run(context.Background(), true, "HEAD", nil)
+	e.must(err)
 
-	if has(hardIDs(r), prefix("GATE:")) {
-		t.Errorf("hard %v", hardIDs(r))
+	w := hardOf(t, r, "GATE:WEB")
+	eq(t, "web", w, HardCheck{"GATE:WEB", false, "Thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN để hỏi web (chế độ web)"})
+	wantContains(t, "detail", w.Detail, "AISDLC_WEB_URL", "AISDLC_CI_TOKEN")
+	eq(t, "passed", r.Passed, false)
+	// GATE:WEB thay cho CASES_LOCKED; không kiểm gates.json
+	if has(hardIDs(r), is("CASES_LOCKED")) || has(softIDs(r), is("CASES_LOCKED")) || has(softIDs(r), prefix("GATE:")) ||
+		has(hardIDs(r), prefix("GATE_AUTO")) {
+		t.Errorf("hard %v soft %v", hardIDs(r), softIDs(r))
 	}
-	eq(t, "locked", mustSoft(t, r, "CASES_LOCKED").Level, SoftOK)
-	eq(t, "review", mustSoft(t, r, "GATE:REVIEW").Detail, "chưa duyệt REVIEW")
+	// local thì không hỏi web
+	if has(hardIDs(e.run(false)), prefix("GATE:")) {
+		t.Error("local không được có GATE:*")
+	}
 }
 
 func TestEvalUnchangedCasesInCiIsOkSoftCheck(t *testing.T) {
@@ -448,7 +455,7 @@ func TestEvalOldTestFailureFailsBuild(t *testing.T) {
 	b := hardOf(t, e.run(false), "BUILD_AND_TESTS")
 
 	eq(t, "passed", b.Passed, false)
-	eq(t, "detail", b.Detail, "unit test fail: ex/limit.TestBoom, ex/limit.TestWorks")
+	eq(t, "detail", b.Detail, "unit test fail: ex/limit.TestBoom, ex/limit.TestWorks; xem .aisdlc/run/PAY-123/harness.log")
 }
 
 func TestEvalUnitFailuresListedUpToTen(t *testing.T) {
@@ -461,7 +468,7 @@ func TestEvalUnitFailuresListedUpToTen(t *testing.T) {
 
 	b := hardOf(t, e.run(false), "BUILD_AND_TESTS")
 
-	eq(t, "detail", b.Detail, "unit test fail: "+strings.Join(failed[:10], ", ")+" … và 2 mục khác")
+	eq(t, "detail", b.Detail, "unit test fail: "+strings.Join(failed[:10], ", ")+" … và 2 mục khác; xem .aisdlc/run/PAY-123/harness.log")
 }
 
 func TestEvalOnlySuiteFailureDoesNotFailBuild(t *testing.T) {
@@ -485,18 +492,19 @@ func TestEvalNonZeroExitWithoutTestFailuresFailsBuild(t *testing.T) {
 	b := hardOf(t, e.run(false), "BUILD_AND_TESTS")
 
 	eq(t, "passed", b.Passed, false)
-	eq(t, "detail", b.Detail, "go test thoát mã 2")
+	eq(t, "detail", b.Detail, "go test thoát mã 2; xem .aisdlc/run/PAY-123/harness.log")
 }
 
 func TestEvalBuildFailure(t *testing.T) {
 	e := newEvalEnv(t)
 	e.v.res.Build = lang.BuildResult{OK: false, Output: "limit.go:3: syntax error"}
+	e.v.res.Unit = lang.UnitResult{Exit: 1} // không được báo thêm "go test thoát mã" khi build hỏng
 	e.v.rows = []run.CaseResult{{ID: "C1", Step: "S1", Outcome: run.CaseOutcomeError, Message: "build lỗi"},
 		{ID: "C2", Step: "S1", Outcome: run.CaseOutcomeError, Message: "build lỗi"}}
 
 	r := e.run(false)
 
-	eq(t, "build", hardOf(t, r, "BUILD_AND_TESTS"), HardCheck{"BUILD_AND_TESTS", false, "go build lỗi"})
+	eq(t, "build", hardOf(t, r, "BUILD_AND_TESTS"), HardCheck{"BUILD_AND_TESTS", false, "go build lỗi; xem .aisdlc/run/PAY-123/harness.log"})
 	eq(t, "cases", hardOf(t, r, "CASES_ALL_PASS").Passed, false)
 	eq(t, "passed", r.Passed, false)
 }
@@ -511,7 +519,7 @@ func TestEvalTimeoutFailsBuild(t *testing.T) {
 
 	r := e.run(false)
 
-	eq(t, "build", hardOf(t, r, "BUILD_AND_TESTS"), HardCheck{"BUILD_AND_TESTS", false, "quá thời gian"})
+	eq(t, "build", hardOf(t, r, "BUILD_AND_TESTS"), HardCheck{"BUILD_AND_TESTS", false, "quá thời gian; xem .aisdlc/run/PAY-123/harness.log"})
 	eq(t, "coverage", mustSoft(t, r, "COVERAGE_CHANGED_LINES"), SoftCheck{"COVERAGE_CHANGED_LINES", SoftNA, msg})
 	eq(t, "passed", r.Passed, false)
 }
@@ -904,7 +912,7 @@ func TestEvalSuiteFailureWhileEveryCasePassedFailsBuild(t *testing.T) {
 
 	eq(t, "cases", hardOf(t, r, "CASES_ALL_PASS").Passed, true)
 	eq(t, "build", hardOf(t, r, "BUILD_AND_TESTS"),
-		HardCheck{"BUILD_AND_TESTS", false, "harness lỗi: không dừng được container"})
+		HardCheck{"BUILD_AND_TESTS", false, "harness lỗi: không dừng được container; xem .aisdlc/run/PAY-123/harness.log"})
 }
 
 func TestEvalExitZeroStillReadsUnitFailures(t *testing.T) {

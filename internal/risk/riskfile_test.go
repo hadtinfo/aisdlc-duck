@@ -1,0 +1,200 @@
+package risk
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"aisdlc/internal/spec"
+)
+
+func highRisk(t *testing.T) (RiskPolicy, RiskFile) {
+	t.Helper()
+	p := latest(t, "banking")
+	r := Classify(p, RiskInputs{Text: "bút toán", AgentLevel: "high"})
+	return p, NewRiskFile(p, r, &spec.Impact{Level: "high", Labels: []string{"money-movement"}, Reason: "lý do"})
+}
+
+func dumpOf(t *testing.T, f RiskFile) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "x.yaml")
+	if err := f.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	return string(b)
+}
+
+func TestWriteReadRoundTrip(t *testing.T) {
+	p, h := highRisk(t)
+	f := h.WithOverride(p, "medium", "dev1", "đã xem", time.Date(2026, 11, 4, 1, 2, 3, 0, time.UTC))
+	file := filepath.Join(t.TempDir(), "a", "risk.yaml")
+	if err := f.Write(file); err != nil {
+		t.Fatal(err)
+	}
+	back, ok, err := ReadRiskFile(file)
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if dumpOf(t, back) != dumpOf(t, f) {
+		t.Errorf("khác nhau:\n%s\n%s", dumpOf(t, back), dumpOf(t, f))
+	}
+	if back.Policy.Hash != p.Hash() || back.Policy.Version != p.Version {
+		t.Errorf("policy = %+v", back.Policy)
+	}
+	if !back.Override.At.Equal(f.Override.At) || back.Override.From != "high" {
+		t.Errorf("override = %+v", back.Override)
+	}
+}
+
+func TestRoundTripWithoutOverrideOrAgent(t *testing.T) {
+	p := latest(t, "banking")
+	f := NewRiskFile(p, Classify(p, RiskInputs{}), nil)
+	file := filepath.Join(t.TempDir(), "risk.yaml")
+	if err := f.Write(file); err != nil {
+		t.Fatal(err)
+	}
+	back, ok, err := ReadRiskFile(file)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if back.Agent != nil || back.Override != nil || back.Level != f.Level {
+		t.Errorf("back = %+v", back)
+	}
+	if dumpOf(t, back) != dumpOf(t, f) {
+		t.Error("khác nhau")
+	}
+}
+
+// Byte của risk.yaml đi vào băm cổng CASES: ghi, đọc, ghi lại phải ra cùng byte.
+func TestRiskFileRoundTripStable(t *testing.T) {
+	p, h := highRisk(t)
+	pf := mustParse(t, "schema: 1\nlevels: [low, high]\ndefault: low\nflow:\n  low: { brd: auto, step: auto }\n  high: { step: manual }\n"+
+		"requirements:\n  high:\n    - { id: coverage, min: 90 }\n    - { id: sql-zero, name: n, sql: \"select 1 where 1=0\" }\n")
+	pr := NewRiskFile(pf, RiskResult{Level: "high", Matched: []Match{{Rule: "R1", Level: "high", On: "x: y"}}}, nil)
+	for name, f := range map[string]RiskFile{
+		"banking":  h,
+		"override": h.WithOverride(p, "low", "dev", "r: có dấu hai chấm\nnhiều dòng", time.Date(2026, 11, 4, 1, 2, 3, 456, time.UTC)),
+		"flow":     pr,
+		"flow-low": pr.WithOverride(pf, "low", "d", "r", time.Unix(0, 0).UTC()),
+	} {
+		file := filepath.Join(t.TempDir(), "risk.yaml")
+		if err := f.Write(file); err != nil {
+			t.Fatal(err)
+		}
+		first, _ := os.ReadFile(file)
+		back, ok, err := ReadRiskFile(file)
+		if err != nil || !ok {
+			t.Fatal(name, ok, err)
+		}
+		if err := back.Write(file); err != nil {
+			t.Fatal(err)
+		}
+		second, _ := os.ReadFile(file)
+		if !bytes.Equal(first, second) {
+			t.Errorf("%s: byte đổi:\n%s\n---\n%s", name, first, second)
+		}
+	}
+}
+
+func TestReadMissingIsEmpty(t *testing.T) {
+	_, ok, err := ReadRiskFile(filepath.Join(t.TempDir(), "nope.yaml"))
+	if ok || err != nil {
+		t.Errorf("ok=%v err=%v", ok, err)
+	}
+}
+
+func TestOfCopiesRequirementsOfLevel(t *testing.T) {
+	p, f := highRisk(t)
+	if f.Level != "high" || f.Override != nil {
+		t.Errorf("f = %+v", f)
+	}
+	if !reflect.DeepEqual(f.Requirements, p.RequirementsFor("high")) {
+		t.Errorf("requirements = %+v", f.Requirements)
+	}
+}
+
+func TestWithOverrideRecomputesRequirements(t *testing.T) {
+	p, h := highRisk(t)
+	f := h.WithOverride(p, "low", "dev1", "lý do", time.Unix(0, 0))
+	if f.Level != "low" || !reflect.DeepEqual(f.Requirements, p.RequirementsFor("low")) {
+		t.Errorf("f = %+v", f)
+	}
+	if f.Override.From != "high" || f.Override.To != "low" || len(f.Matched) == 0 {
+		t.Errorf("f = %+v", f)
+	}
+	if h.Level != "high" || h.Override != nil {
+		t.Error("WithOverride làm đổi bản gốc")
+	}
+}
+
+func TestOverrideKeepsOriginalFrom(t *testing.T) {
+	p, h := highRisk(t)
+	f := h.WithOverride(p, "low", "d", "r", time.Unix(0, 0)).WithOverride(p, "medium", "d", "r2", time.Unix(0, 0))
+	if f.Override.From != "high" {
+		t.Errorf("from = %s", f.Override.From)
+	}
+}
+
+func TestWrittenFileHasNoSurprises(t *testing.T) {
+	_, h := highRisk(t)
+	s := dumpOf(t, h)
+	if !strings.Contains(s, "level:") || !strings.Contains(s, "requirements:") {
+		t.Errorf("s = %s", s)
+	}
+}
+
+func TestRiskFileOldWithoutFlowReadsDefaults(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "old.yaml")
+	os.WriteFile(file, []byte("level: high\npolicy: { version: 1, hash: h }\nrequirements: []\n"), 0o644)
+	f, ok, err := ReadRiskFile(file)
+	if err != nil || !ok || len(f.Flow) != 0 {
+		t.Errorf("f=%+v ok=%v err=%v", f, ok, err)
+	}
+}
+
+func TestOfAndOverrideSnapshotFlowOfLevel(t *testing.T) {
+	p := mustParse(t, "schema: 1\nlevels: [low, high]\ndefault: low\nflow:\n  low: { brd: auto, step: auto }\n  high: { step: manual }\n")
+	f := NewRiskFile(p, RiskResult{Level: "low", RuleLevel: "low"}, nil)
+	if f.Flow["brd"] != "auto" || f.Flow["step"] != "auto" {
+		t.Errorf("flow = %v", f.Flow)
+	}
+	h := f.WithOverride(p, "high", "dev", "x", time.Unix(0, 0))
+	if h.Flow["step"] != "manual" || h.Flow["brd"] != "manual" {
+		t.Errorf("flow = %v", h.Flow)
+	}
+	file := filepath.Join(t.TempDir(), "f.yaml")
+	f.Write(file)
+	back, _, _ := ReadRiskFile(file)
+	if !reflect.DeepEqual(back.Flow, f.Flow) {
+		t.Errorf("back = %v", back.Flow)
+	}
+}
+
+func TestRequiredByDesign(t *testing.T) {
+	dir := t.TempDir()
+	w := func(name, s string) string {
+		p := filepath.Join(dir, name)
+		os.WriteFile(p, []byte(s), 0o644)
+		return p
+	}
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{filepath.Join(dir, "none.yaml"), false},
+		{w("with.yaml", "steps: []\nimpact: { level: high, labels: [], reason: r }\n"), true},
+		{w("without.yaml", "steps: []\n"), false},
+		{w("broken.yaml", "steps: [\n"), false},
+	}
+	for _, c := range cases {
+		got, err := RequiredByDesign(c.path)
+		if err != nil || got != c.want {
+			t.Errorf("%s: got %v err %v", c.path, got, err)
+		}
+	}
+}

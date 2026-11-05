@@ -27,10 +27,12 @@ var (
 // nên AISDLC_SKIP_DOCKER=1 hay -run không đụng Docker thì không bao giờ gọi Docker.
 func TestMain(m *testing.M) {
 	code := m.Run()
-	if sharedStop != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		_ = sharedStop(ctx)
-		cancel()
+	for _, stop := range []func(context.Context) error{sharedStop, kafkaStop} {
+		if stop != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			_ = stop(ctx)
+			cancel()
+		}
 	}
 	os.Exit(code)
 }

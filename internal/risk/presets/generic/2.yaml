@@ -1,0 +1,28 @@
+schema: 1
+preset: { name: generic, version: "2" }
+levels: [low, medium, high]
+default: low
+rules:
+  - { id: G1, kind: label, match: money-movement, level: high, note: Có dòng tiền hoặc giá trị đi qua }
+  - { id: G2, kind: label, match: schema-change, level: medium, note: Đổi cấu trúc dữ liệu }
+  - { id: G3, kind: label, match: auth, level: high, note: Đổi xác thực hoặc phân quyền }
+  - { id: G4, kind: label, match: external-api, level: medium, note: Gọi hoặc mở API ngoài }
+classification:
+  agent: raise
+  devLower: reason
+requirements:
+  medium:
+    - { id: rule-pos-neg }
+    - { id: boundary }
+    - { id: coverage, min: 75 }
+  high:
+    - { id: rule-pos-neg }
+    - { id: boundary }
+    - { id: idempotent }
+    - { id: concurrent, threads: 8 }
+    - { id: invariant }
+    - { id: coverage, min: 90 }
+flow:
+  low:    { brd: auto, design: auto, cases: auto, step: auto }
+  medium: { brd: manual, design: manual, cases: manual, step: auto }
+  high:   { brd: manual, design: manual, cases: manual, step: manual }

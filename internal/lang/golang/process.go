@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sync"
 	"syscall"
 	"time"
 
@@ -16,7 +15,6 @@ type process struct {
 	cmd  *exec.Cmd
 	done chan struct{}
 	err  error
-	once sync.Once
 }
 
 func (p *process) Done() <-chan struct{} { return p.done }
@@ -27,24 +25,26 @@ func (p *process) killGroup(sig syscall.Signal) {
 }
 
 // Stop gửi SIGTERM cho cả nhóm; quá timeout thì SIGKILL cả nhóm.
-// Trả true nếu tiến trình tự thoát trong timeout.
+// Trả true nếu tiến trình chính tự thoát trong timeout. Khi tiến trình chính
+// đã thoát (êm hay không), nhóm luôn bị SIGKILL để không sót tiến trình con.
 func (p *process) Stop(timeout time.Duration) bool {
+	graceful := true
 	select {
 	case <-p.done:
-		return true
 	default:
+		p.killGroup(syscall.SIGTERM)
+		t := time.NewTimer(timeout)
+		defer t.Stop()
+		select {
+		case <-p.done:
+		case <-t.C:
+			graceful = false
+			p.killGroup(syscall.SIGKILL)
+			<-p.done
+		}
 	}
-	p.killGroup(syscall.SIGTERM)
-	t := time.NewTimer(timeout)
-	defer t.Stop()
-	select {
-	case <-p.done:
-		return true
-	case <-t.C:
-	}
-	p.killGroup(syscall.SIGKILL)
-	<-p.done
-	return false
+	p.killGroup(syscall.SIGKILL) // nhóm rỗng thì ESRCH, bỏ qua
+	return graceful
 }
 
 // Start chạy binary trong process group riêng, ghi stdout+stderr vào logPath.
@@ -64,7 +64,9 @@ func (Runtime) Start(ctx context.Context, binary string, env map[string]string, 
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
-	cmd.Env = append(cmd.Env, "GOCOVERDIR="+coverDir)
+	if coverDir != "" {
+		cmd.Env = append(cmd.Env, "GOCOVERDIR="+coverDir)
+	}
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	p := &process{cmd: cmd, done: make(chan struct{})}

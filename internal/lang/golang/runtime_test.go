@@ -263,3 +263,62 @@ func TestRuntimeFor(t *testing.T) {
 		t.Errorf("got %v", err)
 	}
 }
+
+const leaderExitsMain = `package main
+
+import (
+	"os"
+	"os/exec"
+	"os/signal"
+	"strconv"
+	"syscall"
+)
+
+func main() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGTERM)
+	ch := exec.Command("sleep", "60")
+	if err := ch.Start(); err != nil {
+		panic(err)
+	}
+	os.WriteFile(os.Getenv("PIDFILE"), []byte(strconv.Itoa(ch.Process.Pid)), 0o644)
+	<-c
+	os.Exit(0)
+}
+`
+
+func TestStopKillsChildrenAfterGracefulExit(t *testing.T) {
+	bin := buildSvc(t, leaderExitsMain)
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	p, err := golang.Runtime{}.Start(context.Background(), bin, map[string]string{"PIDFILE": pidFile}, t.TempDir(), filepath.Join(t.TempDir(), "l.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := strconv.Atoi(waitFile(t, pidFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond) // để signal.Notify có hiệu lực
+	if !p.Stop(5 * time.Second) {
+		t.Error("mong đợi thoát êm")
+	}
+	dead := false
+	for i := 0; i < 100 && !dead; i++ {
+		dead = syscall.Kill(child, 0) != nil
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !dead {
+		syscall.Kill(child, syscall.SIGKILL)
+		t.Error("tiến trình con còn sống sau Stop")
+	}
+}
+
+func TestBuildFlagsBeforePackage(t *testing.T) {
+	repo := writeModule(t, map[string]string{"cmd/server/main.go": okMain})
+	s := svc
+	s.BuildFlags = []string{"-ldflags=-s"}
+	r, err := golang.Runtime{}.Build(context.Background(), repo, s, t.TempDir())
+	if err != nil || !r.OK {
+		t.Fatalf("%v %+v", err, r)
+	}
+}

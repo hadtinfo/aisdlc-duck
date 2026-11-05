@@ -126,13 +126,13 @@ func (r *rd) config(n any) RepoConfig {
 	migDir := str(mig, "dir", "db/migrations")
 	return RepoConfig{
 		Language:       str(n, "language", "go"),
-		TimeoutMinutes: r.num(n, "timeoutMinutes", "timeoutMinutes", 30),
+		TimeoutMinutes: r.positive(n, "timeoutMinutes", "timeoutMinutes", 30),
 		Service: ServiceConfig{
 			Main:                   str(svc, "main", "./cmd/server"),
 			BuildFlags:             strs(svc, "buildFlags", nil),
 			HealthPath:             str(svc, "healthPath", "/healthz"),
-			StartTimeoutSeconds:    int(r.num(svc, "service.startTimeoutSeconds", "startTimeoutSeconds", 60)),
-			ShutdownTimeoutSeconds: int(r.num(svc, "service.shutdownTimeoutSeconds", "shutdownTimeoutSeconds", 15)),
+			StartTimeoutSeconds:    r.seconds(svc, "service.startTimeoutSeconds", "startTimeoutSeconds", 60),
+			ShutdownTimeoutSeconds: r.seconds(svc, "service.shutdownTimeoutSeconds", "shutdownTimeoutSeconds", 15),
 			Env: ServiceEnv{
 				Port:             str(env, "port", "PORT"),
 				DatabaseURL:      str(env, "databaseUrl", ""),
@@ -239,6 +239,32 @@ func (r *rd) num(n any, path, k string, def float64) float64 {
 	}
 	r.bad(path, get(n, k))
 	return def
+}
+
+// positive như num nhưng giá trị phải lớn hơn 0 (thời hạn 0 hay âm làm harness dừng ngay hoặc chạy mãi).
+func (r *rd) positive(n any, path, k string, def float64) float64 {
+	v := r.num(n, path, k, def)
+	if v <= 0 {
+		r.mustBePositive(path, get(n, k))
+		return def
+	}
+	return v
+}
+
+// seconds là số giây nguyên lớn hơn 0 (phần lẻ bị bỏ, như int() của num).
+func (r *rd) seconds(n any, path, k string, def int) int {
+	v := int(r.num(n, path, k, float64(def)))
+	if v <= 0 {
+		r.mustBePositive(path, get(n, k))
+		return def
+	}
+	return v
+}
+
+func (r *rd) mustBePositive(path string, v any) {
+	if r.err == nil {
+		r.err = fmt.Errorf("Giá trị %s không hợp lệ: %v (phải lớn hơn 0)", path, v)
+	}
 }
 
 func strs(n any, k string, def []string) []string {

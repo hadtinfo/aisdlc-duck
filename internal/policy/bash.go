@@ -205,7 +205,7 @@ func (m *pathMatcher) writes(command, cwd string) (string, bool) {
 // writesFrom: như writes, bắt đầu từ thư mục cur. Thư mục thành không xác định cho mọi đoạn sau (kể cả sau
 // subshell) khi gặp cd/pushd/popd không theo dõi chắc được: không đứng đầu đoạn ("echo cd x"), chạy có điều
 // kiện hoặc lặp (sau &&, ||, then, else, do...), hoặc trong pipeline/nền (|, &: chạy ở subshell). Thân heredoc
-// được xét như một lệnh riêng với thư mục không xác định (bash <<EOF có thể chạy nó).
+// của trình thông dịch shell (bash <<EOF) được xét như một lệnh riêng với thư mục không xác định.
 func (m *pathMatcher) writesFrom(command string, cur shellDir) (string, bool) {
 	var dirStack, subStack []shellDir
 	hit, found := "", false
@@ -399,17 +399,47 @@ func changeDir(words []shellWord, d shellDir, stack []shellDir) (shellDir, []she
 	return shellDir{cwd: filepath.Join(d.cwd, dir), known: true}, stack, true
 }
 
-// heredocSpec: một heredoc đang chờ thân (<<DELIM hoặc <<-DELIM, bỏ tab đầu dòng).
+// heredocSpec: một heredoc đang chờ thân (<<DELIM hoặc <<-DELIM, bỏ tab đầu dòng). exec: lệnh nhận thân là
+// trình thông dịch shell, nên thân được xét như lệnh; ngược lại thân là dữ liệu (như <<<).
 type heredocSpec struct {
 	delim string
 	strip bool
+	exec  bool
+}
+
+// shellInterp: lệnh chạy stdin (hoặc đối số) như script shell.
+var shellInterp = map[string]bool{"bash": true, "sh": true, "zsh": true, "dash": true, "ksh": true,
+	"source": true, ".": true, "eval": true}
+
+// execsHeredoc: lệnh của đoạn (các từ trước <<) có chạy thân heredoc như script không: trình thông dịch shell,
+// hoặc xargs/env (bỏ cờ và phép gán) theo sau là một trình thông dịch. Chưa có tên lệnh (<<EOF bash) thì coi
+// là có, để an toàn.
+func execsHeredoc(words []shellWord) bool {
+	args, _ := commandWords(words)
+	if len(args) == 0 {
+		return true
+	}
+	for len(args) > 0 {
+		cmd := args[0][strings.LastIndex(args[0], "/")+1:]
+		if shellInterp[cmd] {
+			return true
+		}
+		if cmd != "xargs" && cmd != "env" {
+			return false
+		}
+		args = args[1:]
+		for len(args) > 0 && (strings.HasPrefix(args[0], "-") || assignHead.MatchString(args[0])) {
+			args = args[1:]
+		}
+	}
+	return false
 }
 
 // splitShell tách lệnh thành từ (bỏ nháy '..', "..", $'..', $"..", \x) và đoạn. end(sep) được gọi ở cuối mỗi
 // đoạn với toán tử kết thúc nó (";", "\n", "&&", "||", "|", "&", "(", ")", "`", "$(" hoặc "" ở cuối lệnh);
 // open() và close() khi vào/ra subshell (( ), $( ), ` `), kể cả $( ) và ` ` trong nháy kép. Comment (# ở đầu
-// từ, ngoài nháy) bị bỏ tới hết dòng. Thân heredoc (<<DELIM) không được tách cùng lệnh mà chuyển cho
-// heredoc(body). Đây là heuristic, không phải parser shell đầy đủ (không hiểu ${..}, case..esac, $((..)), mảng):
+// từ, ngoài nháy) bị bỏ tới hết dòng. Thân heredoc (<<DELIM) không được tách cùng lệnh; chỉ thân mà
+// lệnh nhận là trình thông dịch shell (execsHeredoc) mới được chuyển cho heredoc(body), còn lại là dữ liệu. Đây là heuristic, không phải parser shell đầy đủ (không hiểu ${..}, case..esac, $((..)), mảng):
 // khi cách tách lệch với shell, kết quả có thể lệch theo cả hai chiều; phép so chuỗi con của bản Java vẫn chạy
 // độc lập.
 func splitShell(command string, words *[]shellWord, end func(sep string), open, close func(), heredoc func(body string)) {
@@ -497,7 +527,9 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 				body.WriteString(line)
 				body.WriteByte('\n')
 			}
-			heredoc(body.String())
+			if h.exec {
+				heredoc(body.String())
+			}
 		}
 		pending = pending[:0]
 		return j
@@ -518,13 +550,15 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 				cur.WriteByte('\t')
 			case 'r':
 				cur.WriteByte('\r')
-			case 'x':
+			case 'x', 'u', 'U': // \xHH, \uHHHH, \UHHHHHHHH
+				n := map[rune]int{'x': 2, 'u': 4, 'U': 8}[c]
 				v, k := 0, j+1
-				for ; k < len(rs) && k < j+3 && isHex(rs[k]); k++ {
+				for ; k < len(rs) && k < j+1+n && isHex(rs[k]); k++ {
 					v = v*16 + hexVal(rs[k])
 				}
 				if k == j+1 {
-					cur.WriteString(`\x`)
+					cur.WriteRune('\\')
+					cur.WriteRune(c)
 				} else {
 					cur.WriteRune(rune(v))
 					j = k - 1
@@ -656,7 +690,7 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 				i += 2
 			case next == '<': // heredoc
 				i++
-				h := heredocSpec{}
+				h := heredocSpec{exec: execsHeredoc(*words)}
 				if i+1 < len(rs) && rs[i+1] == '-' {
 					h.strip = true
 					i++

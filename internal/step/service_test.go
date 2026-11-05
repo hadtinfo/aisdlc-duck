@@ -509,3 +509,13 @@ func TestStepsJSONAtomicUnderConcurrentStart(t *testing.T) {
 		}
 	}
 }
+
+func TestStartRefusesWithTypedNilGates(t *testing.T) {
+	e := newEnv(t)
+	e.openGates()
+	var nilGates *gate.Service
+	s := NewService(e.paths, e.git, e.specs, e.cfg, clock).WithGates(nilGates)
+	if _, err := s.Start("S1"); !isStepErr(err) {
+		t.Errorf("want StepError, got %v", err)
+	}
+}

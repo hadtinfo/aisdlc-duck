@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -630,5 +631,12 @@ func TestDecisionConstructors(t *testing.T) {
 	}
 	if d := DenyCode("C", "x"); d.Allow || d.Reason != "x" || d.Code != "C" {
 		t.Error(d)
+	}
+}
+
+func TestErrDenyMatchesJavaCatchAll(t *testing.T) {
+	d := errDeny(errors.New("hỏng\n  file  gates.json"))
+	if d.Reason != "aisdlc lỗi: hỏng file gates.json" {
+		t.Errorf("reason = %q", d.Reason)
 	}
 }

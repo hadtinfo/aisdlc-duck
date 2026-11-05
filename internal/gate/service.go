@@ -182,6 +182,9 @@ func (s *Service) IsOpen(g Gate) (bool, error) {
 
 // CodeReady: các cổng cần để viết code đã mở.
 func (s *Service) CodeReady() (bool, error) {
+	if s == nil { // typed-nil qua interface: fail-closed
+		return false, nil
+	}
 	c, err := s.begin()
 	if err != nil {
 		return false, err
@@ -220,7 +223,7 @@ func (s *Service) Submit(g Gate, findings []spec.Finding) (Submission, error) {
 	if err != nil {
 		return Submission{}, err
 	}
-	sub := Submission{Gate: g, Hash: h, At: s.now(), Findings: append([]spec.Finding{}, findings...)}
+	sub := Submission{Gate: g, Hash: h, At: s.now().UTC(), Findings: append([]spec.Finding{}, findings...)}
 	if err := s.store.SaveSubmission(sub); err != nil {
 		return Submission{}, err
 	}
@@ -312,7 +315,7 @@ func (s *Service) record(g Gate, approver, rule, channel string) (Approval, erro
 	if current != sub.Hash {
 		return Approval{}, errf("Artifact của cổng " + string(g) + " đã đổi kể từ lúc nộp; hãy nộp lại.")
 	}
-	a := Approval{Gate: g, Hash: current, Approver: approver, At: s.now(), Rule: rule, Channel: channel}
+	a := Approval{Gate: g, Hash: current, Approver: approver, At: s.now().UTC(), Rule: rule, Channel: channel}
 	if err := s.store.SaveApproval(a); err != nil {
 		return Approval{}, err
 	}

@@ -47,17 +47,17 @@ func CheckRequirements(risk RiskFile, cases spec.CasesSpec, design *spec.DesignS
 		name := RequirementDisplayName(r)
 		var s RequirementStatus
 		switch r.ID {
-		case RulePosNeg:
+		case ReqRulePosNeg:
 			s = rulePosNeg(r, name, cs, brd)
-		case Boundary:
+		case ReqBoundary:
 			s = boundary(r, name, cs, brd)
-		case Idempotent:
+		case ReqIdempotent:
 			s = idempotent(r, name, cs, designDoc)
-		case Concurrent:
+		case ReqConcurrent:
 			s = concurrent(r, name, cs)
-		case Invariant:
+		case ReqInvariant:
 			s = invariant(r, name, design, cases)
-		case Coverage:
+		case ReqCoverage:
 			s = RequirementStatus{r.ID, name, RequirementLater, "kiểm ở Review"}
 		default:
 			s = RequirementStatus{r.ID, name, RequirementLater, "harness chạy sau mọi case"}

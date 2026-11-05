@@ -198,3 +198,13 @@ func TestRequiredByDesign(t *testing.T) {
 		}
 	}
 }
+
+func TestWithOverrideStoresUTC(t *testing.T) {
+	p, h := highRisk(t)
+	ict := time.FixedZone("ICT", 7*3600)
+	f := h.WithOverride(p, "medium", "dev1", "đã xem", time.Date(2026, 11, 4, 8, 2, 3, 0, ict))
+	d := dumpOf(t, f)
+	if strings.Contains(d, "+07:00") || !strings.Contains(d, "2026-11-04T01:02:03Z") {
+		t.Errorf("risk.yaml không phải UTC:\n%s", d)
+	}
+}

@@ -612,7 +612,7 @@ func lookupApproved(list []approvedArtifact, rel string) (gate.Gate, bool) {
 }
 
 func errDeny(err error) Decision {
-	return Deny("Không kiểm tra được trạng thái tính năng: " + err.Error() + "; từ chối để an toàn.")
+	return Deny("aisdlc lỗi: " + strings.Join(strings.Fields(err.Error()), " "))
 }
 
 // PreToolUse quyết định cho một lần gọi tool trước khi chạy. Lỗi đọc trạng thái (gates.json, steps.json...)

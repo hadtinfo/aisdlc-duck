@@ -22,7 +22,8 @@ func FlowUnit(g gate.Gate) string {
 
 // AutoGate quyết định tự duyệt theo mức rủi ro (spec risk-flow §5.1). Hàm thuần, không đọc file.
 // Trả ("", false) khi được tự duyệt; (lý do, true) khi phải duyệt tay (true = có lý do, như Optional.isPresent của Java).
-func AutoGate(p RiskPolicy, level string, g gate.Gate, hasHighFlag bool) (string, bool) {
+// manual == true nghĩa là cổng cần người duyệt tay; reason là lý do.
+func AutoGate(p RiskPolicy, level string, g gate.Gate, hasHighFlag bool) (reason string, manual bool) {
 	unit := FlowUnit(g)
 	if unit == "" {
 		return "Review luôn duyệt tay", true

@@ -649,7 +649,7 @@ func validateRequirement(level string, q Requirement, errs *[]string) {
 			*errs = append(*errs, where+": thiếu tham số '"+name+"'")
 		}
 	}
-	if q.ID == SQLZero {
+	if q.ID == ReqSQLZero {
 		if sql, ok := q.StrParam("sql"); ok && strings.TrimSpace(sql) != "" {
 			body := strings.TrimSpace(sql)
 			body = strings.TrimSuffix(body, ";")

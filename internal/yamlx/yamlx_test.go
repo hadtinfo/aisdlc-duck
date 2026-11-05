@@ -21,7 +21,7 @@ func TestParseIgnoresUnknownKeys(t *testing.T) {
 
 func TestReadSyntaxErrorHasFileAndLine(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "cases.yaml")
-	if err := os.WriteFile(p, []byte("a: 1\nb:\n  - [unclosed\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("a: 1\nb: 2\nc: x: y\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var out map[string]any
@@ -55,5 +55,22 @@ func TestWriteCreatesParentAndNoDocMarker(t *testing.T) {
 	}
 	if strings.HasPrefix(string(b), "---") {
 		t.Fatalf("có ---: %q", b)
+	}
+}
+
+func TestReadUnclosedFlowHasFileAndLine(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "design.yaml")
+	if err := os.WriteFile(p, []byte("a: 1\nb:\n  - [unclosed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	err := Read(p, &out)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, want := range []string{"design.yaml", "dòng "} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q thiếu %q", err, want)
+		}
 	}
 }

@@ -2,6 +2,7 @@ package lang
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -11,6 +12,7 @@ import (
 // FileSource: tập file để so (base tree hoặc working tree).
 type FileSource interface {
 	List(ctx context.Context) ([]string, error)
+	// Read trả nội dung file; path không có thì trả lỗi thỏa errors.Is(err, fs.ErrNotExist).
 	Read(ctx context.Context, path string) ([]byte, error)
 }
 
@@ -29,8 +31,14 @@ func (s treeSource) List(ctx context.Context) ([]string, error) {
 }
 
 func (s treeSource) Read(ctx context.Context, path string) ([]byte, error) {
-	content, _, err := s.git.FileAt(ctx, s.treeish, path)
-	return []byte(content), err
+	content, ok, err := s.git.FileAt(ctx, s.treeish, path)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, &fs.PathError{Op: "read", Path: path, Err: fs.ErrNotExist}
+	}
+	return []byte(content), nil
 }
 
 type dirSource struct {

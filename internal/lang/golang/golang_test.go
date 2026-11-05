@@ -2,6 +2,8 @@ package golang_test
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"math"
 	"os"
 	"os/exec"
@@ -134,5 +136,81 @@ func TestForUnknownLanguage(t *testing.T) {
 	a, err := langs.For("go")
 	if err != nil || a.Name() != "go" || a.SampleFileName() != "aisdlcx.go" {
 		t.Errorf("got %v %v", a, err)
+	}
+}
+
+func TestDependencyUnknownDirectiveIsNA(t *testing.T) {
+	base := mapSource{"go.mod": "module x\n\ngo 1.23\n"}
+	now := mapSource{"go.mod": "module x\n\ngo 1.23\n\nfrobnicate x\n\nrequire example.com/a v1.0.0\n"}
+	d := golang.Adapter{}.DependencyChanges(context.Background(), base, now)
+	if !strings.HasPrefix(d.NA, "Không đọc được go.mod hoặc base tree: ") || strings.Contains(d.NA, "\n") || len(d.Added) != 0 {
+		t.Errorf("got %+v", d)
+	}
+	// lỗi ở phía base cũng là N/A
+	d = golang.Adapter{}.DependencyChanges(context.Background(), now, base)
+	if !strings.HasPrefix(d.NA, "Không đọc được go.mod hoặc base tree: ") {
+		t.Errorf("base side: got %+v", d)
+	}
+}
+
+func TestDependencyIgnoreDirectiveStillReportsReplace(t *testing.T) {
+	base := mapSource{"go.mod": "module x\n\ngo 1.25\n"}
+	now := mapSource{"go.mod": "module x\n\ngo 1.25\n\nignore ./foo\n\nreplace example.com/a => ../a\n"}
+	d := golang.Adapter{}.DependencyChanges(context.Background(), base, now)
+	if d.NA != "" || !reflect.DeepEqual(d.Added, []string{"replace example.com/a => ../a"}) {
+		t.Errorf("got %+v", d)
+	}
+}
+
+func TestDependencyBaseWithoutGoModReportsAllAsAdded(t *testing.T) {
+	now := mapSource{"go.mod": "module x\n\ngo 1.23\n\nrequire (\n\texample.com/a v1.0.0\n\texample.com/b v1.0.0\n)\n"}
+	d := golang.Adapter{}.DependencyChanges(context.Background(), mapSource{"main.go": "package main"}, now)
+	if d.NA != "" || !reflect.DeepEqual(d.Added, []string{"example.com/a", "example.com/b"}) {
+		t.Errorf("got %+v", d)
+	}
+}
+
+func TestMigrationVersionIgnoresTestFiles(t *testing.T) {
+	a := golang.Adapter{}
+	if _, ok := a.MigrationVersion("db/migrations/00003_x_test.go"); ok {
+		t.Error("_test.go is not a migration")
+	}
+	if v, ok := a.MigrationVersion("db/migrations/00003_x.go"); !ok || v != 3 {
+		t.Errorf("got %d %v", v, ok)
+	}
+}
+
+func TestLanguageLookupTrimsAndLowercases(t *testing.T) {
+	a, err := langs.For(" Go ")
+	if err != nil || a.Name() != "go" {
+		t.Errorf("got %v %v", a, err)
+	}
+}
+
+func TestFileSourceMissingPathIsNotExist(t *testing.T) {
+	dir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("HOME", home)
+	run := func(args ...string) {
+		c := exec.Command("git", args...)
+		c.Dir = dir
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.name", "t")
+	run("config", "user.email", "t@t")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
+	run("add", ".")
+	run("commit", "-q", "-m", "c")
+	ctx := context.Background()
+	if _, err := lang.TreeSource(gitx.New(dir), "HEAD").Read(ctx, "nope.txt"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("tree: %v", err)
+	}
+	if _, err := lang.DirSource(dir, nil).Read(ctx, "nope.txt"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("dir: %v", err)
 	}
 }

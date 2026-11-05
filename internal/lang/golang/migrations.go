@@ -14,7 +14,7 @@ var migrationRe = regexp.MustCompile(`^(\d+)_.+\.(sql|go)$`)
 func (Adapter) MigrationVersion(fileName string) (int64, bool) {
 	name := fileName[strings.LastIndex(fileName, "/")+1:]
 	m := migrationRe.FindStringSubmatch(name)
-	if m == nil {
+	if m == nil || strings.HasSuffix(name, "_test.go") {
 		return 0, false
 	}
 	v, err := strconv.ParseInt(m[1], 10, 64)

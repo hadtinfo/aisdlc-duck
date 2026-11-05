@@ -217,23 +217,15 @@ func TestStopKillsAfterTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := strconv.Atoi(waitFile(t, pidFile))
+	// pidfile được ghi sau signal.Ignore, cũng là tín hiệu sẵn sàng
+	child, err := strconv.Atoi(strings.TrimSpace(waitFile(t, pidFile)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond) // để signal.Ignore có hiệu lực
 	if p.Stop(500 * time.Millisecond) {
 		t.Error("mong đợi bị SIGKILL")
 	}
-	dead := false
-	for i := 0; i < 100 && !dead; i++ {
-		dead = syscall.Kill(child, 0) != nil
-		time.Sleep(25 * time.Millisecond)
-	}
-	if !dead {
-		syscall.Kill(child, syscall.SIGKILL)
-		t.Error("tiến trình con còn sống")
-	}
+	waitDead(t, child)
 }
 
 func TestStartCtxCancelKillsGroup(t *testing.T) {

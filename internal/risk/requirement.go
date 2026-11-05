@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Requirement là một yêu cầu chất lượng theo mức. YAML/JSON phẳng: { id: coverage, min: 90 }.
@@ -130,4 +132,22 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// UnmarshalYAML đọc dạng phẳng { id: coverage, min: 90 }.
+func (r *Requirement) UnmarshalYAML(n *yaml.Node) error {
+	var m map[string]any
+	if err := n.Decode(&m); err != nil {
+		return err
+	}
+	out := Requirement{Params: map[string]any{}}
+	for k, v := range m {
+		if k == "id" {
+			out.ID = fmt.Sprint(v)
+			continue
+		}
+		out.Params[k] = v
+	}
+	*r = out
+	return nil
 }

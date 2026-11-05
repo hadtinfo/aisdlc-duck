@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"aisdlc/internal/fsx"
 )
 
 const maxSessionName = 100
@@ -31,13 +33,7 @@ func readKeyFile(f string) (FeatureKey, bool, error) {
 }
 
 func writeKeyFile(f string, k FeatureKey) error {
-	if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
-		return fmt.Errorf("Không ghi được %s: %v", f, err)
-	}
-	if err := os.WriteFile(f, []byte(string(k)+"\n"), 0o644); err != nil {
-		return fmt.Errorf("Không ghi được %s: %v", f, err)
-	}
-	return nil
+	return fsx.WriteAtomic(f, []byte(string(k)+"\n"), 0o644)
 }
 
 func activeFile(repoRoot string) string { return filepath.Join(repoRoot, ".aisdlc", "active") }

@@ -275,3 +275,180 @@ func TestApproverNamedAutoRejected(t *testing.T) {
 	a, _ := r.approval(gate.BRD)
 	eq(t, a.Approver, "Dev Một")
 }
+
+// passing: các case ids đều pass.
+func passing(ids ...string) func([]string) []run.CaseResult {
+	return func([]string) []run.CaseResult {
+		var out []run.CaseResult
+		for _, id := range ids {
+			out = append(out, caseResult(id, "S"+id[1:], run.CaseOutcomePassed)) // C1 thuộc S1, C2 thuộc S2
+		}
+		return out
+	}
+}
+
+// Phần bước của lowFeature_brdDesignCasesAutoApproved_reviewManual: bước sạch tự accept; Review vẫn chờ dev.
+func TestLowFeatureStepsAutoAcceptedReviewManual(t *testing.T) {
+	r := flowRepo(t)
+	r.lowThroughCases()
+	for _, id := range []string{"S1", "S2"} {
+		r.ok(noConsole(), "step", "start", id)
+		file := s1File
+		if id == "S2" {
+			file = "src/main/java/com/example/limit/service/LimitService.java"
+		}
+		r.write(file, "class X"+id+" {}\n")
+		r.runner.cases = passing("C1", "C2")
+		r.ok(noConsole(), "step", "finish", id)
+	}
+	s := r.status()
+	eq(t, s.Steps["S1"], "ACCEPTED")
+	eq(t, s.Steps["S2"], "ACCEPTED")
+	eq(t, s.Gates["REVIEW"], "NOT_SUBMITTED")
+	r.noApproval(gate.REVIEW)
+}
+
+func TestStepAutoAcceptWhenClean(t *testing.T) {
+	r := flowRepo(t)
+	r.lowThroughCases()
+	r.ok(noConsole(), "step", "start", "S1")
+	r.write(s1File, "class LimitController {}\n")
+	r.runner.cases = passing("C1")
+	r.ok(noConsole(), "step", "finish", "S1")
+	contains(t, r.out, "Đã chấp nhận bước S1: tự duyệt (mức low).", "Bước kế: `aisdlc step start S2`.")
+	notContains(t, r.out, "Dừng lại.")
+	var recs []struct {
+		Status     string `json:"status"`
+		AcceptedBy string `json:"acceptedBy"`
+	}
+	must(t, json.Unmarshal([]byte(r.read("aisdlc/features/PAY-1/steps.json")), &recs))
+	eq(t, recs[0].Status, "ACCEPTED")
+	eq(t, recs[0].AcceptedBy, "auto")
+	// đã tự duyệt: step accept chỉ báo lại
+	r.ok(noConsole(), "step", "accept", "S1")
+	contains(t, r.out, "Bước S1 đã được tự duyệt theo mức rủi ro.")
+}
+
+func TestStepWithAllowScopeNeedsDev(t *testing.T) {
+	r := flowRepo(t)
+	r.lowThroughCases()
+	r.ok(noConsole(), "step", "start", "S1")
+	r.write(s1File, "class LimitController {}\n")
+	r.write("src/main/java/com/example/Shared.java", "class Shared {}\n") // ngoài phạm vi S1
+	r.runner.cases = passing("C1")
+	eq(t, r.run("step", "finish", "S1"), 1)
+	r.ok(typed("PAY-1"), "scope", "allow", "src/main/java/com/example/Shared.java")
+	r.ok(noConsole(), "step", "start", "S1")
+	r.ok(noConsole(), "step", "finish", "S1")
+	contains(t, r.out, "Dừng lại. Dev xem rồi chạy `aisdlc step accept S1`")
+	notContains(t, r.out, "tự duyệt")
+	eq(t, r.status().Steps["S1"], "AWAITING_DEV")
+}
+
+func TestStepCasesFailNoAutoAccept(t *testing.T) {
+	r := flowRepo(t)
+	r.lowThroughCases()
+	eq(t, r.risk().Flow["step"], "auto")
+	r.ok(noConsole(), "step", "start", "S1")
+	r.write(s1File, "class LimitController {}\n")
+	r.runner.cases = func([]string) []run.CaseResult {
+		return []run.CaseResult{caseResult("C1", "S1", run.CaseOutcomeFailed)}
+	}
+	eq(t, r.run("step", "finish", "S1"), 1) // case chưa qua: không tự accept
+	contains(t, r.out, "  - C1 FAILED: mong đợi 200, thực tế 404")
+	eq(t, r.status().Steps["S1"], "AWAITING_DEV")
+}
+
+func TestReclassifyRaiseSupersedesAllAutoGates(t *testing.T) {
+	r := flowRepo(t)
+	r.lowThroughCases()
+	// chính sách thêm rule từ khóa khớp BRD: tính lại thành high
+	r.write(policyFile, regexp.MustCompile(`(?m)^rules:\n`).ReplaceAllLiteralString(r.read(policyFile),
+		"rules:\n  - { id: X1, kind: keyword, match: \"hạn mức\", level: high, note: Hạn mức }\n"))
+	r.ok(typed("PAY-1"), "risk", "reclassify")
+	contains(t, r.out, "Mức tăng low → high: cổng BRD, Thiết kế cần dev duyệt lại.", "Cổng Case đã mở lại")
+	eq(t, r.superseded(gate.BRD), true)
+	eq(t, r.superseded(gate.DESIGN), true)
+	r.noApproval(gate.CASES)
+	eq(t, r.state(gate.BRD), "AWAITING_APPROVAL")
+	eq(t, r.state(gate.DESIGN), "LOCKED_BY_PREVIOUS")
+
+	r.ok(noConsole(), "status")
+	matches(t, r.out, `BRD +AWAITING_APPROVAL +chờ dev duyệt \(bản tự duyệt \(mức low\) đã bị thay thế khi nâng mức\)`)
+	// agent không đi tiếp được: chưa được code
+	if r.run("step", "start", "S1") == 0 {
+		t.Fatal("step start phải lỗi")
+	}
+
+	// dev duyệt tay lại, không cần nộp lại
+	r.ok(typed("PAY-1"), "approve", "brd")
+	a, _ := r.approval(gate.BRD)
+	eq(t, a.Approver, "Dev Một")
+	eq(t, r.state(gate.DESIGN), "AWAITING_APPROVAL")
+	r.ok(typed("PAY-1"), "approve", "design")
+	a, _ = r.approval(gate.DESIGN)
+	eq(t, a.Approver, "Dev Một")
+}
+
+func TestFlowEditSameLevelSaysFlowChangedNotRaise(t *testing.T) {
+	r := flowRepo(t)
+	r.lowThroughCases()
+	// cùng mức low nhưng chính sách đổi BRD sang duyệt tay
+	r.write(policyFile, regexp.MustCompile(regexp.QuoteMeta("low:    { brd: auto,")).
+		ReplaceAllLiteralString(r.read(policyFile), "low:    { brd: manual,"))
+	r.ok(typed("PAY-1"), "risk", "reclassify")
+	contains(t, r.out, "Flow của mức low đổi: cổng BRD cần dev duyệt lại.")
+	notContains(t, r.out, "Mức tăng")
+	eq(t, r.superseded(gate.BRD), true)
+	eq(t, r.superseded(gate.DESIGN), false)
+}
+
+func TestResubmitBrdAfterRiskSetHighStaysManual(t *testing.T) {
+	r := flowRepo(t)
+	r.ok(noConsole(), "submit", "brd")
+	r.ok(noConsole(), "submit", "design")
+	r.assertAuto(gate.DESIGN, "low")
+	r.ok(typed("PAY-1"), "risk", "set", "high", "--reason", "Chuyển tiền thật")
+	eq(t, r.superseded(gate.BRD), true)
+	r.ok(noConsole(), "submit", "brd")
+	notContains(t, r.out, "tự duyệt (mức")
+	eq(t, r.superseded(gate.BRD), true)
+	eq(t, r.state(gate.BRD), "AWAITING_APPROVAL")
+}
+
+func TestStepFinishSupersedesStaleAutoGates(t *testing.T) {
+	r := flowRepo(t)
+	r.lowThroughCases()
+	r.ok(noConsole(), "step", "start", "S1")
+	// risk.yaml ghi mức high mà chưa thay thế (lệnh trước hỏng giữa chừng)
+	p, err := risk.ParsePolicy(r.read(policyFile))
+	must(t, err)
+	must(t, r.risk().WithOverride(p, "high", "Dev Một", "r", testNow).Write(filepath.Join(r.root, riskFile)))
+	r.write(s1File, "class LimitController {}\n")
+	r.runner.cases = passing("C1")
+	r.ok(noConsole(), "step", "finish", "S1")
+	contains(t, r.out, "Mức tăng low → high: cổng BRD, Thiết kế, Case cần dev duyệt lại.")
+	notContains(t, r.out, "Đã chấp nhận bước S1")
+	eq(t, r.superseded(gate.CASES), true)
+}
+
+func TestLowerNeverTurnsManualIntoAuto(t *testing.T) {
+	r := flowRepo(t)
+	r.ok(noConsole(), "submit", "brd")
+	r.setDesignImpact(`{ level: high, labels: [money-movement], reason: "Chuyển tiền" }`)
+	r.ok(noConsole(), "submit", "design")
+	r.ok(typed("PAY-1"), "approve", "brd")
+	r.ok(typed("PAY-1"), "approve", "design")
+	brd, _ := r.approval(gate.BRD)
+	design, _ := r.approval(gate.DESIGN)
+	eq(t, brd.Approver, "Dev Một")
+
+	r.ok(typed("PAY-1"), "risk", "set", "low", "--reason", "Không chuyển tiền thật")
+	notContains(t, r.out, "Mức tăng")
+	a, _ := r.approval(gate.BRD)
+	eq(t, a, brd)
+	a, _ = r.approval(gate.DESIGN)
+	eq(t, a, design)
+	eq(t, r.state(gate.BRD), "APPROVED")
+	eq(t, r.state(gate.DESIGN), "APPROVED")
+}

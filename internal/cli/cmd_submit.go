@@ -322,11 +322,11 @@ func (s *submission) review(f *Feature) (int, error) {
 			findings = append(findings, spec.Finding{Code: "REVIEW_EVAL_FAILED",
 				Message: "Eval chưa đạt (" + strings.Join(failed, ", ") + "). Sửa rồi chạy lại `aisdlc eval`."})
 		}
-		stale, err := staleEval(f, r)
-		if err != nil {
-			return 0, err
-		}
-		if stale != nil {
+		// như catch RuntimeException của Java: không kiểm được eval cũ (vd. git lỗi) là phát hiện, không phải lỗi lệnh
+		if stale, err := staleEval(f, r); err != nil {
+			findings = append(findings, spec.Finding{Code: "REVIEW_NO_EVAL",
+				Message: "Không đọc được " + f.Paths.Rel(report) + "; chạy lại `aisdlc eval`: " + err.Error()})
+		} else if stale != nil {
 			findings = append(findings, *stale)
 		}
 	}

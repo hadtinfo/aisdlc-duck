@@ -65,6 +65,9 @@ func TestPay1DesignPrintsTwoFlags(t *testing.T) {
 
 func TestJSONMatchesBuilder(t *testing.T) {
 	r := reviewRepo(t)
+	// ký tự HTML trong dữ liệu: Jackson in nguyên, không thoát thành \u003c, \u0026
+	r.write("aisdlc/features/PAY-1/design.yaml", strings.Replace(r.read("aisdlc/features/PAY-1/design.yaml"),
+		"Kiểm tra request", "Kiểm tra <request> & body", 1))
 	if code := r.run("review", "design", "--json"); code != 0 {
 		t.Fatalf("exit %d: %s", code, r.err)
 	}
@@ -80,7 +83,8 @@ func TestJSONMatchesBuilder(t *testing.T) {
 	if !strings.HasPrefix(r.out, "{\n  \"gate\" : \"DESIGN\",\n") || !strings.HasSuffix(r.out, "}\n") {
 		t.Fatalf("không giống Jackson:\n%s", r.out)
 	}
-	notContains(t, r.out, "[PAY-1]", `<`, `>`)
+	contains(t, r.out, `"title" : "Kiểm tra <request> & body"`)
+	notContains(t, r.out, "[PAY-1]", `\u003c`, `\u003e`, `\u0026`)
 }
 
 func TestRunsWithoutConsole(t *testing.T) {

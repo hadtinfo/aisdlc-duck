@@ -62,6 +62,8 @@ type Context struct {
 	console DevConsole
 	cwd     string
 	std     context.Context
+	// interrupts: nguồn Ctrl-C/SIGTERM khi harness chạy (nil: không bắt tín hiệu, như test và hook)
+	interrupts *Interrupts
 
 	color           bool
 	now             func() time.Time
@@ -161,6 +163,9 @@ func (c *Context) WithVerifier(f func(root string, cfg model.RepoConfig) eval.Ve
 
 // WithStd thay context.Context của lệnh (Main: hủy khi Ctrl-C/SIGTERM); harness và git dùng nó.
 func (c *Context) WithStd(std context.Context) *Context { c.std = std; return c }
+
+// WithInterrupts đặt nguồn tín hiệu dùng khi harness/eval chạy (Main: OSInterrupts).
+func (c *Context) WithInterrupts(in *Interrupts) *Context { c.interrupts = in; return c }
 
 // WithColor bật/tắt màu ANSI khi in review card.
 func (c *Context) WithColor(b bool) *Context { c.color = b; return c }

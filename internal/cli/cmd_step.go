@@ -10,6 +10,7 @@ import (
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/risk"
+	"aisdlc/internal/run"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/step"
 )
@@ -90,9 +91,12 @@ func stepFinish(ctx *Context, f *Feature, id string) (int, error) {
 		return 0, err
 	}
 	ctx.Println("Đang chạy case của " + strings.Join(upTo, ", ") + " qua harness...")
-	res, err := ctx.Runner(f.Root, f.Config).RunCases(f.Key, upTo, "cases")
-	if err != nil {
-		return 0, err
+	var res run.CaseRunResult
+	if err := ctx.interruptible(func() (err error) {
+		res, err = ctx.Runner(f.Root, f.Config).RunCases(f.Key, upTo, "cases")
+		return err
+	}); err != nil {
+		return 0, err // bị hủy: không ghi kết quả bước
 	}
 	rec, err := steps.Finish(id, res)
 	if err != nil {

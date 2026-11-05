@@ -270,18 +270,16 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"syscall"
 )
 
 func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGTERM)
-	ch := exec.Command("sh", "-c", "trap '' TERM; exec sleep 60")
+	ch := exec.Command("sh", "-c", "trap '' TERM; echo $$ > \"$PIDFILE\"; exec sleep 60")
 	if err := ch.Start(); err != nil {
 		panic(err)
 	}
-	os.WriteFile(os.Getenv("PIDFILE"), []byte(strconv.Itoa(ch.Process.Pid)), 0o644)
 	if os.Getenv("MODE") == "self" {
 		os.Exit(0)
 	}
@@ -290,10 +288,22 @@ func main() {
 }
 `
 
+// isZombie đọc trạng thái trong /proc/<pid>/stat (trường sau dấu ')' cuối cùng).
+func isZombie(pid int) bool {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return false
+	}
+	s := string(b)
+	i := strings.LastIndexByte(s, ')')
+	f := strings.Fields(s[i+1:])
+	return i >= 0 && len(f) > 0 && f[0] == "Z"
+}
+
 func waitDead(t *testing.T, pid int) {
 	t.Helper()
 	for i := 0; i < 100; i++ {
-		if syscall.Kill(pid, 0) != nil {
+		if syscall.Kill(pid, 0) != nil || isZombie(pid) {
 			return
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -310,11 +320,10 @@ func TestStopKillsChildrenAfterGracefulExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := strconv.Atoi(waitFile(t, pidFile))
+	child, err := strconv.Atoi(strings.TrimSpace(waitFile(t, pidFile))) // pidfile do sh ghi sau trap, cũng là tín hiệu sẵn sàng
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond) // để signal.Notify và trap có hiệu lực
 	if !p.Stop(5 * time.Second) {
 		t.Error("mong đợi thoát êm")
 	}
@@ -328,7 +337,7 @@ func TestStopKillsChildrenAfterLeaderAlreadyExited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child, err := strconv.Atoi(waitFile(t, pidFile))
+	child, err := strconv.Atoi(strings.TrimSpace(waitFile(t, pidFile))) // pidfile do sh ghi sau trap, cũng là tín hiệu sẵn sàng
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +346,6 @@ func TestStopKillsChildrenAfterLeaderAlreadyExited(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("leader không tự thoát")
 	}
-	time.Sleep(300 * time.Millisecond) // để trap của sh có hiệu lực
 	p.Stop(time.Second)
 	waitDead(t, child)
 }

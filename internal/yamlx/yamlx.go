@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -22,16 +21,7 @@ var (
 func detail(err error) string {
 	s := yamlPrefix.ReplaceAllString(err.Error(), "")
 	s = strings.ReplaceAll(s, "unmarshal errors:\n  ", "")
-	// yaml.v3 báo thiếu dấu đóng ']' hoặc '}' bằng số dòng 0-based của chỗ mở
-	// (trừ dòng đầu), nên cộng 1 để ra dòng thật của chỗ mở.
-	shift := 0
-	if strings.Contains(s, "did not find expected ','") {
-		shift = 1
-	}
-	return linePrefix.ReplaceAllStringFunc(s, func(m string) string {
-		n, _ := strconv.Atoi(m[len("line "):])
-		return fmt.Sprintf("dòng %d", n+shift)
-	})
+	return linePrefix.ReplaceAllString(s, "dòng $1")
 }
 
 // Parse giải mã YAML vào out; khóa lạ bị bỏ qua.

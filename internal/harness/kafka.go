@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
-	"sync"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -22,6 +21,8 @@ const (
 	kafkaStarter    = "/tmp/aisdlc_start.sh"
 	defaultKafkaTTL = 5 * time.Second
 	kafkaPoll       = 200 * time.Millisecond
+	// kafkaAssignTimeout là hạn Reset chờ broker trả offset cuối của các topic (độc lập với timeout của Check).
+	kafkaAssignTimeout = 30 * time.Second
 )
 
 // kafkaStarterScript đặt advertised listener theo cổng đã map ra host rồi chạy entrypoint của apache/kafka (KRaft).
@@ -142,66 +143,78 @@ func (p *KafkaProbe) Close() {
 	}
 }
 
-// Reset tạo consumer group mới aisdlc-<rand> đọc từ cuối log và chờ có partition.
+// Reset chốt vị trí cuối log hiện tại của từng partition (ListEndOffsets) rồi tạo consumer đọc trực tiếp các partition
+// đó từ đúng offset ấy (ConsumePartitions, không dùng consumer group): message phát sau Reset luôn được thấy, message
+// trước Reset thì không. Topic chưa có thì được tạo (broker bật auto-create). Việc chờ broker sẵn sàng có hạn riêng
+// kafkaAssignTimeout, độc lập với timeout của Check, vì lần Reset đầu tiên thường gặp broker vừa khởi động.
 func (p *KafkaProbe) Reset(ctx context.Context) error {
 	p.Close()
 	p.received = nil
 	if len(p.topics) == 0 {
 		return nil
 	}
-	assigned := make(chan struct{})
-	var once sync.Once
-	id := fmt.Sprintf("aisdlc-%016x%016x", rand.Uint64(), rand.Uint64())
-	cl, err := kgo.NewClient(
-		kgo.SeedBrokers(p.brokers),
-		kgo.ClientID("aisdlc-probe-"+id),
-		kgo.ConsumerGroup(id),
-		kgo.ConsumeTopics(p.topics...),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
-		kgo.DisableAutoCommit(),
-		kgo.OnPartitionsAssigned(func(ctx context.Context, c *kgo.Client, m map[string][]int32) {
-			pinEnd(ctx, c, m)
-			once.Do(func() { close(assigned) })
-		}),
-	)
+	ends, err := p.endOffsets(ctx)
 	if err != nil {
 		return err
 	}
-	select {
-	case <-assigned:
-	case <-time.After(p.timeout):
-		cl.Close()
-		return fmt.Errorf("Kafka: không được gán partition cho %v trong %ds", p.topics, int(p.timeout.Seconds()))
-	case <-ctx.Done():
-		cl.Close()
-		return ctx.Err()
+	cl, err := kgo.NewClient(
+		kgo.SeedBrokers(p.brokers),
+		kgo.ClientID(fmt.Sprintf("aisdlc-probe-%016x", rand.Uint64())),
+		kgo.ConsumePartitions(ends.KOffsets()),
+	)
+	if err != nil {
+		return err
 	}
 	p.cl = cl
 	return nil
 }
 
-// pinEnd chốt vị trí đọc ở cuối log ngay khi được gán, để message phát ngay sau Reset không bị bỏ sót.
-func pinEnd(ctx context.Context, c *kgo.Client, m map[string][]int32) {
-	topics := make([]string, 0, len(m))
-	for t := range m {
-		topics = append(topics, t)
-	}
-	ends, err := kadm.NewClient(c).ListEndOffsets(ctx, topics...)
+// endOffsets lặp ListEndOffsets (tạo topic còn thiếu) tới khi mọi topic có offset cuối cho mọi partition, tối đa
+// kafkaAssignTimeout; lỗi cuối cùng được đưa vào thông điệp.
+func (p *KafkaProbe) endOffsets(ctx context.Context) (kadm.ListedOffsets, error) {
+	adm, err := kgo.NewClient(kgo.SeedBrokers(p.brokers))
 	if err != nil {
-		return
+		return nil, err
 	}
-	set := map[string]map[int32]kgo.EpochOffset{}
-	for t, parts := range m {
-		for _, part := range parts {
-			if o, ok := ends.Lookup(t, part); ok && o.Err == nil {
-				if set[t] == nil {
-					set[t] = map[int32]kgo.EpochOffset{}
+	defer adm.Close()
+	ad := kadm.NewClient(adm)
+	wctx, cancel := context.WithTimeout(ctx, kafkaAssignTimeout)
+	defer cancel()
+	var last error
+	for {
+		ends, err := ad.ListEndOffsets(wctx, p.topics...)
+		if err == nil {
+			var missing []string
+			for _, t := range p.topics {
+				ps, ok := ends[t]
+				if _, unknown := ps[-1]; !ok || unknown {
+					missing = append(missing, t)
 				}
-				set[t][part] = kgo.EpochOffset{Epoch: -1, Offset: o.Offset}
 			}
+			switch {
+			case len(missing) > 0:
+				last = fmt.Errorf("chưa có topic %v", missing)
+				if res, cerr := ad.CreateTopics(wctx, -1, -1, nil, missing...); cerr != nil {
+					last = cerr
+				} else if rerr := res.Error(); rerr != nil && !errors.Is(rerr, kerr.TopicAlreadyExists) {
+					last = rerr
+				}
+			case ends.Error() != nil:
+				last = ends.Error()
+			default:
+				return ends, nil
+			}
+		} else {
+			last = err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-wctx.Done():
+			return nil, fmt.Errorf("Kafka: không được gán partition cho %v trong %ds: %v", p.topics, int(kafkaAssignTimeout.Seconds()), last)
+		case <-time.After(kafkaPoll):
 		}
 	}
-	c.SetOffsets(set)
 }
 
 // Check poll tới khi mỗi kỳ vọng có một message khớp (value so lenient bằng CompareJSON) trên đúng topic.

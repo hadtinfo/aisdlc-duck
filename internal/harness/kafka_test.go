@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -143,5 +144,22 @@ func TestStartKafkaCreatesTopics(t *testing.T) {
 	// auto-create bật: produce vào topic chưa khai báo vẫn thành công.
 	if err := cl.ProduceSync(ctx, &kgo.Record{Topic: "auto.created", Value: []byte("x")}).FirstErr(); err != nil {
 		t.Fatalf("auto-create tắt: %v", err)
+	}
+}
+
+// Topic chưa tồn tại lúc Reset: probe tạo topic rồi vẫn thấy message phát sau đó.
+func TestKafkaProbeCreatesMissingTopic(t *testing.T) {
+	b := sharedKafka(t)
+	topic := "probe.missing." + strconv.FormatInt(time.Now().UnixNano(), 36)
+	p := NewKafkaProbe(b, []string{topic}, 10*time.Second)
+	t.Cleanup(p.Close)
+	ctx := context.Background()
+	if err := p.Reset(ctx); err != nil {
+		t.Fatal(err)
+	}
+	produce(t, b, topic, `{"id":9}`)
+	msg, err := p.Check(ctx, want(topic, map[string]any{"id": float64(9)}))
+	if err != nil || msg != "" {
+		t.Fatalf("msg=%q err=%v", msg, err)
 	}
 }

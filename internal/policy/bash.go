@@ -205,14 +205,17 @@ func (m *pathMatcher) writes(command, cwd string) (string, bool) {
 // writesFrom: như writes, bắt đầu từ thư mục cur. Thư mục thành không xác định cho mọi đoạn sau (kể cả sau
 // subshell) khi gặp cd/pushd/popd không theo dõi chắc được: không đứng đầu đoạn ("echo cd x"), chạy có điều
 // kiện hoặc lặp (sau &&, ||, then, else, do...), hoặc trong pipeline/nền (|, &: chạy ở subshell). Thân heredoc
-// của trình thông dịch shell (bash <<EOF) được xét như một lệnh riêng với thư mục không xác định.
+// của trình thông dịch shell (bash <<EOF) được xét như một lệnh riêng với thư mục không xác định. Lưới an toàn:
+// nếu bất kỳ đoạn nào của lệnh chạy trình thông dịch shell (bash s.sh, ... | bash) hoặc lệnh có <( ) / >( ),
+// thân của mọi heredoc đều được xét như lệnh, vì dữ liệu có thể tới shell qua file, biến hay dòng sau.
 func (m *pathMatcher) writesFrom(command string, cur shellDir) (string, bool) {
 	var dirStack, subStack []shellDir
+	var data []string // thân heredoc được coi là dữ liệu
 	hit, found := "", false
 	lost := false // đã gặp cd không theo dõi được
 	prevSep := "" // toán tử đứng trước đoạn hiện tại
 	var words []shellWord
-	splitShell(command, &words,
+	runsShell := splitShell(command, &words,
 		func(sep string) { // hết một đoạn
 			if !found && len(words) > 0 {
 				if lost {
@@ -243,13 +246,23 @@ func (m *pathMatcher) writesFrom(command string, cur shellDir) (string, bool) {
 				cur = shellDir{}
 			}
 		},
-		func(body string) {
-			if !found {
+		func(body string, exec bool) {
+			if !exec {
+				data = append(data, body)
+			} else if !found {
 				if p, ok := m.writesFrom(body, shellDir{}); ok {
 					hit, found = p, true
 				}
 			}
 		})
+	for _, body := range data {
+		if found || !runsShell {
+			break
+		}
+		if p, ok := m.writesFrom(body, shellDir{}); ok {
+			hit, found = p, true
+		}
+	}
 	return hit, found
 }
 
@@ -488,12 +501,15 @@ func execsHeredoc(words []shellWord) bool {
 // splitShell tách lệnh thành từ (bỏ nháy '..', "..", $'..', $"..", \x) và đoạn. end(sep) được gọi ở cuối mỗi
 // đoạn với toán tử kết thúc nó (";", "\n", "&&", "||", "|", "&", "(", ")", "`", "$(" hoặc "" ở cuối lệnh);
 // open() và close() khi vào/ra subshell (( ), $( ), ` `), kể cả $( ) và ` ` trong nháy kép. Comment (# ở đầu
-// từ, ngoài nháy) bị bỏ tới hết dòng. Thân heredoc (<<DELIM) không được tách cùng lệnh; chỉ thân tới một
-// trình thông dịch shell (xem heredocSpec) mới được chuyển cho heredoc(body), còn lại là dữ liệu. Đây là
+// từ, ngoài nháy) bị bỏ tới hết dòng. Thân heredoc (<<DELIM) không được tách cùng lệnh mà chuyển cho
+// heredoc(body, exec); exec=true khi thân chắc chắn tới một trình thông dịch shell (xem heredocSpec). <( ) và
+// >( ) được tách như $( ); nhóm { } nối tiếp pipeline bao nó, như ( ). Trả runsShell: có đoạn nào (sau khi bỏ
+// lệnh bọc) là trình thông dịch shell, hoặc lệnh có <( ) / >( ). Đây là
 // heuristic, không phải parser shell đầy đủ (không hiểu ${..}, case..esac, $((..)), mảng):
 // khi cách tách lệch với shell, kết quả có thể lệch theo cả hai chiều; phép so chuỗi con của bản Java vẫn chạy
 // độc lập.
-func splitShell(command string, words *[]shellWord, end func(sep string), open, close func(), heredoc func(body string)) {
+func splitShell(command string, words *[]shellWord, end func(sep string), open, close func(),
+	heredoc func(body string, exec bool)) (runsShell bool) {
 	rs := []rune(command)
 	var cur strings.Builder
 	inWord := false
@@ -504,6 +520,7 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 	pipe, stage := 0, 0          // pipeline hiện tại và tầng trong nó
 	pipeShell := map[int][]int{} // pipeline -> các tầng là trình thông dịch shell
 	var outer []bool             // mỗi subshell đang mở: lệnh của đoạn ngoài có phải shell không
+	braces := 0                  // độ sâu nhóm { } đang mở
 	outerTop := func() bool { return len(outer) > 0 && outer[len(outer)-1] }
 	top := func() rune {
 		if len(ctx) == 0 {
@@ -528,12 +545,27 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 		redirectNext, dupNext = false, false
 		if shell, _ := shellCommand(*words); shell {
 			pipeShell[pipe] = append(pipeShell[pipe], stage)
+			runsShell = true
+		}
+		for _, w := range *words { // { và } ở đầu đoạn (sau từ khóa shell, phép gán)
+			if w.redirect || !shellReserved[w.text] && !assignHead.MatchString(w.text) {
+				break
+			}
+			switch w.text {
+			case "{":
+				braces++
+			case "}":
+				if braces > 0 {
+					braces--
+				}
+			}
 		}
 		end(sep)
-		switch sep {
-		case "|":
+		switch {
+		case sep == "|":
 			stage++
-		case "$(", "`", "(", ")":
+		case sep == "$(" || sep == "`" || sep == "(" || sep == ")":
+		case braces > 0: // trong { }: cả nhóm là một tầng của pipeline bao nó
 		default:
 			pipe, stage = pipe+1, 0
 		}
@@ -616,9 +648,7 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 			for _, st := range pipeShell[h.pipe] {
 				exec = exec || st > h.stage
 			}
-			if exec {
-				heredoc(body.String())
-			}
+			heredoc(body.String(), exec)
 		}
 		pending = pending[:0]
 		return j
@@ -726,6 +756,11 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 		case ch == '$' && next == '(':
 			i++
 			openSub("$(", 'p', true)
+		case (ch == '<' || ch == '>') && next == '(': // thay thế tiến trình <( ) / >( )
+			fdWord()
+			i++
+			runsShell = true
+			openSub("$(", 'p', true)
 		case ch == '(':
 			openSub("(", 'p', false)
 		case ch == ')':
@@ -806,6 +841,7 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 	if len(pending) > 0 { // heredoc không có dòng thân
 		readBodies(len(rs))
 	}
+	return runsShell
 }
 
 func isHex(r rune) bool {

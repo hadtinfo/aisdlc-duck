@@ -23,6 +23,8 @@ const (
 	stateMsg = "File trạng thái do CLI quản lý, agent không được sửa trực tiếp: "
 
 	riskPolicyFile = "aisdlc/risk-policy.yaml"
+	configFile     = "aisdlc/config.yaml"
+	lockedMsg      = " chỉ dev sửa, ngoài Claude Code."
 	riskPolicyMsg  = "Chính sách rủi ro do dev sửa (web hoặc MR), agent không được sửa: " + riskPolicyFile
 
 	webConfigMsg = "File cấu hình web của dev, agent không được đọc/ghi"
@@ -638,14 +640,14 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 		for _, a := range approved {
 			prot = append(prot, a.rel)
 		}
-		prot = append(prot, riskPolicyFile)
+		prot = append(prot, lockedConfig...)
 		both := append([]string{}, prot...)
 		root := repoRoot(s)
 		rr := realRoot(s)
 		for _, r := range prot {
 			both = append(both, filepath.ToSlash(filepath.Join(root, r)), filepath.ToSlash(filepath.Join(rr, r)))
 		}
-		if reason, blocked := BashCheck(call.Command, both, root); blocked {
+		if reason, blocked := BashCheck(call.Command, both, root, call.Cwd); blocked {
 			return Deny(reason)
 		}
 		return Ok()
@@ -662,8 +664,12 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 		return Ok() // 3
 	}
 
+	// file cấu hình chỉ dev sửa: chặn bất kể cổng và bước. risk-policy.yaml giữ nguyên văn câu của bản Java.
 	if rel == riskPolicyFile {
-		return Deny(riskPolicyMsg)
+		return DenyCode("CONFIG_LOCKED", riskPolicyMsg)
+	}
+	if rel == configFile {
+		return DenyCode("CONFIG_LOCKED", configFile+lockedMsg)
 	}
 
 	if rel == ".aisdlc" || strings.HasPrefix(rel, ".aisdlc/") || featureState.MatchString(rel) || contains(stateFiles(s), rel) {

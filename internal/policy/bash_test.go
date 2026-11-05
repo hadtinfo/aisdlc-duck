@@ -13,7 +13,7 @@ var protected = []string{
 }
 
 func violates(cmd string) bool {
-	_, ok := BashCheck(cmd, protected, root)
+	_, ok := BashCheck(cmd, protected, root, root)
 	return ok
 }
 
@@ -59,7 +59,7 @@ var withRunDir = []string{
 }
 
 func violatesReal(cmd string) bool {
-	_, ok := BashCheck(cmd, withRunDir, root)
+	_, ok := BashCheck(cmd, withRunDir, root, root)
 	return ok
 }
 
@@ -92,11 +92,11 @@ func TestRedirectToProtectedPathIsStillAWrite(t *testing.T) {
 }
 
 func TestReasonIsVietnamese(t *testing.T) {
-	r, _ := BashCheck("aisdlc approve cases", protected, root)
+	r, _ := BashCheck("aisdlc approve cases", protected, root, root)
 	if !strings.Contains(r, "dev") {
 		t.Error(r)
 	}
-	r, _ = BashCheck("rm aisdlc/features/PAY-1/gates.json", protected, root)
+	r, _ = BashCheck("rm aisdlc/features/PAY-1/gates.json", protected, root, root)
 	if !strings.Contains(r, "gates.json") {
 		t.Error(r)
 	}
@@ -114,8 +114,8 @@ func TestSessionAssignIsViolation(t *testing.T) {
 	eq(t, "read", violates("echo $AISDLC_SESSION"), false)
 }
 
-// TestBashBypassAttempts khẳng định hành vi của bản Java cho từng lệnh ghi vào cases.yaml đã khóa.
-// blocked=false là chỗ Java KHÔNG chặn (heuristic chuỗi con): giữ nguyên, không thêm luật mới.
+// TestBashBypassAttempts: mọi lệnh ghi vào cases.yaml đã khóa đều bị chặn (Java không chặn dạng cd + đường dẫn
+// ngắn; bản Go theo dõi cd nên chặn).
 func TestBashBypassAttempts(t *testing.T) {
 	cases := []struct {
 		cmd     string
@@ -126,10 +126,92 @@ func TestBashBypassAttempts(t *testing.T) {
 		{"echo a > aisdlc/features/PAY-1/cases.yaml", true},
 		{"tee aisdlc/features/PAY-1/cases.yaml < x", true},
 		{"sed -i s/a/b/ aisdlc/features/PAY-1/cases.yaml", true},
-		{"cd aisdlc/features && sed -i s/a/b/ PAY-1/cases.yaml", false}, // Java: không chứa đường dẫn đầy đủ
+		{"cd aisdlc/features && sed -i s/a/b/ PAY-1/cases.yaml", true},
 		{"sed -i s/a/b/ ./aisdlc/../aisdlc/features/PAY-1/cases.yaml", true},
 	}
 	for _, c := range cases {
 		eq(t, c.cmd, violatesReal(c.cmd), c.blocked)
+	}
+}
+
+// hardened: danh sách bảo vệ hook truyền cho Bash (tương đối và tuyệt đối); config.yaml, risk-policy.yaml,
+// .aisdlc/ và file trạng thái của mọi tính năng BashCheck luôn tự thêm.
+var hardened = []string{
+	"aisdlc/features/PAY-1/cases.yaml", "/abs/repo/aisdlc/features/PAY-1/cases.yaml",
+	"aisdlc/features/PAY-1/gates.json", "/abs/repo/aisdlc/features/PAY-1/gates.json",
+}
+
+func TestBashHardeningBlocked(t *testing.T) {
+	for _, c := range []string{
+		`sed -i 's/unmanaged: .*/unmanaged: ["**"]/' aisdlc/config.yaml`,
+		"echo x >> aisdlc/config.yaml",
+		"cd aisdlc && echo x > config.yaml",
+		"echo {} > aisdlc/features/PAY-456/gates.json",
+		"sed -i s/a/b/ aisdlc/features/../features/PAY-123/gates.json",
+		"cd aisdlc/features/PAY-1 && cp /tmp/c cases.yaml",
+		"pushd aisdlc/features; sed -i s/a/b/ PAY-1/cases.yaml",
+		`cd "$X" && echo {} > gates.json`,
+		"rm -rf .aisdlc/grants",
+		"cat x > aisdlc/risk-policy.yaml",
+	} {
+		_, ok := BashCheck(c, hardened, root, root)
+		eq(t, c, ok, true)
+	}
+}
+
+func TestBashHardeningAllowed(t *testing.T) {
+	for _, c := range []string{
+		"cat aisdlc/config.yaml",
+		"grep -r foo aisdlc/features/PAY-1/cases.yaml",
+		"cd internal && go test ./...",
+		"git diff aisdlc/config.yaml",
+		"cd aisdlc/features/PAY-1 && cat cases.yaml",
+		"go build ./... > /tmp/build.log",
+		"ls aisdlc/features/*/gates.json",
+	} {
+		_, ok := BashCheck(c, hardened, root, root)
+		eq(t, c, ok, false)
+	}
+}
+
+func TestBashHardeningReasonUsesNormalizedPath(t *testing.T) {
+	r, ok := BashCheck("cd aisdlc && echo x > config.yaml", hardened, root, root)
+	if !ok || !strings.Contains(r, "(aisdlc/config.yaml)") {
+		t.Errorf("%v %q", ok, r)
+	}
+	// cwd của hook là thư mục con: đường dẫn tương đối tính theo nó
+	_, ok = BashCheck("echo x > config.yaml", hardened, root, root+"/aisdlc")
+	eq(t, "cwd=aisdlc", ok, true)
+	_, ok = BashCheck("echo x > config.yaml", hardened, root, root)
+	eq(t, "cwd=root", ok, false)
+}
+
+// TestBashHardeningEdgeCases: cách viết khác của cùng một lệnh ghi, và lệnh đọc không bị chặn thừa.
+func TestBashHardeningEdgeCases(t *testing.T) {
+	for _, c := range []string{
+		"cd .aisdlc && rm active",
+		"(cd aisdlc && echo x > config.yaml)",
+		`echo "$(cd aisdlc && rm config.yaml)"`,
+		"echo x >& aisdlc/./config.yaml",
+		"echo x <> aisdlc/./config.yaml",
+		`echo x > 'aisdlc'/conf\ig.yaml`,
+		"dd if=/tmp/x of=aisdlc/./config.yaml",
+		"pushd aisdlc && popd && pushd aisdlc/features && rm PAY-9/steps.json",
+		"cd ~ && rm config.yaml",
+		"cd /abs/repo/aisdlc && sed -i s/a/b/ config.yaml",
+	} {
+		_, ok := BashCheck(c, hardened, root, root)
+		eq(t, c, ok, true)
+	}
+	for _, c := range []string{
+		"cd .aisdlc && ls | tee /tmp/x",
+		"cd .aisdlc/run/PAY-1 && cp results.json /tmp/",
+		"cp .aisdlc/run/PAY-1/results.json /tmp/r.json",
+		"(cd aisdlc) && echo x > config.yaml",
+		"cd /tmp && rm gates.json",
+		"go test ./... 2>&1 | tee /tmp/out.log",
+	} {
+		_, ok := BashCheck(c, hardened, root, root)
+		eq(t, c, ok, false)
 	}
 }

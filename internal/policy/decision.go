@@ -25,9 +25,10 @@ func Deny(reason string) Decision { return Decision{Reason: reason} }
 // DenyCode chặn kèm mã máy đọc được.
 func DenyCode(code, reason string) Decision { return Decision{Reason: reason, Code: code} }
 
-// ToolCall là một lần gọi tool của agent. FilePath và Command có thể rỗng.
+// ToolCall là một lần gọi tool của agent. FilePath và Command có thể rỗng. Cwd là thư mục làm việc của hook
+// (`cwd` trong input JSON); rỗng nghĩa là gốc repo.
 type ToolCall struct {
-	ToolName, FilePath, Command string
+	ToolName, FilePath, Command, Cwd string
 }
 
 // PolicyState là dữ liệu chính sách cần; người gọi điền. Gates, Steps, Paths là nil khi không có tính năng

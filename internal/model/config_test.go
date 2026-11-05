@@ -100,6 +100,7 @@ func TestConfigOverrides(t *testing.T) {
 	eq(t, "ShutdownTimeout", c.Service.ShutdownTimeoutSeconds, 15)
 	eq(t, "Env.Port", c.Service.Env.Port, "PORT")
 	eq(t, "Env.DatabaseURL", c.Service.Env.DatabaseURL, "DATABASE_URL")
+	eq(t, "Env.KafkaBrokers", c.Service.Env.KafkaBrokers, "")
 	eq(t, "ExternalBaseURLs", c.Service.Env.ExternalBaseURLs, []string{"CORE_URL"})
 	eq(t, "ExtraEnv", c.Service.ExtraEnv, map[string]string{"LOG_LEVEL": "warn"})
 	eq(t, "Kafka.Topics", c.Service.Kafka.Topics, []string{"a", "b"})
@@ -176,6 +177,7 @@ func TestTemplateConfigParses(t *testing.T) {
 	eq(t, "Language", c.Language, "go")
 	eq(t, "Main", c.Service.Main, "./cmd/server")
 	eq(t, "Env.DatabaseURL", c.Service.Env.DatabaseURL, "DATABASE_URL")
+	eq(t, "Env.KafkaBrokers", c.Service.Env.KafkaBrokers, "")
 }
 
 func TestWrongTypedValuesAreErrors(t *testing.T) {

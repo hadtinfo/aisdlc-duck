@@ -18,8 +18,8 @@ service:
     port: PORT
     # Bỏ trống nếu dịch vụ không dùng DB.
     databaseUrl: DATABASE_URL
-    # Bỏ trống nếu dịch vụ không dùng Kafka.
-    kafkaBrokers: KAFKA_BROKERS
+    # Bỏ comment dòng dưới nếu dịch vụ dùng Kafka: container Kafka chỉ khởi động khi khóa này có giá trị.
+    # kafkaBrokers: KAFKA_BROKERS
     # Các biến trỏ tới hệ thống ngoài; harness điền URL của stub server.
     externalBaseUrls: []
   # Giá trị cố định thêm vào môi trường của dịch vụ.

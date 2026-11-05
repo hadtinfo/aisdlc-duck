@@ -185,8 +185,8 @@ type shellDir struct {
 }
 
 // shellReserved: từ khóa shell có thể đứng trước tên lệnh trong một đoạn ({ cd x; }, if ..; then cd x, ! cd x).
-var shellReserved = map[string]bool{"{": true, "}": true, "!": true, "time": true, "then": true, "do": true,
-	"else": true, "elif": true, "if": true, "while": true, "until": true, "builtin": true, "command": true}
+var shellReserved = map[string]bool{"{": true, "}": true, "!": true, "then": true, "do": true,
+	"else": true, "elif": true, "if": true, "while": true, "until": true}
 
 // writes duyệt lệnh theo từng đoạn (tách theo &&, ||, ;, |, &, xuống dòng và subshell), theo dõi cd/pushd/popd,
 // và trả đường dẫn đã chuẩn hóa của file được bảo vệ mà một đoạn có vẻ ghi vào.
@@ -332,8 +332,9 @@ func (m *pathMatcher) wordWrites(word string, d shellDir, redirect bool) (string
 	return "", false
 }
 
-// commandWords: các từ (không tính đích chuyển hướng) sau khi bỏ phép gán A=b và từ khóa shell đứng đầu; cond
-// là true nếu một từ khóa đứng đầu làm lệnh chạy có điều kiện hoặc lặp (then, else, elif, do, while, until).
+// commandWords: các từ (không tính đích chuyển hướng) sau khi bỏ phép gán A=b, từ khóa shell đứng đầu và lệnh
+// bọc (unwrapCommand); cond là true nếu một từ khóa đứng đầu làm lệnh chạy có điều kiện hoặc lặp (then, else,
+// elif, do, while, until).
 func commandWords(words []shellWord) (args []string, cond bool) {
 	for _, w := range words {
 		if !w.redirect {
@@ -347,7 +348,62 @@ func commandWords(words []shellWord) (args []string, cond bool) {
 		}
 		args = args[1:]
 	}
-	return args, cond
+	return unwrapCommand(args), cond
+}
+
+// wrapperArgFlags: lệnh bọc (chạy lệnh khác) và các cờ của nó nhận đối số tách rời.
+var wrapperArgFlags = map[string]map[string]bool{
+	"env":     {"-u": true, "--unset": true, "-C": true, "--chdir": true, "-S": true, "--split-string": true},
+	"xargs":   {"-I": true, "-i": false, "-n": true, "-P": true, "-d": true, "-L": true, "-E": true, "-s": true, "-a": true},
+	"sudo":    {"-u": true, "-g": true, "-C": true, "-D": true, "-h": true, "-p": true, "-r": true, "-t": true, "-U": true, "-T": true},
+	"exec":    {"-a": true},
+	"nohup":   {},
+	"command": {},
+	"builtin": {},
+	"time":    {},
+	"nice":    {"-n": true, "--adjustment": true},
+	"stdbuf":  {"-i": true, "-o": true, "-e": true},
+	"timeout": {"-s": true, "--signal": true, "-k": true, "--kill-after": true},
+}
+
+// unwrapCommand bỏ phép gán A=b và các lệnh bọc đứng đầu (env, xargs, sudo, exec, nohup, command, builtin, time,
+// nice, stdbuf, timeout) cùng cờ và đối số của chúng; trả các từ từ lệnh thật trở đi.
+func unwrapCommand(args []string) []string {
+	for {
+		for len(args) > 0 && assignHead.MatchString(args[0]) {
+			args = args[1:]
+		}
+		if len(args) == 0 {
+			return args
+		}
+		name := args[0][strings.LastIndex(args[0], "/")+1:]
+		flags, ok := wrapperArgFlags[name]
+		if !ok {
+			return args
+		}
+		args = args[1:]
+		for len(args) > 0 {
+			a := args[0]
+			if a == "--" {
+				args = args[1:]
+				break
+			}
+			if (name == "env" || name == "sudo") && assignHead.MatchString(a) {
+				args = args[1:]
+				continue
+			}
+			if !strings.HasPrefix(a, "-") || a == "-" {
+				break
+			}
+			args = args[1:]
+			if flags[a] && len(args) > 0 {
+				args = args[1:]
+			}
+		}
+		if name == "timeout" && len(args) > 0 { // thời lượng
+			args = args[1:]
+		}
+	}
 }
 
 // changeDir áp dụng cd/pushd/popd của một đoạn lệnh lên thư mục hiện tại. applied=false nếu đoạn không bắt
@@ -399,47 +455,42 @@ func changeDir(words []shellWord, d shellDir, stack []shellDir) (shellDir, []she
 	return shellDir{cwd: filepath.Join(d.cwd, dir), known: true}, stack, true
 }
 
-// heredocSpec: một heredoc đang chờ thân (<<DELIM hoặc <<-DELIM, bỏ tab đầu dòng). exec: lệnh nhận thân là
-// trình thông dịch shell, nên thân được xét như lệnh; ngược lại thân là dữ liệu (như <<<).
+// heredocSpec: một heredoc đang chờ thân (<<DELIM hoặc <<-DELIM, bỏ tab đầu dòng). Thân được xét như lệnh
+// (exec) khi nó tới một trình thông dịch shell: lệnh của chính đoạn (self), một tầng sau trong cùng pipeline
+// (pipe, stage), hoặc lệnh của đoạn ngoài khi heredoc nằm trong $( ) / ` ` (outer). Ngược lại thân là dữ liệu.
 type heredocSpec struct {
-	delim string
-	strip bool
-	exec  bool
+	delim       string
+	strip       bool
+	self, outer bool
+	pipe, stage int
 }
 
 // shellInterp: lệnh chạy stdin (hoặc đối số) như script shell.
 var shellInterp = map[string]bool{"bash": true, "sh": true, "zsh": true, "dash": true, "ksh": true,
 	"source": true, ".": true, "eval": true}
 
-// execsHeredoc: lệnh của đoạn (các từ trước <<) có chạy thân heredoc như script không: trình thông dịch shell,
-// hoặc xargs/env (bỏ cờ và phép gán) theo sau là một trình thông dịch. Chưa có tên lệnh (<<EOF bash) thì coi
-// là có, để an toàn.
-func execsHeredoc(words []shellWord) bool {
+// shellCommand: lệnh của đoạn (sau khi bỏ lệnh bọc) có phải trình thông dịch shell không; empty: chưa có tên lệnh.
+func shellCommand(words []shellWord) (shell, empty bool) {
 	args, _ := commandWords(words)
 	if len(args) == 0 {
-		return true
+		return false, true
 	}
-	for len(args) > 0 {
-		cmd := args[0][strings.LastIndex(args[0], "/")+1:]
-		if shellInterp[cmd] {
-			return true
-		}
-		if cmd != "xargs" && cmd != "env" {
-			return false
-		}
-		args = args[1:]
-		for len(args) > 0 && (strings.HasPrefix(args[0], "-") || assignHead.MatchString(args[0])) {
-			args = args[1:]
-		}
-	}
-	return false
+	return shellInterp[args[0][strings.LastIndex(args[0], "/")+1:]], false
+}
+
+// execsHeredoc: lệnh của đoạn (các từ trước <<) có chạy thân heredoc như script không. Chưa có tên lệnh
+// (<<EOF bash) thì coi là có, để an toàn.
+func execsHeredoc(words []shellWord) bool {
+	shell, empty := shellCommand(words)
+	return shell || empty
 }
 
 // splitShell tách lệnh thành từ (bỏ nháy '..', "..", $'..', $"..", \x) và đoạn. end(sep) được gọi ở cuối mỗi
 // đoạn với toán tử kết thúc nó (";", "\n", "&&", "||", "|", "&", "(", ")", "`", "$(" hoặc "" ở cuối lệnh);
 // open() và close() khi vào/ra subshell (( ), $( ), ` `), kể cả $( ) và ` ` trong nháy kép. Comment (# ở đầu
-// từ, ngoài nháy) bị bỏ tới hết dòng. Thân heredoc (<<DELIM) không được tách cùng lệnh; chỉ thân mà
-// lệnh nhận là trình thông dịch shell (execsHeredoc) mới được chuyển cho heredoc(body), còn lại là dữ liệu. Đây là heuristic, không phải parser shell đầy đủ (không hiểu ${..}, case..esac, $((..)), mảng):
+// từ, ngoài nháy) bị bỏ tới hết dòng. Thân heredoc (<<DELIM) không được tách cùng lệnh; chỉ thân tới một
+// trình thông dịch shell (xem heredocSpec) mới được chuyển cho heredoc(body), còn lại là dữ liệu. Đây là
+// heuristic, không phải parser shell đầy đủ (không hiểu ${..}, case..esac, $((..)), mảng):
 // khi cách tách lệch với shell, kết quả có thể lệch theo cả hai chiều; phép so chuỗi con của bản Java vẫn chạy
 // độc lập.
 func splitShell(command string, words *[]shellWord, end func(sep string), open, close func(), heredoc func(body string)) {
@@ -450,6 +501,10 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 	dupNext := false      // từ kế tiếp đứng sau >& hoặc <&: số fd thì bỏ
 	var ctx []rune        // ngữ cảnh lồng nhau: 'p' subshell ngoặc, 'b' backtick, 'd' nháy kép
 	var pending []heredocSpec
+	pipe, stage := 0, 0          // pipeline hiện tại và tầng trong nó
+	pipeShell := map[int][]int{} // pipeline -> các tầng là trình thông dịch shell
+	var outer []bool             // mỗi subshell đang mở: lệnh của đoạn ngoài có phải shell không
+	outerTop := func() bool { return len(outer) > 0 && outer[len(outer)-1] }
 	top := func() rune {
 		if len(ctx) == 0 {
 			return 0
@@ -471,7 +526,37 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 	endSeg := func(sep string) {
 		flush()
 		redirectNext, dupNext = false, false
+		if shell, _ := shellCommand(*words); shell {
+			pipeShell[pipe] = append(pipeShell[pipe], stage)
+		}
 		end(sep)
+		switch sep {
+		case "|":
+			stage++
+		case "$(", "`", "(", ")":
+		default:
+			pipe, stage = pipe+1, 0
+		}
+	}
+	// openSub mở subshell; cmdSub: $( ) hoặc ` `, khi đó lệnh của đoạn ngoài (các từ trước nó) có thể là shell
+	// nhận kết quả (bash -c "$(cat <<EOF ...)").
+	openSub := func(sep string, kind rune, cmdSub bool) {
+		flush()
+		o := outerTop()
+		if shell, _ := shellCommand(*words); cmdSub && shell {
+			o = true
+		}
+		endSeg(sep)
+		ctx = append(ctx, kind)
+		outer = append(outer, o)
+		open()
+	}
+	closeSub := func() {
+		ctx = ctx[:len(ctx)-1]
+		if len(outer) > 0 {
+			outer = outer[:len(outer)-1]
+		}
+		close()
 	}
 	fdWord := func() { // N> hoặc N<: từ đang có toàn chữ số là fd, không phải tên file
 		if inWord && digits.MatchString(cur.String()) {
@@ -527,7 +612,11 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 				body.WriteString(line)
 				body.WriteByte('\n')
 			}
-			if h.exec {
+			exec := h.self || h.outer
+			for _, st := range pipeShell[h.pipe] {
+				exec = exec || st > h.stage
+			}
+			if exec {
 				heredoc(body.String())
 			}
 		}
@@ -592,14 +681,10 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 				cur.WriteRune(rs[i])
 			case ch == '$' && next == '(':
 				i++
-				endSeg("$(")
-				ctx = append(ctx, 'p')
-				open()
+				openSub("$(", 'p', true)
 				continue
 			case ch == '`':
-				endSeg("`")
-				ctx = append(ctx, 'b')
-				open()
+				openSub("`", 'b', true)
 				continue
 			default:
 				cur.WriteRune(ch)
@@ -640,27 +725,20 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 			inWord = true
 		case ch == '$' && next == '(':
 			i++
-			endSeg("$(")
-			ctx = append(ctx, 'p')
-			open()
+			openSub("$(", 'p', true)
 		case ch == '(':
-			endSeg("(")
-			ctx = append(ctx, 'p')
-			open()
+			openSub("(", 'p', false)
 		case ch == ')':
 			endSeg(")")
 			if top() == 'p' {
-				ctx = ctx[:len(ctx)-1]
-				close()
+				closeSub()
 			}
 		case ch == '`':
-			endSeg("`")
 			if top() == 'b' {
-				ctx = ctx[:len(ctx)-1]
-				close()
+				endSeg("`")
+				closeSub()
 			} else {
-				ctx = append(ctx, 'b')
-				open()
+				openSub("`", 'b', true)
 			}
 		case ch == '>' || ch == '&' && next == '>':
 			fdWord()
@@ -690,7 +768,7 @@ func splitShell(command string, words *[]shellWord, end func(sep string), open, 
 				i += 2
 			case next == '<': // heredoc
 				i++
-				h := heredocSpec{exec: execsHeredoc(*words)}
+				h := heredocSpec{self: execsHeredoc(*words), outer: outerTop(), pipe: pipe, stage: stage}
 				if i+1 < len(rs) && rs[i+1] == '-' {
 					h.strip = true
 					i++

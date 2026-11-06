@@ -117,7 +117,13 @@ huge="$(head -c 2000000 /dev/zero | tr '\0' a)"
 t0=$(date +%s%N); run "$T/plain" '{"cwd":"'"$T/plain"'","tool_name":"Write","tool_input":{"content":"'"$huge"'"}}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
 if [ "$rc" -eq 0 ] && [ -z "$err" ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 2 MB ngoài repo (cwd ở đầu) rc 0 nhanh (${ms} ms)"; else ko "payload 2 MB ngoài repo: rc=$rc ${ms} ms"; fi
 t0=$(date +%s%N); run "$T/plain" '{"tool_name":"Write","tool_input":{"content":"'"$huge"'"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
-if [ "$rc" -eq 2 ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 2 MB, cwd sau 4 KB đầu -> pre-tool-use chặn nhanh (${ms} ms)"; else ko "payload 2 MB cwd cuối: rc=$rc ${ms} ms"; fi
+if [ "$rc" -eq 0 ] && [ -z "$err" ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 2 MB, không cwd trong 4 KB đầu, PWD ngoài repo -> rc 0 im lặng (${ms} ms)"; else ko "payload 2 MB cwd cuối, PWD ngoài: rc=$rc ${ms} ms err=$err"; fi
+t0=$(date +%s%N); run "$T/repo/aisdlc/sub" '{"tool_name":"Write","tool_input":{"content":"'"$huge"'"},"cwd":"'"$T/plain"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$rc" -eq 2 ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 2 MB, PWD trong repo -> chặn (${ms} ms)"; else ko "payload 2 MB PWD trong repo: rc=$rc ${ms} ms"; fi
+spoof='{"tool_input":{"cwd":"'"$T/plain"'"},"cwd":"'"$T/repo"'","tool_name":"Write","x":"'"$big"'"}'
+run "$T/plain" "$spoof" "$W" hook pre-tool-use; expect "thiếu binary: payload lớn, cwd giả lồng trước cwd thật (chạy ngoài repo) -> rc 2" 2 'plugin/install.sh'
+run "$T/repo" "$spoof" "$W" hook pre-tool-use; expect "thiếu binary: payload lớn, cwd giả lồng trước cwd thật (chạy trong repo) -> rc 2" 2 'plugin/install.sh'
+run "$T/plain" '{"cwd":"'"$T/plain"'","tool_name":"Write","x":"'"$big"'"}' "$W" hook pre-tool-use; expect "thiếu binary: payload lớn Write, không repo nào -> rc 0 im lặng" 0
 run "$T/repo" '{"tool_name":"Read","tool_input":{"cwd":"'"$T/plain"'"},"cwd":"'"$T/repo"'"}' "$W" hook stop; expect "thiếu binary: cwd lồng trong tool_input bị bỏ qua" 1 'plugin/install.sh'
 run "$T/repo" '{"tool_name":"Read"}' "$W" hook stop; expect "thiếu binary: stop dù tool_name Read vẫn rc 1" 1 'plugin/install.sh'
 run "$T/plain" '{"tool_name":"Edit"}' "$W" hook pre-tool-use; expect "thiếu binary, ngoài repo AISDLC: Edit rc 0 im lặng" 0

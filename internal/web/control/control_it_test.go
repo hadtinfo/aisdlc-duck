@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"aisdlc/internal/fsx"
+	"aisdlc/internal/model"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/web"
 	"aisdlc/internal/web/signing"
@@ -544,4 +546,32 @@ func TestConcurrentWrites(t *testing.T) {
 	wg.Wait()
 	eq(t, f.count(t, "SELECT count(*) FROM instructions WHERE repo_id = $1", ft.repo), 4)
 	eq(t, f.count(t, "SELECT count(*) FROM pending_actions WHERE repo_id = $1", ft.repo), 1)
+}
+
+// Phía tiêu thụ: ghi phong bì của server ra file bộ nhớ đệm như CLI rồi đọc bằng snapshot.ReadControlCache với khóa ghim.
+func TestControlEnvelopeConsumedByCliCache(t *testing.T) {
+	f := newFx(t)
+	ft := f.feat(t, "r/ct-cache")
+	f.instruct(f.ownerS, ft, "một")
+	raw := f.signedRaw(t, ft.repo, ft.key)
+	pk := f.w.GetBearer("/api/cli/pubkey", f.ingest)
+	pub, err := snapshot.PublicKeyFromBase64(pk.JSON(t)["publicKey"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	file := snapshot.ControlCacheFile(root, model.FeatureKey(ft.key))
+	if err := fsx.WriteAtomic(file, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := snapshot.ReadControlCache(file, pub, ft.repo, model.FeatureKey(ft.key))
+	if !ok || len(c.Instructions) != 1 || c.Instructions[0].Text != "một" {
+		t.Fatalf("%v %+v", ok, c)
+	}
+	if _, ok := snapshot.ReadControlCache(file, pub, ft.repo, model.FeatureKey("K-2")); ok {
+		t.Fatal("sai tính năng phải bị từ chối")
+	}
+	if _, ok := snapshot.ReadControlCache(file, pub, "r/khac", model.FeatureKey(ft.key)); ok {
+		t.Fatal("sai repo phải bị từ chối")
+	}
 }

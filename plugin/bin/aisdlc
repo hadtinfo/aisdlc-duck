@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # Chọn binary Go theo nền tảng (plugin/lib/aisdlc-<os>-<arch>) rồi exec.
 # Thiếu binary: lệnh thường -> lỗi, exit 2. Hook -> chỉ chặn (fail closed) khi đang ở repo AISDLC.
+# Riêng pre-tool-use: tool chỉ đọc (Read, Grep, Glob, LS, NotebookRead) vẫn được qua (exit 0) để dev còn đọc mà sửa;
+# tool ghi, Bash, tool lạ hoặc không đọc được tool_name -> chặn (exit 2). WebFetch/WebSearch không thuộc danh sách
+# (hook không đăng ký cho chúng; nếu có gọi thì coi như không phải tool đọc repo và vẫn chặn).
 fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
   if [ "${1:-}" != "hook" ]; then echo "AISDLC: $MSG" >&2; exit 2; fi
   local in="" dir="$PWD"
   IFS= read -r -d '' in || true
+  local tool=""
+  [[ "$in" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && tool="${BASH_REMATCH[1]}"
   [[ "$in" =~ \"cwd\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && dir="${BASH_REMATCH[1]}"
   while [ -n "$dir" ]; do
     if [ -f "$dir/aisdlc/config.yaml" ]; then
+      if [ "${2:-}" = "pre-tool-use" ]; then
+        case "$tool" in Read|Grep|Glob|LS|NotebookRead) exit 0 ;; esac
+        echo "AISDLC: $MSG" >&2
+        exit 2
+      fi
       echo "AISDLC: $MSG" >&2
-      [ "${2:-}" = "pre-tool-use" ] && exit 2
       exit 1
     fi
     [ "$dir" = "/" ] && break

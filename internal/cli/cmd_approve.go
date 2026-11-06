@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -30,9 +31,6 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 	c.RunE = Wrap(ctx, func(_ *cobra.Command, args []string) (int, error) {
 		f, err := fo.Feature(ctx)
 		if err != nil {
-			return 0, err
-		}
-		if err := ctx.WebNetwork(f); err != nil {
 			return 0, err
 		}
 		g, err := gateInFlow(f, args[0])
@@ -65,7 +63,13 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 				return 0, err
 			}
 		}
-		printCard(ctx, f, g)
+		web := f.Mode == gate.ModeWeb
+		if web {
+			if err := f.Web.RequireApproveToken(f, g); err != nil {
+				return 0, err
+			}
+		}
+		card := printCard(ctx, f, g)
 		hash, err := f.Gates.CurrentHash(g)
 		if err != nil {
 			return 0, err
@@ -73,6 +77,14 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 		channel, err := ctx.ConfirmDev(f.Key, invocation(ctx, "approve"), hash)
 		if err != nil {
 			return 0, err
+		}
+		if web {
+			if err := f.Web.Act("approve", f, g, nil, cardFlags(card), channel); err != nil {
+				return 0, err
+			}
+			ctx.Println("Đã duyệt cổng " + string(g) + " trên web (hash " + hash + ").")
+			ctx.AfterCommand(f, "approve "+strings.ToLower(string(g)))
+			return ExitOK, nil
 		}
 		approver, err := ctx.Approver(f.Root)
 		if err != nil {
@@ -83,6 +95,7 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 			return 0, err
 		}
 		ctx.Println("Đã duyệt cổng " + string(g) + " bởi " + a.Approver + " (hash " + a.Hash + ").")
+		ctx.AfterCommand(f, "approve "+strings.ToLower(string(g)))
 		return ExitOK, nil
 	})
 	return c
@@ -94,22 +107,38 @@ func invocation(ctx *Context, verb string) policy.DevCommand {
 	return d
 }
 
-// printCard in review card trước khi dev xác nhận; lỗi dựng thẻ không chặn việc duyệt.
-func printCard(ctx *Context, f *Feature, g gate.Gate) {
+// printCard in review card trước khi dev xác nhận; lỗi dựng thẻ không chặn việc duyệt (trả nil).
+func printCard(ctx *Context, f *Feature, g gate.Gate) *review.ReviewCard {
+	var card review.ReviewCard
 	text, err := guarded(func() (string, error) {
-		card, err := CardFor(ctx, f, g)
-		if err != nil {
+		var err error
+		if card, err = CardFor(ctx, f, g); err != nil {
 			return "", err
 		}
 		return review.RenderCard(f.Key.String(), card, cardWidth, ctx.Color(), gateApprovalDisplay(f, g)), nil
 	})
 	if err != nil {
 		ctx.Println("Không dựng được review card: " + err.Error())
-		return
+		return nil
 	}
 	ctx.Println("")
 	fmt.Fprint(ctx.Out(), text)
 	ctx.Println("")
+	return &card
+}
+
+// cardFlags là cờ HIGH/WARN của thẻ vừa in (lưu kèm bản duyệt trên web).
+func cardFlags(card *review.ReviewCard) []FlagRef {
+	out := []FlagRef{}
+	if card == nil {
+		return out
+	}
+	for _, x := range card.Flags {
+		if x.Level == review.HIGH || x.Level == review.WARN {
+			out = append(out, FlagRef{Code: x.Code, Level: string(x.Level)})
+		}
+	}
+	return out
 }
 
 // requireFreshEval: không duyệt REVIEW khi code đã đổi so với tree mà eval/report.json đã chấm.

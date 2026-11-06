@@ -14,7 +14,7 @@ import (
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
-	"aisdlc/internal/harness"
+	"aisdlc/internal/harness/harnessapi"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/lang/golang"
 	"aisdlc/internal/model"
@@ -42,31 +42,31 @@ func limitCoverage() lang.Coverage {
 type fakeVerifier struct {
 	rows   []run.CaseResult
 	schema *run.SchemaSnapshot
-	res    harness.VerifyResult
+	res    harnessapi.VerifyResult
 	err    error
 	calls  int
 	outs   []string
 	onRun  func() // gọi trong Verify (ví dụ hủy ctx như Ctrl-C giữa lúc harness chạy)
 }
 
-func (f *fakeVerifier) Verify(_ context.Context, key model.FeatureKey, out string) (harness.VerifyResult, error) {
+func (f *fakeVerifier) Verify(_ context.Context, key model.FeatureKey, out string) (harnessapi.VerifyResult, error) {
 	f.calls++
 	f.outs = append(f.outs, out)
 	if f.onRun != nil {
 		f.onRun()
 	}
 	if f.err != nil {
-		return harness.VerifyResult{}, f.err
+		return harnessapi.VerifyResult{}, f.err
 	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
-		return harness.VerifyResult{}, err
+		return harnessapi.VerifyResult{}, err
 	}
-	if err := harness.WriteResults(out, key.String(), "cases", f.rows); err != nil {
-		return harness.VerifyResult{}, err
+	if err := harnessapi.WriteResults(out, key.String(), "cases", f.rows); err != nil {
+		return harnessapi.VerifyResult{}, err
 	}
 	if f.schema != nil {
 		if err := f.schema.Write(filepath.Join(out, "schema.json")); err != nil {
-			return harness.VerifyResult{}, err
+			return harnessapi.VerifyResult{}, err
 		}
 	}
 	return f.res, nil
@@ -162,7 +162,7 @@ func newEvalEnv(t *testing.T) *evalEnv {
 			rows: []run.CaseResult{{ID: "C1", Step: "S1", Outcome: run.CaseOutcomePassed},
 				{ID: "C2", Step: "S1", Outcome: run.CaseOutcomePassed}},
 			schema: &evalSchema,
-			res: harness.VerifyResult{Build: lang.BuildResult{OK: true, Binary: "/x/server"},
+			res: harnessapi.VerifyResult{Build: lang.BuildResult{OK: true, Binary: "/x/server"},
 				Coverage: lang.Coverage{NA: "chưa đo coverage"}},
 		}}
 	e.paths = model.FeaturePaths{RepoRoot: dir, Key: e.key}
@@ -364,7 +364,7 @@ func TestEvalCaseMissingFromResultsFailsCasesAllPass(t *testing.T) {
 	c := hardOf(t, r, "CASES_ALL_PASS")
 	eq(t, "cases", c.Passed, false)
 	wantContains(t, "detail", c.Detail, "1/2", "C2")
-	wantContains(t, "md", e.read("aisdlc/features/PAY-123/eval/report.md"), harness.NoRow)
+	wantContains(t, "md", e.read("aisdlc/features/PAY-123/eval/report.md"), harnessapi.NoRow)
 }
 
 func TestEvalEmptyResultsFailCasesAllPass(t *testing.T) {
@@ -477,7 +477,7 @@ func TestEvalUnitFailuresListedUpToTen(t *testing.T) {
 
 func TestEvalOnlySuiteFailureDoesNotFailBuild(t *testing.T) {
 	e := newEvalEnv(t)
-	e.v.res.Run = harness.RunResult{ExitCode: 1}
+	e.v.res.Run = harnessapi.RunResult{ExitCode: 1}
 	e.v.rows[1] = run.CaseResult{ID: "C2", Step: "S1", Outcome: run.CaseOutcomeFailed, Message: "mong đợi 200"}
 
 	r := e.run(false)
@@ -515,7 +515,7 @@ func TestEvalBuildFailure(t *testing.T) {
 
 func TestEvalTimeoutFailsBuild(t *testing.T) {
 	e := newEvalEnv(t)
-	msg := harness.TimeoutMessage(30)
+	msg := harnessapi.TimeoutMessage(30)
 	e.v.res.TimedOut = true
 	e.v.res.Coverage = lang.Coverage{NA: msg}
 	e.v.rows = []run.CaseResult{{ID: "C1", Step: "S1", Outcome: run.CaseOutcomeError, Message: msg},
@@ -577,7 +577,7 @@ func TestEvalEmptySchemaMatchesEmptyExpected(t *testing.T) {
 
 // Harness panic (harnessVerifier): Build.OK=true, HarnessErr là giá trị panic; BUILD chỉ báo lỗi harness.
 func TestBuildCheckHarnessPanicIsNotBuildFailure(t *testing.T) {
-	vr := harness.VerifyResult{Build: lang.BuildResult{OK: true}, HarnessErr: "boom", Run: harness.RunResult{ExitCode: 2}}
+	vr := harnessapi.VerifyResult{Build: lang.BuildResult{OK: true}, HarnessErr: "boom", Run: harnessapi.RunResult{ExitCode: 2}}
 	eq(t, "check", buildCheck(vr, ".aisdlc/run/PAY-123/harness.log"),
 		HardCheck{"BUILD_AND_TESTS", false, "harness lỗi: boom; xem .aisdlc/run/PAY-123/harness.log"})
 }

@@ -1,0 +1,97 @@
+# Pipeline GitLab của repo AISDLC (Go).
+# Test dùng testcontainers (Postgres, Kafka) chạy qua service docker:dind:
+# cổng map nằm trên host "docker", nên đặt TESTCONTAINERS_HOST_OVERRIDE=docker.
+stages: [check, ui, build, docker, e2e]
+
+default:
+  image: golang:1.26-bookworm
+  cache:
+    key:
+      files: [go.sum]
+    paths: [.cache/go-mod/]
+
+variables:
+  GOMODCACHE: $CI_PROJECT_DIR/.cache/go-mod
+  GOFLAGS: -buildvcs=false
+
+.dind:
+  services:
+    - name: docker:27-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_HOST_OVERRIDE: docker
+    TESTCONTAINERS_RYUK_DISABLED: "true"
+
+.node-setup: &node-setup
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y --no-install-recommends nodejs
+
+check:
+  extends: .dind
+  stage: check
+  script:
+    - make check
+
+ui:
+  stage: ui
+  before_script: *node-setup
+  script:
+    - make ui
+    - make ui-test
+  artifacts:
+    paths: [internal/web/spa/dist/]
+    expire_in: 1 day
+
+build:
+  stage: build
+  needs: [ui]
+  script:
+    - test -f internal/web/spa/dist/index.html
+    - make plugin-dist
+    - make build-web-bin
+  artifacts:
+    paths: [plugin/lib/, bin/aisdlc-web]
+    expire_in: 1 week
+
+docker:
+  extends: .dind
+  stage: docker
+  image: docker:27
+  needs: []
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - IMAGE="${CI_REGISTRY_IMAGE:-aisdlc}/web:${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+    - docker build -f Dockerfile.web -t "$IMAGE" .
+    - |
+      if [ -n "$CI_REGISTRY_IMAGE" ] && [ -n "$CI_REGISTRY_PASSWORD" ]; then
+        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+        docker push "$IMAGE"
+      fi
+
+# e2e chạy tay hoặc theo lịch; chạy hai lần liền để kiểm tra chạy lại trên cùng máy sạch sót.
+# Image golang không có docker CLI, jq, Node: cài trước (docker CLI tĩnh nói chuyện với dind qua DOCKER_HOST; Chromium
+# kèm thư viện hệ thống cho Playwright, đúng bản trong e2e/package.json, vào ~/.cache/ms-playwright mà run-e2e.sh dùng).
+.e2e-tools: &e2e-tools
+  - apt-get update && apt-get install -y --no-install-recommends jq bsdutils ca-certificates curl
+  - curl -fsSL "https://download.docker.com/linux/static/stable/$(uname -m)/docker-27.5.1.tgz" | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
+
+e2e:
+  extends: .dind
+  stage: e2e
+  needs: []
+  before_script:
+    - *e2e-tools
+    - *node-setup
+    - PW="$(jq -r .dependencies.playwright e2e/package.json)" && npx --yes "playwright@$PW" install --with-deps chromium
+    - docker --version && jq --version && node --version && npm --version
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - when: manual
+      allow_failure: true
+  script:
+    - make e2e
+    - make e2e

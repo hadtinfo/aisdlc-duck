@@ -6,7 +6,7 @@ import (
 	"aisdlc/internal/risk"
 )
 
-// PolicyCommandTest (trừ phần pull qua web: để giai đoạn 4).
+// PolicyCommandTest (phần pull qua web ở web_cmd_test.go).
 
 func policyRepo(t *testing.T) *testRepo {
 	r := newTestRepo(t)

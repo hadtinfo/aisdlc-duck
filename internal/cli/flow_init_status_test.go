@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -156,6 +157,28 @@ func TestInitJiraUnreachableWarnsAndContinues(t *testing.T) {
 	eq(t, readMeta(t, r, "PAY-1").Title, "PAY-1")
 }
 
+// Jira trả 3xx: không theo redirect (Bearer không bị gửi sang địa chỉ khác); chỉ cảnh báo HTTP 302 rồi tiếp tục.
+func TestInitJiraRedirectIsNotFollowed(t *testing.T) {
+	hit := make(chan string, 4)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit <- r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"fields":{"summary":"lạ"}}`))
+	}))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.RequestURI(), http.StatusFound)
+	}))
+	defer srv.Close()
+	r := newTestRepo(t)
+	r.env["JIRA_URL"] = srv.URL
+	r.env["JIRA_TOKEN"] = "tok"
+	r.run("setup")
+	eq(t, r.run("init", "PAY-1"), 0)
+	contains(t, r.err, "Cảnh báo: Jira trả HTTP 302 cho PAY-1, bỏ qua kiểm tra ticket Jira.")
+	eq(t, len(hit), 0)
+	eq(t, readMeta(t, r, "PAY-1").Title, "PAY-1")
+}
+
 func TestUseSwitchesActiveFeature(t *testing.T) {
 	r := newTestRepo(t)
 	r.run("setup")
@@ -261,7 +284,7 @@ func TestStatusShowsRiskLevel(t *testing.T) {
 	contains(t, r.out, "Rủi ro: không đọc được aisdlc/features/PAY-1/risk.yaml")
 }
 
-// StatusControlTest (phần đọc cache; pausedOfflineMessage cần web và sổ lệnh chờ: giai đoạn 4).
+// StatusControlTest (phần đọc cache; pausedOfflineMessage ở cli_control_test.go).
 
 func newControlFx(t *testing.T) (*testRepo, func(c snapshot.FeatureControl)) {
 	r := newTestRepo(t)
@@ -306,8 +329,18 @@ func TestStatusShowsPendingActionsAndInstructionsFromCache(t *testing.T) {
 		}})
 	r.write(".aisdlc/web/control/PAY-1.local.json", `{"delivered":[4],"results":{"10":"APPLIED"}}`)
 	eq(t, r.run("status"), 0)
-	contains(t, r.out, "Lệnh từ web chờ áp dụng: accept S1\n", "Chỉ dẫn chờ giao cho agent: 1\n")
-	notContains(t, r.out, "tạm dừng")
+	// S1 chưa làm: lệnh 9 STALE ngay khi dựng tính năng (Java parity), 10 đã xử lý từ trước → không còn lệnh chờ
+	contains(t, r.out, "Chỉ dẫn chờ giao cho agent: 1\n")
+	contains(t, r.err, "Lệnh từ web hết hiệu lực: Bước S1 chưa được làm\n")
+	notContains(t, r.out, "tạm dừng", "Lệnh từ web chờ áp dụng")
+	eq(t, r.read(".aisdlc/web/control/PAY-1.local.json"),
+		`{"delivered":[4],"results":{"10":"APPLIED","9":"STALE"}}`)
+	// lệnh chưa có trong sổ (vd. lúc dựng không lấy được khóa): printControl liệt kê
+	f := r.feature()
+	r.write(".aisdlc/web/control/PAY-1.local.json", `{"delivered":[4],"results":{"10":"APPLIED"}}`)
+	o := &bytes.Buffer{}
+	printControl(r.context(noConsole(), "", o, &bytes.Buffer{}), f)
+	contains(t, o.String(), "Lệnh từ web chờ áp dụng: accept S1\n", "Chỉ dẫn chờ giao cho agent: 1\n")
 	// cache ký bằng khóa khác: không tin, không in gì
 	_, other := pinKey(t, t.TempDir())
 	b, err := (snapshot.FeatureControl{Repo: "x", Feature: "PAY-1", Pause: &snapshot.Pause{By: "an"}}).ToJSON()
@@ -335,16 +368,4 @@ func TestStatusWebModeFromSignedModeCache(t *testing.T) {
 	r.write("aisdlc/config.yaml", r.read("aisdlc/config.yaml")+"approvals: web\n")
 	eq(t, r.run("status"), 0)
 	contains(t, r.out, "Duyệt: trên web (chưa `aisdlc web login`)")
-}
-
-// Chế độ web: status nói rõ bản Go chưa duyệt được trên web (giai đoạn 4), không chỉ nhắc `aisdlc web login`;
-// chế độ local không có dòng này.
-func TestStatusWebModeSaysGoBuildCannotApproveOnWebYet(t *testing.T) {
-	r := newTestRepo(t)
-	r.webModeWithSignedCache()
-	eq(t, r.run("status"), 0)
-	contains(t, r.out, "Duyệt: trên web\n"+statusWebPhase4Line+"\n")
-	r.write("aisdlc/config.yaml", strings.Replace(r.read("aisdlc/config.yaml"), "approvals: web\n", "", 1))
-	eq(t, r.run("status"), 0)
-	notContains(t, r.out, statusWebPhase4Line)
 }

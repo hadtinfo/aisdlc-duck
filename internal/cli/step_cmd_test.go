@@ -8,14 +8,14 @@ import (
 
 // CliFlowTest (phần step/scope/diff/eval) và các lệnh tạm eval, web, policy pull.
 
-const s1File = "src/main/java/com/example/limit/web/LimitController.java"
+const s1File = "internal/limit/handler/limit_controller.go"
 
 // s1AwaitingDev: như casesApproved + S1 đã finish, đang chờ dev.
 func (r *testRepo) s1AwaitingDev() {
 	r.t.Helper()
 	r.casesApproved()
 	r.ok(noConsole(), "step", "start", "S1")
-	r.write(s1File, "class LimitController {}\n")
+	r.write(s1File, "package handler\n")
 	r.runner.cases = func([]string) []run.CaseResult {
 		return []run.CaseResult{caseResult("C1", "S1", run.CaseOutcomePassed)}
 	}
@@ -29,9 +29,9 @@ func TestFullFlowStepAndDiff(t *testing.T) {
 	if c := r.run("step", "start", "S1"); c != 0 {
 		t.Fatalf("exit %d\n%s%s", c, r.out, r.err)
 	}
-	contains(t, r.out, "Bắt đầu bước S1 — Validate request", "src/main/java/**/limit/web/**", "3 file", "C1",
+	contains(t, r.out, "Bắt đầu bước S1 — Validate request", "internal/limit/handler/**", "3 file", "C1",
 		"Xong thì chạy `aisdlc step finish S1`.")
-	r.write(s1File, "class LimitController {}\n")
+	r.write(s1File, "package handler\n")
 	r.write("go.mod", "module example.com/pay\n\ngo 1.26\n// đổi\n")
 	r.runner.cases = func([]string) []run.CaseResult {
 		return []run.CaseResult{caseResult("C1", "S1", run.CaseOutcomePassed)}
@@ -51,7 +51,7 @@ func TestFullFlowStepAndDiff(t *testing.T) {
 	if c := r.run("diff", "--by-step", "--patch"); c != 0 {
 		t.Fatal(r.err)
 	}
-	contains(t, r.out, "## S1 — Validate request", "1\t0\t"+s1File, "+class LimitController {}")
+	contains(t, r.out, "## S1 — Validate request", "1\t0\t"+s1File, "+package handler")
 	eq(t, r.run("diff"), 2) // --by-step bắt buộc như picocli
 }
 
@@ -107,22 +107,4 @@ func TestScopeAllowOutsideRepoExit2(t *testing.T) {
 	contains(t, r.err, "Path nằm ngoài repo: ../x.go")
 	eq(t, r.runC(typed("PAY-1"), "scope", "allow", "."), 2)
 	eq(t, r.exists("aisdlc/features/PAY-1/scope-extra.json"), false)
-}
-
-func TestWebStubsExit2(t *testing.T) {
-	r := newTestRepo(t)
-	r.setupInit()
-	for _, sub := range []string{"status", "push", "flush", "login", "approve-token", "migrate"} {
-		eq(t, r.run("web", sub), 2)
-		contains(t, r.err, "Lệnh web chưa có trong bản Go (giai đoạn 4).")
-	}
-	eq(t, r.run("web"), 2) // không lệnh con: usage
-	// đã `aisdlc web login`: policy pull cần web client
-	home := t.TempDir()
-	r.env["HOME"] = home
-	r.env["AISDLC_WEB_URL"] = "http://127.0.0.1:1"
-	r.env["AISDLC_WEB_TOKEN"] = "x"
-	pinKey(t, home)
-	eq(t, r.run("policy", "pull"), 2)
-	contains(t, r.err, "Lệnh web chưa có trong bản Go (giai đoạn 4).")
 }

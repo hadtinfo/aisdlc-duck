@@ -1,11 +1,11 @@
 steps:
   - id: S1
     title: Validate request
-    scope: ["src/main/java/**/limit/web/**", "src/main/resources/application*.yml"]
+    scope: ["internal/limit/handler/**", "cmd/server/**"]
     budget: { files: 3, lines: 120 }
   - id: S2
     title: Tính hạn mức và ghi nhận
-    scope: ["src/main/java/**/limit/service/**", "src/main/resources/db/migration/**"]
+    scope: ["internal/limit/service/**", "db/migrations/**"]
     budget: { files: 4, lines: 200 }
 # Đánh giá tác động (bắt buộc): chạy `aisdlc policy show` để xem thang mức và nhãn mà chính sách dùng.
 # level: một mức trong thang; labels: nhãn khớp rule label (vd. money-movement); reason: một câu, sai thì hậu quả gì.

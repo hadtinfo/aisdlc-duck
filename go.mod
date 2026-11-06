@@ -7,6 +7,7 @@ require gopkg.in/yaml.v3 v3.0.1
 require golang.org/x/text v0.43.0
 
 require (
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/spf13/cobra v1.10.2
@@ -15,6 +16,7 @@ require (
 	github.com/twmb/franz-go v1.22.2
 	github.com/twmb/franz-go/pkg/kadm v1.19.0
 	golang.org/x/mod v0.42.0
+	golang.org/x/term v0.47.0
 )
 
 require (

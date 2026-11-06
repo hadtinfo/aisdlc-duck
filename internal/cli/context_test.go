@@ -3,8 +3,6 @@ package cli
 import (
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 // ContextColorTest
@@ -32,43 +30,6 @@ func TestUnknownErrorPrintsLoiAndExit2(t *testing.T) {
 	contains(t, r.err, "Lỗi: ", "feature.yaml")
 }
 
-// probe là lệnh chỉ có trong test: phân giải tính năng như mọi lệnh rồi đòi mạng ở chế độ web.
-func netProbe(ctx *Context) *cobra.Command {
-	var fo FeatureOption
-	c := &cobra.Command{Use: "net-probe", Args: cobra.NoArgs}
-	fo.AddTo(c)
-	c.RunE = Wrap(ctx, func(cmd *cobra.Command, args []string) (int, error) {
-		f, err := fo.Feature(ctx)
-		if err != nil {
-			return 0, err
-		}
-		if err := ctx.WebNetwork(f); err != nil {
-			return 0, err
-		}
-		ctx.Println("đã gọi mạng")
-		return ExitOK, nil
-	})
-	return c
-}
-
-func TestWebModeNetworkCommandAborts(t *testing.T) {
-	r := newTestRepo(t)
-	r.extra = append(r.extra, netProbe)
-	r.ok(noConsole(), "setup", "--approvals", "web")
-	r.ok(noConsole(), "init", "PAY-1")
-
-	eq(t, r.run("net-probe"), ExitUsage)
-	contains(t, r.err, "Chế độ duyệt trên web chưa có trong bản Go (giai đoạn 4).",
-		"Chưa `aisdlc web login` trên máy này")
-	notContains(t, r.err, "Lỗi:")
-	notContains(t, r.out, "đã gọi mạng")
-
-	// cùng lệnh ở chế độ local: chạy bình thường
-	r.write("aisdlc/config.yaml", "language: go\n")
-	eq(t, r.run("net-probe"), ExitOK)
-	contains(t, r.out, "đã gọi mạng")
-}
-
 func TestNoArgsPrintsUsageExit2(t *testing.T) {
 	r := newTestRepo(t)
 	eq(t, r.run(), ExitUsage)
@@ -86,4 +47,26 @@ func TestHandlesSignalsExceptHooks(t *testing.T) {
 	eq(t, handlesSignals([]string{"step", "finish", "S1"}), true)
 	eq(t, handlesSignals(nil), true)
 	eq(t, handlesSignals([]string{"hook", "pre-tool-use"}), false)
+}
+
+// session_id cắt còn tối đa 100 đơn vị UTF-16 (server đếm như Java), không cắt giữa ký tự ngoài BMP.
+func TestTruncSessionCountsUTF16Units(t *testing.T) {
+	utf16Len := func(s string) int {
+		n := 0
+		for _, r := range s {
+			n++
+			if r >= 0x10000 {
+				n++
+			}
+		}
+		return n
+	}
+	eq(t, truncSession("  "), "")
+	eq(t, truncSession("abc"), "abc")
+	eq(t, truncSession(strings.Repeat("a", 150)), strings.Repeat("a", 100))
+	emoji := truncSession(strings.Repeat("😀", 60)) // 120 đơn vị UTF-16
+	eq(t, emoji, strings.Repeat("😀", 50))
+	odd := truncSession("a" + strings.Repeat("😀", 60)) // 1 + 2*49 = 99; ký tự kế tiếp (2 đơn vị) vượt 100
+	eq(t, utf16Len(odd), 99)
+	eq(t, utf16Len(truncSession(strings.Repeat("é", 120))), 100)
 }

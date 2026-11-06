@@ -419,22 +419,18 @@ func TestDevOnlyAskNeedsFeatureAndGate(t *testing.T) {
 	notContains(t, r.read(gatesJSON), `"approver"`)
 }
 
-// Chế độ web (cache đã ký): lệnh mà CLI sẽ dừng bằng WebPhase4Msg (approve/reject/reopen/risk set) thì hook deny
-// ngay với cùng thông báo, không hỏi dev và không ghi phiếu; step accept vẫn hỏi như thường.
-func TestWebModeDevOnlyDeniesCommandsTheCliAborts(t *testing.T) {
+// Chế độ web (cache đã ký): lệnh chỉ dev hỏi dev như chế độ local (CLI gửi duyệt lên web bằng token approve) và
+// ghi phiếu cho phép một lần.
+func TestWebModeDevOnlyAsksLikeLocal(t *testing.T) {
 	r := approveRepo(t)
 	r.webModeWithSignedCache()
 	r.enableOnBase()
 	eq(t, r.feature().Mode, gate.ModeWeb)
 	for _, cmd := range []string{"aisdlc approve review", "aisdlc reject design -m sửa", "aisdlc reopen brd",
-		"aisdlc risk set HIGH --reason vì"} {
+		"aisdlc risk set HIGH --reason vì", "aisdlc step accept S1"} {
 		o := r.bash("default", cmd)
-		eq(t, str(o, "permissionDecision"), "deny")
-		eq(t, str(o, "permissionDecisionReason"), WebPhase4Msg)
-		eq(t, fileExists(r.grant()), false)
+		eq(t, str(o, "permissionDecision"), "ask")
+		eq(t, fileExists(r.grant()), true)
+		must(t, os.Remove(r.grant()))
 	}
-	eq(t, r.run("approve", "review"), 2)
-	contains(t, r.err, WebPhase4Msg)
-	eq(t, str(r.bash("default", "aisdlc step accept S1"), "permissionDecision"), "ask")
-	eq(t, fileExists(r.grant()), true)
 }

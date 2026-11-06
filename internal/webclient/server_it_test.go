@@ -13,7 +13,7 @@ import (
 	"aisdlc/internal/web/webtest"
 )
 
-// Snapshot do Build dựng và lô event v2 đi qua validator và ingest của server Go thật (giai đoạn 4a).
+// Snapshot do Build dựng và lô event v2 đi qua validator và ingest của server Go thật.
 func TestSnapshotAndEventsAcceptedByGoServer(t *testing.T) {
 	env := webtest.New(t, func(d web.Deps) http.Handler { return web.NewHandler(d) })
 	token := webtest.CliToken(t, env.Pool, "add", "pub.a", "pub.a", "--email", "a@corp")

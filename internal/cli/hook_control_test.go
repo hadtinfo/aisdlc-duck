@@ -15,7 +15,7 @@ import (
 	"aisdlc/internal/webclient"
 )
 
-// HookControlTest, phần cần outbox và sổ điều khiển (giai đoạn 4): giao chỉ dẫn một lần, lệnh chờ do hook áp dụng,
+// HookControlTest, phần cần outbox và sổ điều khiển: giao chỉ dẫn một lần, lệnh chờ do hook áp dụng,
 // tạm dừng mở/chờ `web flush`, khóa control.lock bị giữ. Web bật nhưng không với tới được: event ở lại outbox.
 
 // newHookControlBare: HOME tạm có khóa ghim (ký cache điều khiển), chưa làm gì trong repo.

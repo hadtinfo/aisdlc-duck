@@ -73,10 +73,21 @@ docker:
       fi
 
 # e2e chạy tay hoặc theo lịch; chạy hai lần liền để kiểm tra chạy lại trên cùng máy sạch sót.
+# Image golang không có docker CLI, jq, Node: cài trước (docker CLI tĩnh nói chuyện với dind qua DOCKER_HOST; Chromium
+# kèm thư viện hệ thống cho Playwright, đúng bản trong e2e/package.json, vào ~/.cache/ms-playwright mà run-e2e.sh dùng).
+.e2e-tools: &e2e-tools
+  - apt-get update && apt-get install -y --no-install-recommends jq bsdutils ca-certificates curl
+  - curl -fsSL "https://download.docker.com/linux/static/stable/$(uname -m)/docker-27.5.1.tgz" | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
+
 e2e:
   extends: .dind
   stage: e2e
   needs: []
+  before_script:
+    - *e2e-tools
+    - *node-setup
+    - PW="$(jq -r .dependencies.playwright e2e/package.json)" && npx --yes "playwright@$PW" install --with-deps chromium
+    - docker --version && jq --version && node --version && npm --version
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - when: manual

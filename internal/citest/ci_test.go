@@ -252,3 +252,28 @@ func TestNeedsVaArtifactLaDauRaMakefile(t *testing.T) {
 		}
 	}
 }
+
+func TestMakefileE2EPhonyVaCoRecipe(t *testing.T) {
+	b, err := os.ReadFile("../../Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := string(b)
+	if !strings.Contains(strings.SplitN(mk, "\n", 2)[0], "e2e") || !strings.HasPrefix(mk, ".PHONY:") {
+		t.Error("Makefile phải khai báo e2e trong .PHONY")
+	}
+	i := strings.Index(mk, "\ne2e:")
+	if i < 0 {
+		t.Fatal("Makefile thiếu target e2e")
+	}
+	rest := mk[i+len("\ne2e:"):]
+	if !strings.HasPrefix(strings.TrimLeft(strings.SplitN(rest, "\n", 2)[1], " "), "\t") {
+		t.Error("target e2e phải có recipe không rỗng")
+	}
+}
+
+func TestBuildCoGuardArtifactUI(t *testing.T) {
+	if !strings.Contains(script(job(t, load(t), "build")), "test -f internal/web/spa/dist/index.html") {
+		t.Error("build phải kiểm dist UI tồn tại trước khi build binary")
+	}
+}

@@ -50,8 +50,18 @@ check "command design: miễn giới hạn 5 dòng cho bảng API và Giả đ�
 check "command brd: miễn giới hạn 5 dòng cho Giả định, không nhắc API" "grep -q 'trừ mục \`Giả định\`' '$P/commands/brd.md' && ! grep -q 'bảng \`API\`' '$P/commands/brd.md'"
 check "command cases: tối đa 15 case" "grep -q '15 case' '$P/commands/cases.md'"
 check "command cases: reset_sql/given.sql chỉ dùng bảng đã có ở bước của case" "grep -q 'reset_sql' '$P/commands/cases.md' && grep -q 'bước sau' '$P/commands/cases.md'"
-check "command step: không refactor/javadoc" "grep -q 'refactor' '$P/commands/step.md' && grep -q 'javadoc' '$P/commands/step.md'"
+check "command step: không refactor, không comment dài" "grep -q 'refactor' '$P/commands/step.md' && grep -q 'comment dài' '$P/commands/step.md'"
 check "command review: bỏ rào \`\`\` và dùng diff-by-step của eval" "grep -q 'rào' '$P/commands/review.md' && ! grep -q 'aisdlc diff' '$P/commands/review.md'"
+
+check "commands và agents không còn nhắc Java/Maven" "! grep -rniE 'mvn|maven|junit|jacoco|flyway|src/main/java|pom\\.xml|AisdlcCasesTest|javadoc' '$P/commands' '$P/agents'"
+for c in cases step; do
+  check "command $c: quy tắc so DB (số, bool, null, RFC 3339 UTC, json/jsonb, text)" "grep -q 'RFC 3339 UTC' '$P/commands/$c.md' && grep -q 'json/jsonb' '$P/commands/$c.md' && grep -q 'true' '$P/commands/$c.md' && grep -q 'null' '$P/commands/$c.md' && grep -q 'dạng text' '$P/commands/$c.md'"
+  check "command $c: quy ước tên goose" "grep -q 'NNNNN_ten.sql' '$P/commands/$c.md' && grep -q -- '-- +goose Up' '$P/commands/$c.md'"
+done
+check "command step: viết Go" "grep -q 'Go' '$P/commands/step.md' && grep -q 'gofmt' '$P/commands/step.md'"
+check "command eval: build, unit test, Docker và bộ case" "grep -q 'go build' '$P/commands/eval.md' && grep -q 'go test' '$P/commands/eval.md' && grep -q 'Docker' '$P/commands/eval.md' && grep -q 'Kafka' '$P/commands/eval.md' && grep -q 'bộ case' '$P/commands/eval.md'"
+check "command cases: nêu tập con khóa stub" "grep -q 'bodyPatterns' '$P/commands/cases.md' && grep -q 'jsonBody' '$P/commands/cases.md'"
+check "agent reviewer: tiêu chí Go" "grep -q 'context' '$P/agents/aisdlc-reviewer.md' && grep -q 'defer' '$P/agents/aisdlc-reviewer.md' && grep -q 'database/sql\|pgx' '$P/agents/aisdlc-reviewer.md'"
 
 # Launcher khi thiếu binary (lib/ rỗng)
 T="$(mktemp -d)"; mkdir -p "$T/bin" "$T/lib" "$T/plain" "$T/repo/aisdlc/sub"; cp "$P/bin/aisdlc" "$T/bin/aisdlc"; touch "$T/repo/aisdlc/config.yaml"
@@ -71,6 +81,16 @@ run "$T/repo/aisdlc/sub" '{}' "$W" hook stop; expect "thiếu binary, repo AISDL
 run "$T/repo" '{}' "$W" hook session-start; expect "thiếu binary, repo AISDLC: session-start rc 1" 1 'plugin/install.sh'
 run "$T/plain" "{\"cwd\":\"$T/repo\"}" "$W" hook pre-tool-use; expect "thiếu binary: cwd lấy từ stdin JSON" 2 'plugin/install.sh'
 run "$T/plain" '{}' "$W" status; expect "thiếu binary, lệnh thường: rc 2 kèm lỗi" 2 'plugin/install.sh'
+for tn in Read Grep Glob LS NotebookRead; do
+  run "$T/repo" "{\"tool_name\":\"$tn\",\"cwd\":\"$T/repo\"}" "$W" hook pre-tool-use; expect "thiếu binary, repo AISDLC: pre-tool-use $tn rc 0 (cho đọc)" 0
+done
+for tn in Edit Write MultiEdit NotebookEdit Bash; do
+  run "$T/repo" "{\"tool_name\":\"$tn\",\"cwd\":\"$T/repo\"}" "$W" hook pre-tool-use; expect "thiếu binary, repo AISDLC: pre-tool-use $tn rc 2 (chặn)" 2 'plugin/install.sh'
+done
+run "$T/repo" '{"tool_name":"Read","tool_input":{"file_path":"/x"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: tool_name Read kèm tool_input vẫn rc 0" 0
+run "$T/repo" '{"tool_name":"Write","tool_input":{"content":"x \"tool_name\":\"Read\""},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: tool_name giả trong nội dung ghi không lừa được (Write vẫn rc 2)" 2 'plugin/install.sh'
+run "$T/repo" '{"tool_name":"Read"}' "$W" hook stop; expect "thiếu binary: stop dù tool_name Read vẫn rc 1" 1 'plugin/install.sh'
+run "$T/plain" '{"tool_name":"Edit"}' "$W" hook pre-tool-use; expect "thiếu binary, ngoài repo AISDLC: Edit rc 0 im lặng" 0
 rm -rf "$T"
 
 # Binary thật: luật thư mục cấu hình web cho tool đọc (Read|Grep|Glob gọi hook pre-tool-use)

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"aisdlc/internal/snapshot"
@@ -225,3 +226,38 @@ func TestPubkeyResponseShape(t *testing.T) {
 }
 
 func jsonMarshal(v any) (string, error) { b, err := json.Marshal(v); return string(b), err }
+
+func TestConcurrentFirstStartAllAgreeWithDisk(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "d", "signing-key")
+	const n = 16
+	ids := make([]string, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			k, err := signing.Load(file, "")
+			errs[i] = err
+			if err == nil {
+				ids[i] = k.KeyID()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	disk, err := signing.Load(file, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range ids {
+		if errs[i] != nil || ids[i] != disk.KeyID() {
+			t.Fatalf("goroutine %d: %v %s != %s", i, errs[i], ids[i], disk.KeyID())
+		}
+	}
+	if es, _ := os.ReadDir(filepath.Dir(file)); len(es) != 1 {
+		t.Fatalf("còn file thừa: %v", es)
+	}
+}

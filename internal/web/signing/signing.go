@@ -12,9 +12,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 
-	"aisdlc/internal/fsx"
 	"aisdlc/internal/snapshot"
 )
 
@@ -60,6 +61,9 @@ func loadOrCreate(file string) (ed25519.PrivateKey, error) {
 	st, err := os.Stat(file)
 	switch {
 	case err == nil && st.Size() > 0:
+		if st.Mode().Perm()&0o077 != 0 {
+			log.Printf("CẢNH BÁO: file khóa ký %s có quyền %v, rộng hơn 0600", file, st.Mode().Perm())
+		}
 		return readKey(file)
 	case err == nil || errors.Is(err, os.ErrNotExist):
 		return create(file)
@@ -68,8 +72,9 @@ func loadOrCreate(file string) (ed25519.PrivateKey, error) {
 	}
 }
 
-// create sinh cặp khóa và ghi file 0600 nguyên tử (fsx.WriteAtomic). Nếu giữa lúc kiểm tra và ghi có tiến trình khác
-// vừa ghi khóa (file không còn rỗng/vắng), dùng khóa đó thay vì ghi đè.
+// create sinh cặp khóa và ghi nguyên tử như bản Java: file tạm 0600 cùng thư mục (ghi, Sync, đóng), rồi os.Link vào đích
+// (hỏng nếu đích đã có, nên hai tiến trình khởi động đầu không ghi đè khóa của nhau: bên thua đọc khóa đã có). Đích tồn
+// tại nhưng rỗng thì thay bằng os.Rename. File tạm luôn bị xóa.
 func create(file string) (ed25519.PrivateKey, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -81,10 +86,41 @@ func create(file string) (ed25519.PrivateKey, error) {
 	}
 	data := append(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pk}),
 		pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derOf(pub)})...)
-	if st, err := os.Stat(file); err == nil && st.Size() > 0 {
-		return readKey(file)
+	dir := filepath.Dir(file)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
 	}
-	if err := fsx.WriteAtomic(file, data, 0o600); err != nil {
+	f, err := os.CreateTemp(dir, ".signing-key-*.tmp") // CreateTemp tạo với quyền 0600
+	if err != nil {
+		return nil, err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
+	if st, err := os.Stat(file); err == nil && st.Size() == 0 {
+		if err := os.Rename(tmp, file); err != nil { // file rỗng không chứa khóa nào
+			return nil, err
+		}
+		return priv, nil
+	}
+	if err := os.Link(tmp, file); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return readKey(file) // tiến trình khác vừa ghi khóa: dùng khóa đó
+		}
 		return nil, err
 	}
 	return priv, nil

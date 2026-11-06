@@ -245,6 +245,12 @@ func (c *Context) Env(name string) (string, bool) {
 	return v, true
 }
 
+// envValue như Env nhưng trả "" khi không đặt (cho webclient.LoadConfig).
+func (c *Context) envValue(name string) string {
+	v, _ := c.Env(name)
+	return v
+}
+
 // Home là HOME của dev (chỉ theo env của Context, để test thay được).
 func (c *Context) Home() (string, bool) { return c.Env("HOME") }
 

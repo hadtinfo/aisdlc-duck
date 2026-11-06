@@ -6,108 +6,48 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/model"
 	"aisdlc/internal/snapshot"
+	"aisdlc/internal/webclient"
 )
 
 // Phần chỉ đọc của web client (giai đoạn 2b): cấu hình web, khóa ghim, định danh repo và các cache phong bì ký
 // trong .aisdlc/web/. Không có gì ở đây gọi mạng; phần có mạng (login, refresh, nộp/duyệt, outbox) ở giai đoạn 4.
 
-// WebConfig là cấu hình web của máy: ~/.config/aisdlc/web.json (do `aisdlc web login` ghi) nếu có; chỉ khi không
-// có file đó mới dùng env AISDLC_WEB_URL + AISDLC_WEB_TOKEN.
-type WebConfig struct {
-	URL   string
-	Token string
-}
+// WebConfig là cấu hình web của máy (xem webclient.Config).
+type WebConfig = webclient.Config
 
-// LoadWebConfig đọc cấu hình web như WebConfig.load của Java; ok=false khi chưa cấu hình.
+// LoadWebConfig đọc cấu hình web như WebConfig.load của Java; ok=false khi chưa cấu hình. Cảnh báo (file hỏng) ra
+// stderr.
 func LoadWebConfig(ctx *Context) (WebConfig, bool) {
-	if c, ok := webConfigFromFile(ctx); ok {
-		return c, true
+	home, _ := ctx.Home()
+	c, ok, warns := webclient.LoadConfig(home, ctx.envValue)
+	for _, w := range warns {
+		ctx.Eprintln(w)
 	}
-	u, okU := ctx.Env("AISDLC_WEB_URL")
-	t, okT := ctx.Env("AISDLC_WEB_TOKEN")
-	if okU && okT {
-		return newWebConfig(u, t), true
-	}
-	return WebConfig{}, false
+	return c, ok
 }
 
-// envTokenWarning: token đăng nhập web đặt trong env (agent đọc được).
-const envTokenWarning = "AISDLC_WEB_TOKEN đang đặt trong môi trường. Token đăng nhập" +
-	" (login) không dùng cho CLI và agent đọc được biến này: xóa nó khỏi môi trường, dùng `aisdlc web login`" +
-	" với token ingest."
-
-// warnEnvToken in envTokenWarning ra stderr khi biến token web đang đặt; không bao giờ in giá trị token.
+// warnEnvToken in cảnh báo ra stderr khi biến token web đang đặt; không bao giờ in giá trị token.
 func warnEnvToken(ctx *Context) {
-	if _, ok := ctx.Env("AISDLC_WEB_TOKEN"); ok {
-		ctx.Eprintln("aisdlc web: " + envTokenWarning)
+	if w, set := webclient.EnvTokenWarning(ctx.envValue); set {
+		ctx.Eprintln(w)
 	}
-}
-
-func webConfigFromFile(ctx *Context) (WebConfig, bool) {
-	home, ok := ctx.Home()
-	if !ok {
-		return WebConfig{}, false
-	}
-	f := filepath.Join(WebConfigDir(home), "web.json")
-	if st, err := os.Stat(f); err != nil || !st.Mode().IsRegular() {
-		return WebConfig{}, false
-	}
-	b, err := os.ReadFile(f)
-	var n map[string]any
-	if err == nil {
-		err = json.Unmarshal(b, &n)
-	}
-	if err != nil {
-		ctx.Eprintln("aisdlc web: không đọc được " + f + ": " + err.Error())
-		return WebConfig{}, false
-	}
-	u, t := strings.TrimSpace(jsonText(n["url"])), strings.TrimSpace(jsonText(n["token"]))
-	if u == "" || t == "" {
-		return WebConfig{}, false
-	}
-	return newWebConfig(u, t), true
 }
 
 // jsonText như JsonNode.asText(""): chuỗi, số và bool thành chữ; còn lại rỗng.
-func jsonText(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(x)
-	}
-	return ""
-}
-
-func newWebConfig(url, token string) WebConfig {
-	return WebConfig{URL: strings.TrimRight(strings.TrimSpace(url), "/"), Token: strings.TrimSpace(token)}
-}
+func jsonText(v any) string { return webclient.JSONText(v) }
 
 // WebConfigDir là thư mục cấu hình web của dev: <home>/.config/aisdlc.
-func WebConfigDir(home string) string { return filepath.Join(home, ".config", "aisdlc") }
+func WebConfigDir(home string) string { return webclient.ConfigDir(home) }
 
 // PinnedKeyFile là file khóa công khai đã ghim của server web: <home>/.config/aisdlc/web-pubkey.
-func PinnedKeyFile(home string) string { return filepath.Join(WebConfigDir(home), "web-pubkey") }
+func PinnedKeyFile(home string) string { return webclient.PinnedKeyFile(home) }
 
 // LoadPinnedKey đọc khóa đã ghim (base64 X.509); nil khi chưa ghim hoặc file hỏng. Không bao giờ lỗi.
-func LoadPinnedKey(home string) ed25519.PublicKey {
-	b, err := os.ReadFile(PinnedKeyFile(home))
-	if err != nil {
-		return nil
-	}
-	k, err := snapshot.PublicKeyFromBase64(string(b))
-	if err != nil {
-		return nil
-	}
-	return k
-}
+func LoadPinnedKey(home string) ed25519.PublicKey { return webclient.LoadPinnedKey(home) }
 
 // WebCache là phần đọc cache của WebGates: cấu hình, khóa ghim và định danh repo đọc lười (repo chế độ local
 // không tốn gì thêm).

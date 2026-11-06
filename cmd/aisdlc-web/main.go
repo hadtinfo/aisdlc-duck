@@ -1,25 +1,53 @@
-// Lệnh aisdlc-web: server web AISDLC. Không đối số thì chạy server; `user ...` do task sau.
+// Lệnh aisdlc-web: server web AISDLC. Không đối số thì chạy server; `user ...` là quản trị user (UserAdminCli).
 package main
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"aisdlc/internal/web"
+	"aisdlc/internal/web/auth"
+	"aisdlc/internal/web/store"
 )
 
 func main() {
-	if len(os.Args) > 1 {
-		fmt.Fprintf(os.Stderr, "lệnh %q chưa được hỗ trợ\n", os.Args[1])
-		os.Exit(2)
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := web.Run(ctx, web.ConfigFromEnv()); err != nil {
-		fmt.Fprintln(os.Stderr, "aisdlc-web:", err)
-		os.Exit(1)
+	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
+}
+
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "user" {
+		return runUser(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 {
+		fmt.Fprintf(stderr, "lệnh %q chưa được hỗ trợ\n", args[0])
+		return 2
+	}
+	if err := web.Run(ctx, web.ConfigFromEnv()); err != nil {
+		fmt.Fprintln(stderr, "aisdlc-web:", err)
+		return 1
+	}
+	return 0
+}
+
+// runUser: chế độ quản trị, không mở cổng web, chỉ cần DB (migration chạy trước như Flyway của bản Java).
+func runUser(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	cfg := web.ConfigFromEnv()
+	pool, err := store.Open(ctx, cfg.DBURL, cfg.DBUser, cfg.DBPassword)
+	if err != nil {
+		fmt.Fprintln(stderr, "aisdlc-web:", err)
+		return 1
+	}
+	defer pool.Close()
+	if err := store.Migrate(ctx, pool); err != nil {
+		fmt.Fprintln(stderr, "aisdlc-web:", err)
+		return 1
+	}
+	return auth.RunAdmin(ctx, pool, args, stdout)
 }

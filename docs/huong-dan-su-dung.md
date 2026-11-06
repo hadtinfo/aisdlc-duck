@@ -29,9 +29,7 @@ Các thành phần dev đụng tới:
 | Harness (trong `aisdlc eval`) | Build dịch vụ, dựng Postgres/Kafka bằng Docker (testcontainers), chạy `cases.yaml` như hộp đen |
 | Web `aisdlc-web` (tùy chọn) | Bảng theo dõi, duyệt cổng và điều khiển agent trên web |
 
-![Kiến trúc AISDLC](images/kien-truc.png)
-
-Agent gọi plugin → `plugin/bin/aisdlc` chọn binary đúng nền tảng → CLI đọc/ghi file trạng thái trong repo. Eval build dịch vụ, chạy test cũ rồi chạy bộ case qua harness. Web là tùy chọn: CLI gửi lên `aisdlc-web` qua HTTPS kèm token. (Hình vẽ theo bản đầu; thành phần chạy case trong hình nay là harness nằm ngay trong CLI.)
+Agent gọi plugin → `plugin/bin/aisdlc` chọn binary đúng nền tảng → CLI đọc/ghi file trạng thái trong repo. Eval build dịch vụ, chạy test cũ rồi chạy bộ case qua harness. Web là tùy chọn: CLI gửi lên `aisdlc-web` qua HTTPS kèm token.
 
 ## 2. Cài đặt
 
@@ -159,7 +157,7 @@ Hook chặn sửa code khi cổng chưa mở. Ví dụ mô phỏng agent ghi `in
 ```bash
 # chạy-được
 echo '{"tool_name":"Write","tool_input":{"file_path":"'"$PWD"'/internal/fee/fee.go","content":"x"},"session_id":"s1","cwd":"'"$PWD"'"}' \
-  | aisdlc hook pre-tool-use | grep -q '"permissionDecision":"deny"'
+  | aisdlc hook pre-tool-use | grep '"permissionDecision":"deny"' >/dev/null
 ```
 
 ### 3.4. Lệnh hay dùng khác
@@ -181,7 +179,7 @@ aisdlc policy show
 
 ### 3.5. Viết `cases.yaml`
 
-Một case gồm `given` (SQL dọn dữ liệu, stub), `when` (một request HTTP), `then` (status, body, DB, message). Mẫu đầy đủ: `templates/cases.full.yaml`; ví dụ tính năng thật nằm ở `e2e/solutions/` khi có.
+Một case gồm `given` (SQL dọn dữ liệu, stub), `when` (một request HTTP), `then` (status, body, DB, message). Mẫu đầy đủ: `templates/cases.full.yaml`; chưa có ví dụ tính năng hoàn chỉnh nào trong repo (thư mục `e2e/solutions/` chưa được port).
 
 ```yaml
 reset_sql: ["DELETE FROM account"]
@@ -219,7 +217,11 @@ Quy tắc:
 | json, jsonb | So theo **cấu trúc** (thứ tự khóa không quan trọng) | `meta: { a: 1 }` |
 | uuid, text, các kiểu còn lại | So dạng text của Postgres | `id: "0b8e…"` |
 
-Cột trả về qua `query` nào thì khóa trong `rows` theo tên cột (hoặc alias) đó.
+Cách so dòng:
+
+- Các dòng so **theo thứ tự** và số dòng phải khớp đúng; lệch thì báo "số dòng: mong đợi N, nhận M". Vì vậy `query` nhiều dòng phải có `ORDER BY`.
+- Chỉ so các cột có trong `rows`; cột khác của câu `SELECT` bị bỏ qua.
+- Tên cột (hoặc alias) không phân biệt hoa thường.
 
 ## 4. Code theo bước
 
@@ -245,7 +247,7 @@ Mỗi MR chỉ một tính năng: MR chứa hai tính năng thì `SCOPE` của t
 3. Dựng Postgres (và Kafka nếu `env.kafkaBrokers` có giá trị) bằng Docker, chạy migration goose, khởi động dịch vụ, chờ `healthPath`.
 4. Chạy từng case của `cases.yaml` như hộp đen, kiểm schema, tắt dịch vụ bằng `SIGTERM` và gộp coverage.
 
-**Eval cần Docker** (testcontainers). Container được dọn khi eval xong, kể cả khi lỗi hay Ctrl-C. Không có Docker thì lệnh báo "cần Docker cho harness: …" và thoát khác 0.
+**Eval cần Docker** (testcontainers). Container được dọn khi eval xong, kể cả khi lỗi hay Ctrl-C. Không khởi động được container (Docker không chạy, không có quyền socket) thì harness báo lỗi khởi động như "không khởi động được Postgres: …", mọi case ở trạng thái ERROR và `eval` (hoặc `step finish`) thoát khác 0. Kết quả nằm ở `aisdlc/features/<KEY>/eval/report.json` và `report.md`, log harness ở `.aisdlc/run/<KEY>/harness.log`.
 
 Eval ghi `eval/report.md`, dòng đầu là `Eval <KEY>: ĐẠT` hoặc `KHÔNG ĐẠT`; có thể dán nguyên file làm mô tả MR. Chỉ cần một kiểm tra cứng fail là eval fail; chỉ số mềm chỉ cảnh báo.
 
@@ -271,7 +273,7 @@ Chi tiết nằm ở `eval/report.json`, diff theo bước ở `eval/diff-by-ste
 2. Đặt biến CI/CD `AISDLC_BIN` = URL tải binary `aisdlc` linux/amd64 (từ `make plugin-dist`, đưa lên registry nội bộ). Runner phải chạy được `docker:dind` (privileged); template đã khai service `docker:dind` và `DOCKER_HOST`. Không ghi đè `GIT_DEPTH: "0"`.
 3. Bật protected branch cho nhánh chính với "Pipelines must succeed". Hook chỉ bảo vệ trên máy dev; chặn merge do GitLab làm.
 
-Job chạy `aisdlc eval --ci --base origin/<nhánh đích>` cho mọi tính năng có thay đổi trong MR. Runner không có Docker thì eval báo "cần Docker cho harness" và job fail ngay, không treo.
+Job chạy `aisdlc eval --ci --base origin/<nhánh đích>` cho mọi tính năng có thay đổi trong MR. Runner không có Docker thì harness báo "không khởi động được Postgres: …", mọi case ERROR và job thoát khác 0.
 
 - Sửa `aisdlc/config.yaml` phải nằm ở MR riêng; eval luôn đánh fail thay đổi kèm sửa cấu hình.
 - MR đổi code không thuộc tính năng nào (ví dụ nâng dependency) bị fail: tạo một tính năng `--lite`, hoặc đặt `ciRequireFeature: false` ở MR riêng.
@@ -315,7 +317,7 @@ Sao lưu file khóa ký `/data/signing-key` (volume `aisdlc-data`): mất file t
 
 Không đặt token vào biến môi trường `AISDLC_WEB_TOKEN`: agent đọc được biến môi trường. Lộ token thì thu hồi ở `/me` (có hiệu lực ngay).
 
-### 6.3. Duyệt trên web
+### 6.3. Duyệt trên web (chế độ `approvals: web`)
 
 Bật bằng `approvals: web` trong `aisdlc/config.yaml` (MR cấu hình riêng). Khi đó bản ghi duyệt nằm trên server, không ở `gates.json`.
 
@@ -389,7 +391,7 @@ Các giới hạn khác:
 | Hook chặn Edit/Write, nhắc `aisdlc use` | Session chưa gắn tính năng, có nhiều tính năng mở | Agent chạy `aisdlc use <KEY>`; vẫn chặn thì mở lại session Claude Code |
 | Hook chặn mọi lệnh ghi, báo thiếu binary | Chưa có `plugin/lib/aisdlc-<os>-<arch>` cho nền tảng này | Chạy `plugin/install.sh` hoặc `make plugin-dist`, cài lại plugin |
 | Cổng chuyển STALE | Artifact đã duyệt bị sửa trực tiếp | `aisdlc reopen <gate>`, sửa, nộp và duyệt lại |
-| Eval báo "cần Docker cho harness: …" | Docker không chạy, hoặc CI không có `docker:dind` / `DOCKER_HOST` | Bật Docker; ở CI giữ service `docker:dind` của template |
+| Eval báo "không khởi động được Postgres: …", mọi case ERROR | Docker không chạy, hoặc CI không có `docker:dind` / `DOCKER_HOST` | Bật Docker; ở CI giữ service `docker:dind` của template |
 | Coverage "N/A" trong report | Dịch vụ không thoát sau `SIGTERM` kịp `shutdownTimeoutSeconds` | Sửa dịch vụ tắt êm (`http.Server.Shutdown`), hoặc tăng timeout |
 | Dịch vụ không lên: mọi case `NOT_RUN` | Sai `healthPath`, sai tên biến cổng/DB, hoặc quá `startTimeoutSeconds` | Đọc 50 dòng log cuối trong report, sửa `service` trong `config.yaml` |
 | `CASES_SETUP_NEEDS_LATER_TABLE` | `reset_sql` dùng bảng tạo ở bước sau | Dọn bảng đó trong `given.sql` của case bước đó |

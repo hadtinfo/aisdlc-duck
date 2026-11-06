@@ -32,7 +32,7 @@ Hai biến `AISDLC_WEB_URL` và `AISDLC_WEB_TOKEN` là của CLI/CI, không ph�
 
 Server ký cache trạng thái và lệnh điều khiển bằng khóa Ed25519; CLI của dev ghim khóa công khai lúc `aisdlc web login`. Vì vậy **mọi replica phải dùng cùng một khóa**:
 
-- Tạo khóa một lần (chạy một replica đầu tiên, hoặc tự sinh PEM PKCS#8) rồi **mount bằng secret** (Kubernetes Secret, Docker secret) tại `AISDLC_SIGNING_KEY_FILE`, chỉ đọc. Không để mỗi replica tự sinh khóa riêng: CLI sẽ thấy khóa khác nhau tùy replica và từ chối cache.
+- Server tự sinh khóa ở lần khởi động đầu nếu file chưa có. Vì vậy phải **mount secret chứa khóa dùng chung TRƯỚC lần khởi động đầu tiên** của bất kỳ replica nào (tạo trước một cặp PEM PKCS#8, hoặc lấy khóa của replica đầu tiên đưa vào secret), mount (Kubernetes Secret, Docker secret) tại `AISDLC_SIGNING_KEY_FILE`, chỉ đọc. Không để mỗi replica tự sinh khóa riêng: CLI sẽ thấy khóa khác nhau tùy replica và từ chối cache.
 - Volume `/data` mặc định chỉ phù hợp một replica. Nhiều replica thì mount secret thay volume.
 - File có quyền rộng hơn 0600 thì server chỉ cảnh báo trong log; file hỏng hoặc không đọc được thì server từ chối khởi động, không ghi đè.
 - Sao lưu khóa. Mất khóa thì mọi dev phải `aisdlc web login` lại.

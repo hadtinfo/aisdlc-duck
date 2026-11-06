@@ -82,7 +82,10 @@ func (r *harnessCaseRunner) RunCases(key model.FeatureKey, steps []string, mode 
 	}
 	res, err := execHarness(r.std, bin, out, "run", "--root", r.root, "--feature", key.String(),
 		"--steps", strings.Join(steps, ","), "--mode", m, "--out", out)
+	var verr *harnessVersionError
 	switch {
+	case errors.As(err, &verr):
+		return run.CaseRunResult{ExitCode: 2, Cases: errorCases(r.selected(key, steps, m), verr.msg)}, nil
 	case err != nil && r.std.Err() != nil:
 		return canceled, nil
 	case err != nil:
@@ -130,6 +133,9 @@ func (r *harnessCaseRunner) OutputTail(key model.FeatureKey, n int) string {
 	return tailFile(filepath.Join(r.OutDir(key), HarnessLog), n)
 }
 
+// harnessNoVerify: harness-result.json không có kết quả verify (cũng không panic hay lỗi).
+const harnessNoVerify = "aisdlc-harness không trả kết quả verify"
+
 // harnessVerifier là eval.Verifier thật (`aisdlc-harness verify`). Harness hỏng giữa chừng hoặc không tìm thấy binary
 // thành HarnessErr (không phải build hỏng: Build.OK=true để BUILD_AND_TESTS chỉ báo lỗi harness), lý do ghi vào
 // harness.log; results.json/schema.json cũ không còn để eval đọc nhầm.
@@ -159,7 +165,10 @@ func (v harnessVerifier) Verify(ctx context.Context, key model.FeatureKey, out s
 		return canceledVerify(), nil
 	}
 	res, err := execHarness(ctx, bin, out, "verify", "--root", v.root, "--feature", key.String(), "--out", out)
+	var verr *harnessVersionError
 	switch {
+	case errors.As(err, &verr):
+		return failedVerify(verr.msg, verr.msg), nil
 	case err != nil && ctx.Err() != nil:
 		return canceledVerify(), nil
 	case err != nil:
@@ -167,8 +176,11 @@ func (v harnessVerifier) Verify(ctx context.Context, key model.FeatureKey, out s
 		return failedVerify(err.Error(), harnessPanic+err.Error()), nil
 	case res.Error != "":
 		return harnessapi.VerifyResult{}, errors.New(res.Error)
-	case res.Panic != "" || res.Verify == nil:
+	case res.Panic != "":
 		return failedVerify(res.Panic, harnessPanic+res.Panic), nil
+	case res.Verify == nil:
+		appendLog(out, harnessNoVerify)
+		return failedVerify(harnessNoVerify, harnessPanic+harnessNoVerify), nil
 	}
 	return *res.Verify, nil
 }

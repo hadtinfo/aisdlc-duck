@@ -52,7 +52,7 @@ Trong Claude Code:
 /plugin install aisdlc@aisdlc
 ```
 
-- `plugin/lib/aisdlc-*` không nằm trong git. `aisdlc` tìm `aisdlc-harness` cùng thư mục với nó (hoặc theo biến `AISDLC_HARNESS`, rồi `PATH`); thiếu thì mọi case ERROR "không tìm thấy aisdlc-harness: …" và eval không đạt. Chạy `install.sh` (hoặc `make plugin-dist`) trước `/plugin install`; marketplace phải trỏ vào thư mục đã build, không dùng URL git.
+- `plugin/lib/aisdlc-*` không nằm trong git. `aisdlc` tìm `aisdlc-harness` cùng thư mục với nó (không có mới tìm trên `PATH`) và chỉ dùng khi hai binary cùng bản build; thiếu thì mọi case ERROR "không tìm thấy aisdlc-harness: …" và eval không đạt. Chạy `install.sh` (hoặc `make plugin-dist`) trước `/plugin install`; marketplace phải trỏ vào thư mục đã build, không dùng URL git.
 - Cập nhật binary xong thì cài lại plugin.
 - Thiếu binary cho nền tảng này: trong repo AISDLC, hook chặn mọi công cụ ghi (Edit, Write, Bash ghi…) tới khi sửa xong; `Read`, `Grep`, `Glob` vẫn dùng được. Ở repo khác plugin im lặng, không làm gì.
 
@@ -391,6 +391,7 @@ Các giới hạn khác:
 | "Có nhiều tính năng đang mở…" | Từ 2 tính năng mở, lệnh không biết chọn cái nào | Thêm `--feature <KEY>`, hoặc `aisdlc use <KEY>` trong session |
 | Hook chặn Edit/Write, nhắc `aisdlc use` | Session chưa gắn tính năng, có nhiều tính năng mở | Agent chạy `aisdlc use <KEY>`; vẫn chặn thì mở lại session Claude Code |
 | Case ERROR "không tìm thấy aisdlc-harness: …" | Chưa có `plugin/lib/aisdlc-harness-<os>-<arch>` (bản cài cũ) hoặc CI thiếu `AISDLC_HARNESS_BIN` | Chạy `plugin/install.sh` hoặc `make plugin-dist`; ở CI đặt `AISDLC_HARNESS_BIN` |
+| Case ERROR "aisdlc-harness khác bản build với aisdlc …" | Hai binary build từ hai bản code khác nhau (cài lại một nửa, CI tải hai URL lệch bản) | Chạy lại `plugin/install.sh` hoặc `make plugin-dist`; ở CI cho `AISDLC_BIN` và `AISDLC_HARNESS_BIN` trỏ cùng một lần build |
 | Hook chặn mọi lệnh ghi, báo thiếu binary | Chưa có `plugin/lib/aisdlc-<os>-<arch>` cho nền tảng này | Chạy `plugin/install.sh` hoặc `make plugin-dist`, cài lại plugin |
 | Cổng chuyển STALE | Artifact đã duyệt bị sửa trực tiếp | `aisdlc reopen <gate>`, sửa, nộp và duyệt lại |
 | Eval báo "không khởi động được Postgres: …", mọi case ERROR | Docker không chạy, hoặc CI không có `docker:dind` / `DOCKER_HOST` | Bật Docker; ở CI giữ service `docker:dind` của template |

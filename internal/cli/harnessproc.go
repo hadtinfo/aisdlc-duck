@@ -14,11 +14,16 @@ import (
 	"syscall"
 	"time"
 
+	"aisdlc/internal/buildinfo"
 	"aisdlc/internal/harness/harnessapi"
 )
 
-// HarnessEnv là biến môi trường trỏ tới binary aisdlc-harness (bỏ qua cách tìm mặc định).
+// HarnessEnv là biến môi trường trỏ tới binary aisdlc-harness, chỉ để test/dev: bị bỏ qua khi chạy trong Claude Code
+// (CLAUDECODE đặt) để agent không trỏ được tới harness giả mà làm giả kết quả.
 const HarnessEnv = "AISDLC_HARNESS"
+
+// claudeCodeEnv được Claude Code đặt cho mọi lệnh nó chạy.
+const claudeCodeEnv = "CLAUDECODE"
 
 const (
 	harnessBin     = "aisdlc-harness"
@@ -28,13 +33,18 @@ const (
 	harnessStopWait = 45 * time.Second
 	// harnessKillWait: sau tín hiệu thứ hai, chờ harness SIGKILL dịch vụ và thoát trước khi SIGKILL nhóm của nó.
 	harnessKillWait = 3 * time.Second
-	stderrTailLines = 20
 )
 
-// findHarness tìm binary aisdlc-harness: $AISDLC_HARNESS; cạnh binary aisdlc (aisdlc-harness, hoặc
-// aisdlc-harness-<os>-<arch> theo bố cục plugin/lib); rồi PATH.
-func findHarness() (string, error) {
-	if p := os.Getenv(HarnessEnv); p != "" {
+// cliVersion là phiên bản build của aisdlc (thay được trong test).
+var cliVersion = buildinfo.Version
+
+// findHarness tìm binary aisdlc-harness của tiến trình đang chạy (xem locateHarness).
+func findHarness() (string, error) { return locateHarness(os.Getenv, os.Executable, exec.LookPath) }
+
+// locateHarness: $AISDLC_HARNESS (chỉ ngoài Claude Code); cạnh binary aisdlc (và thư mục đích nếu nó là symlink):
+// aisdlc-harness hoặc aisdlc-harness-<os>-<arch> theo bố cục plugin/lib; chỉ khi không có cạnh aisdlc mới tìm PATH.
+func locateHarness(getenv func(string) string, exe func() (string, error), lookPath func(string) (string, error)) (string, error) {
+	if p := getenv(HarnessEnv); p != "" && getenv(claudeCodeEnv) == "" {
 		if executable(p) {
 			return p, nil
 		}
@@ -42,9 +52,9 @@ func findHarness() (string, error) {
 	}
 	names := []string{harnessBin, harnessBin + "-" + runtime.GOOS + "-" + runtime.GOARCH}
 	var dirs []string
-	if exe, err := os.Executable(); err == nil {
-		dirs = append(dirs, filepath.Dir(exe))
-		if real, err := filepath.EvalSymlinks(exe); err == nil && filepath.Dir(real) != dirs[0] {
+	if e, err := exe(); err == nil {
+		dirs = append(dirs, filepath.Dir(e))
+		if real, err := filepath.EvalSymlinks(e); err == nil && filepath.Dir(real) != dirs[0] {
 			dirs = append(dirs, filepath.Dir(real))
 		}
 	}
@@ -55,11 +65,11 @@ func findHarness() (string, error) {
 			}
 		}
 	}
-	if p, err := exec.LookPath(harnessBin); err == nil {
+	if p, err := lookPath(harnessBin); err == nil {
 		return p, nil
 	}
-	return "", errors.New(harnessMissing + "không có cạnh aisdlc (" + strings.Join(dirs, ", ") + "), không có trên PATH và " +
-		HarnessEnv + " chưa đặt. Cài lại plugin hoặc `make build`")
+	return "", errors.New(harnessMissing + "không có cạnh aisdlc (" + strings.Join(dirs, ", ") +
+		") và không có trên PATH. Cài lại plugin (plugin/install.sh) hoặc `make build`")
 }
 
 func executable(p string) bool {
@@ -141,8 +151,15 @@ func execHarness(ctx context.Context, bin, out string, args ...string) (harnessa
 	delete(liveHarness.procs, cmd.Process)
 	liveHarness.Unlock()
 
+	logHarness(out, bin, output.String())
 	r, rerr := harnessapi.ReadResult(out)
 	if rerr == nil {
+		if cli := cliVersion(); !buildinfo.Compatible(cli, r.Version) {
+			_ = clearResults(out)
+			msg := versionMismatch(cli, r.Version)
+			appendLog(out, msg)
+			return harnessapi.Result{}, &harnessVersionError{msg}
+		}
 		return r, nil
 	}
 	why := "thoát bình thường"
@@ -150,20 +167,46 @@ func execHarness(ctx context.Context, bin, out string, args ...string) (harnessa
 		why = err.Error()
 	}
 	msg := fmt.Sprintf("aisdlc-harness không ghi kết quả (%s)", why)
-	if t := lastLines(output.String(), stderrTailLines); t != "" {
-		msg += ":\n" + t
+	if l := harnessErrorLine(output.String()); l != "" {
+		msg += ": " + l
 	}
 	return harnessapi.Result{}, errors.New(msg)
 }
 
-func lastLines(s string, n int) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
+// harnessVersionError: aisdlc-harness khác bản build với aisdlc; kết quả của nó không được dùng.
+type harnessVersionError struct{ msg string }
+
+func (e *harnessVersionError) Error() string { return e.msg }
+
+func versionMismatch(cli, harness string) string {
+	if harness == "" {
+		harness = "không rõ"
 	}
-	lines := strings.Split(s, "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
+	return "aisdlc-harness khác bản build với aisdlc (aisdlc " + cli + ", aisdlc-harness " + harness +
+		"). Cài lại plugin (plugin/install.sh hoặc make plugin-dist) để hai binary cùng bản"
+}
+
+// logHarness ghi vào harness.log binary đã dùng và toàn bộ stdout/stderr của nó.
+func logHarness(out, bin, output string) {
+	line := "aisdlc-harness: " + bin
+	if o := strings.TrimRight(output, "\n"); o != "" {
+		line += "\n--- stdout/stderr của aisdlc-harness ---\n" + o + "\n--- hết ---"
 	}
-	return strings.Join(lines, "\n")
+	appendLog(out, line)
+}
+
+// harnessErrorLine là một dòng tóm lý do harness chết: dòng `panic:`/`fatal error:` đầu tiên, không có thì dòng cuối
+// không rỗng của output.
+func harnessErrorLine(output string) string {
+	last := ""
+	for _, l := range strings.Split(output, "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "panic:") || strings.HasPrefix(l, "fatal error:") {
+			return l
+		}
+		if l != "" {
+			last = l
+		}
+	}
+	return last
 }

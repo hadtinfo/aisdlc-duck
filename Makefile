@@ -3,7 +3,7 @@
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
 # Hai binary: aisdlc (CLI và hook, khởi động nhanh) và aisdlc-harness (harness black-box, testcontainers) mà aisdlc
-# gọi như tiến trình con; aisdlc tìm aisdlc-harness cạnh nó (hoặc $$AISDLC_HARNESS, rồi PATH).
+# gọi như tiến trình con; aisdlc tìm aisdlc-harness cạnh nó (không có thì PATH; $$AISDLC_HARNESS chỉ để test/dev, bị bỏ qua trong Claude Code).
 build:
 	go build -o bin/aisdlc ./cmd/aisdlc && go build -o bin/aisdlc-harness ./cmd/aisdlc-harness
 

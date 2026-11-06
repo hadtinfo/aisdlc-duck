@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Chọn binary Go theo nền tảng (plugin/lib/aisdlc-<os>-<arch>) rồi exec.
 # Thiếu binary: lệnh thường -> lỗi, exit 2. Hook -> chỉ chặn (fail closed) khi đang ở repo AISDLC.
+# tool_name lấy ở cấp ngoài (trước hoặc sau khối tool_input, không lấy từ bên trong tool_input).
 # Riêng pre-tool-use: tool chỉ đọc (Read, Grep, Glob, LS, NotebookRead) vẫn được qua (exit 0) để dev còn đọc mà sửa;
 # tool ghi, Bash, tool lạ hoặc không đọc được tool_name -> chặn (exit 2). WebFetch/WebSearch không thuộc danh sách
 # (hook không đăng ký cho chúng; nếu có gọi thì coi như không phải tool đọc repo và vẫn chặn).
@@ -9,7 +10,11 @@ fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
   local in="" dir="$PWD"
   IFS= read -r -d '' in || true
   local tool=""
-  [[ "$in" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && tool="${BASH_REMATCH[1]}"
+  # tool_name cấp ngoài: nếu nằm trước tool_input thì lấy khóa đầu tiên; nếu tool_input đứng trước thì tool_name cấp ngoài
+  # là khóa cuối cùng (khóa lồng trong tool_input luôn đứng trước nó).
+  local head="${in%%\"tool_input\"*}"
+  if [[ "$head" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then tool="${BASH_REMATCH[1]}"
+  elif [[ "$in" =~ .*\"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then tool="${BASH_REMATCH[1]}"; fi
   [[ "$in" =~ \"cwd\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && dir="${BASH_REMATCH[1]}"
   while [ -n "$dir" ]; do
     if [ -f "$dir/aisdlc/config.yaml" ]; then

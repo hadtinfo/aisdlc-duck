@@ -89,6 +89,9 @@ for tn in Edit Write MultiEdit NotebookEdit Bash; do
 done
 run "$T/repo" '{"tool_name":"Read","tool_input":{"file_path":"/x"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: tool_name Read kèm tool_input vẫn rc 0" 0
 run "$T/repo" '{"tool_name":"Write","tool_input":{"content":"x \"tool_name\":\"Read\""},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: tool_name giả trong nội dung ghi không lừa được (Write vẫn rc 2)" 2 'plugin/install.sh'
+run "$T/repo" '{"tool_input":{"tool_name":"Read"},"tool_name":"Write","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: thứ tự khóa đảo (tool_input trước) Write vẫn rc 2" 2 'plugin/install.sh'
+run "$T/repo" '{"tool_input":{"file_path":"/x"},"tool_name":"Read","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: thứ tự khóa đảo, Read rc 0" 0
+run "$T/repo" '{"tool_name":"Write","tool_input":{"tool_name":"Read"}}' "$W" hook pre-tool-use; expect "thiếu binary: tool_name lồng trong tool_input bị bỏ qua" 2 'plugin/install.sh'
 run "$T/repo" '{"tool_name":"Read"}' "$W" hook stop; expect "thiếu binary: stop dù tool_name Read vẫn rc 1" 1 'plugin/install.sh'
 run "$T/plain" '{"tool_name":"Edit"}' "$W" hook pre-tool-use; expect "thiếu binary, ngoài repo AISDLC: Edit rc 0 im lặng" 0
 rm -rf "$T"

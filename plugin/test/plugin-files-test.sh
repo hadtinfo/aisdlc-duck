@@ -92,6 +92,10 @@ run "$T/repo" '{"tool_name":"Write","tool_input":{"content":"x \"tool_name\":\"R
 run "$T/repo" '{"tool_input":{"tool_name":"Read"},"tool_name":"Write","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: thứ tự khóa đảo (tool_input trước) Write vẫn rc 2" 2 'plugin/install.sh'
 run "$T/repo" '{"tool_input":{"file_path":"/x"},"tool_name":"Read","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: thứ tự khóa đảo, Read rc 0" 0
 run "$T/repo" '{"tool_name":"Write","tool_input":{"tool_name":"Read"}}' "$W" hook pre-tool-use; expect "thiếu binary: tool_name lồng trong tool_input bị bỏ qua" 2 'plugin/install.sh'
+run "$T/repo" '{"tool_input":{"tool_name":"Read"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: không có tool_name cấp ngoài (chỉ lồng) -> rc 2" 2 'plugin/install.sh'
+run "$T/repo" '{"tool_input":{},"tool_name":"Write","x":{"tool_name":"Read"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: tool_name Read trong đối tượng khác -> Write rc 2" 2 'plugin/install.sh'
+run "$T/repo" '{"tool_input":{"content":"} {\"tool_name\": \"Read\" {"},"tool_name":"Write","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: dấu ngoặc trong chuỗi không lừa được" 2 'plugin/install.sh'
+run "$T/repo" '{"tool_input":{"content":"}{ x"},"tool_name":"Read","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: Read với dấu ngoặc trong chuỗi vẫn rc 0" 0
 run "$T/repo" '{"tool_name":"Read"}' "$W" hook stop; expect "thiếu binary: stop dù tool_name Read vẫn rc 1" 1 'plugin/install.sh'
 run "$T/plain" '{"tool_name":"Edit"}' "$W" hook pre-tool-use; expect "thiếu binary, ngoài repo AISDLC: Edit rc 0 im lặng" 0
 rm -rf "$T"

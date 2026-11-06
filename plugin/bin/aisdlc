@@ -10,11 +10,20 @@ fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
   local in="" dir="$PWD"
   IFS= read -r -d '' in || true
   local tool=""
-  # tool_name cấp ngoài: nếu nằm trước tool_input thì lấy khóa đầu tiên; nếu tool_input đứng trước thì tool_name cấp ngoài
-  # là khóa cuối cùng (khóa lồng trong tool_input luôn đứng trước nó).
-  local head="${in%%\"tool_input\"*}"
-  if [[ "$head" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then tool="${BASH_REMATCH[1]}"
-  elif [[ "$in" =~ .*\"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then tool="${BASH_REMATCH[1]}"; fi
+  # tool_name cấp ngoài (bất kể thứ tự khóa): thay mỗi chuỗi JSON bằng token "sN" (nội dung cất ở mảng), bỏ mọi đối tượng
+  # lồng nhau, rồi tìm khóa tool_name ở đối tượng ngoài cùng. Không tìm ra hoặc không rõ -> tool rỗng -> chặn.
+  local -a strs=(); local t="" rest="$in" n=0 q='"'
+  while [[ "$rest" =~ ^([^\"]*)\"((\\.|[^\"\\])*)\"(.*)$ ]]; do
+    strs[n]="${BASH_REMATCH[2]}"; t+="${BASH_REMATCH[1]}\"s$n\""; rest="${BASH_REMATCH[4]}"; n=$((n+1))
+  done
+  t+="$rest"
+  t="${t#*\{}" # bỏ dấu { mở của đối tượng ngoài
+  while [[ "$t" =~ ^(.*)\{[^{}]*\}(.*)$ ]]; do t="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"; done
+  rest="$t"
+  while [[ "$rest" =~ \"s([0-9]+)\"[[:space:]]*:[[:space:]]*\"s([0-9]+)\"(.*)$ ]]; do
+    if [ "${strs[${BASH_REMATCH[1]}]}" = "tool_name" ]; then tool="${strs[${BASH_REMATCH[2]}]}"; break; fi
+    rest="${BASH_REMATCH[3]}"
+  done
   [[ "$in" =~ \"cwd\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && dir="${BASH_REMATCH[1]}"
   while [ -n "$dir" ]; do
     if [ -f "$dir/aisdlc/config.yaml" ]; then

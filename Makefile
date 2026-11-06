@@ -1,4 +1,4 @@
-.PHONY: build test test-short vet fmt-check check plugin-dist ui ui-test build-web
+.PHONY: ci build test test-short vet fmt-check check plugin-dist ui ui-test build-web
 
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
@@ -36,3 +36,6 @@ ui-test:
 
 build-web: ui
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/aisdlc-web ./cmd/aisdlc-web
+
+# Chạy cục bộ những gì CI chạy ở các stage check và ui.
+ci: check ui-test

@@ -118,19 +118,46 @@ func TestBoardShowsCardAndInboxForOwner(t *testing.T) {
 	}
 }
 
-// Phần phủ trạng thái cổng (GateOverlay) là Task 6: ở đây kiểm approvalsMode theo repo_settings và repo local giữ nguyên
-// snapshot; việc cột/nhãn/hộp thư/chi tiết tính trên snapshot đã phủ được kiểm bằng GateView giả (TestWebModeOverlayApplied).
 func TestWebModeRepoUsesServerGateStateForInboxColumnAndDetail(t *testing.T) {
 	f := newIT(t)
 	repo := "r/board-web"
-	if r := f.post(t, "/api/ingest/snapshot", snap(repo, "WEB-1", "a@corp"), f.tokenA); r.Status != 200 {
+	s := strings.Replace(snap(repo, "WEB-1", "a@corp"), `[{"gate":"BRD","state":"AWAITING_APPROVAL"}]`,
+		`[{"gate":"BRD","state":"NOT_SUBMITTED","currentHash":"hB"},`+
+			`{"gate":"DESIGN","state":"LOCKED_BY_PREVIOUS","currentHash":"hD"},`+
+			`{"gate":"CASES","state":"LOCKED_BY_PREVIOUS","currentHash":"hC"},`+
+			`{"gate":"REVIEW","state":"LOCKED_BY_PREVIOUS","currentHash":"hR"}]`, 1)
+	if r := f.post(t, "/api/ingest/snapshot", s, f.tokenA); r.Status != 200 {
 		t.Fatal(r.Status, r.Body)
 	}
 	f.exec(t, "INSERT INTO repo_settings(repo_id, approvals, set_by) VALUES ($1, 'web', 'board.a') ON CONFLICT DO NOTHING", repo)
+	var brd int64
+	if err := f.e.Pool.QueryRow(context.Background(), "INSERT INTO submissions(repo_id, feature_key, gate, hash, findings, artifacts, "+
+		"submitted_by) VALUES ($1, 'WEB-1', 'BRD', 'hB', '[]', '[]', 'board.a') RETURNING id", repo).Scan(&brd); err != nil {
+		t.Fatal(err)
+	}
+	f.exec(t, "INSERT INTO approvals(submission_id, repo_id, feature_key, gate, hash, approver, channel) "+
+		"VALUES ($1, $2, 'WEB-1', 'BRD', 'hB', 'board.a', 'web')", brd, repo)
+	f.exec(t, "INSERT INTO submissions(repo_id, feature_key, gate, hash, findings, artifacts, submitted_by) "+
+		"VALUES ($1, 'WEB-1', 'DESIGN', 'hD', '[]', '[]', 'board.a')", repo)
+
+	a := decode(t, f.get("/api/board?repo="+repo, f.tokenA))
+	card := at(a, "cards", 0)
+	if at(card, "column") != "DESIGN" || !strings.Contains(fmt.Sprint(at(card, "labels")), "AWAITING_APPROVAL:DESIGN") {
+		t.Fatal(card)
+	}
+	if size(at(a, "inbox")) != 1 || at(a, "inbox", 0, "kind") != "APPROVE" || at(a, "inbox", 0, "command") != "aisdlc approve design" {
+		t.Fatal(at(a, "inbox"))
+	}
 	d := decode(t, f.get("/api/features/"+repo+"/WEB-1", f.tokenA))
-	if at(d, "approvalsMode") != "web" {
+	if at(d, "approvalsMode") != "web" || at(d, "column") != "DESIGN" ||
+		at(d, "snapshot", "gates", 0, "state") != "APPROVED" || at(d, "snapshot", "gates", 1, "state") != "AWAITING_APPROVAL" {
 		t.Fatal(d)
 	}
+	if at(d, "snapshot", "gates", 0, "approval", "approver") != "board.a" {
+		t.Fatal(at(d, "snapshot", "gates", 0))
+	}
+
+	// repo local: giữ nguyên trạng thái của snapshot
 	f.post(t, "/api/ingest/snapshot", snap("r/board-local", "LOC-1", "a@corp"), f.tokenA)
 	l := decode(t, f.get("/api/features/r/board-local/LOC-1", f.tokenA))
 	if at(l, "approvalsMode") != "local" || at(l, "snapshot", "gates", 0, "state") != "AWAITING_APPROVAL" {

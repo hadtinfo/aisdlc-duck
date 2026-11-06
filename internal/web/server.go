@@ -61,6 +61,7 @@ type Deps struct {
 type services struct {
 	auth   *auth.Service
 	modes  *gates.ModeService
+	gates  *gates.Service
 	ingest *ingest.Service
 	reader *board.Reader
 	hub    *board.Hub
@@ -69,7 +70,7 @@ type services struct {
 // registerRoutes là điểm các task sau thêm route.
 func registerRoutes(r chi.Router, d Deps, s services) {
 	auth.Routes(r, s.auth)
-	gates.Routes(r, &gates.Handlers{Modes: s.modes, Keys: d.Keys})
+	gates.Routes(r, &gates.Handlers{Modes: s.modes, Keys: d.Keys, Gates: s.gates})
 	ingest.Routes(r, s.ingest)
 	board.Routes(r, s.reader, s.hub)
 }
@@ -86,15 +87,18 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 		d.Now = func() time.Time { return time.Now().UTC() }
 	}
 	a := &auth.Service{Pool: d.Pool, Now: d.Now}
-	reader := &board.Reader{Pool: d.Pool, Now: d.Now} // Gates (Task 6), Control (Task 8) gắn sau
+	reader := &board.Reader{Pool: d.Pool, Now: d.Now} // Control (Task 8) gắn sau
 	hub := board.NewHub(reader)
+	modes := &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a}
+	gs := &gates.Service{Pool: d.Pool, Keys: d.Keys, Modes: modes, Auth: a, Hub: hub, Now: d.Now}
+	reader.Gates = gs
 	changed := func(repoID, feature string) {
 		hub.Publish(repoID, feature)
 		if d.Changed != nil {
 			d.Changed(repoID, feature)
 		}
 	}
-	s := services{auth: a, modes: &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a},
+	s := services{auth: a, modes: modes, gates: gs,
 		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed}, reader: reader, hub: hub}
 	r := chi.NewRouter()
 	r.Use(Recoverer)

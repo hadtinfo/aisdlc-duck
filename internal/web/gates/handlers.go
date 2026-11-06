@@ -1,10 +1,8 @@
 package gates
 
 import (
-	"encoding/json"
 	"net"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -12,18 +10,23 @@ import (
 	"aisdlc/internal/web/signing"
 )
 
-// Handlers là các route của gates (task này: pubkey, mode, repos).
+// Handlers là các route của gates.
 type Handlers struct {
 	Modes *ModeService
 	Keys  *signing.Keys
+	Gates *Service // nộp/đọc cổng của CLI và duyệt/trả lại/mở lại/xác nhận (nil: không đăng ký các route đó)
 }
 
-// Routes đăng ký GET /api/cli/pubkey, POST /api/cli/mode, GET /api/repos, POST /api/repos/mode.
+// Routes đăng ký GET /api/cli/pubkey, POST /api/cli/mode, GET /api/repos, POST /api/repos/mode, và (khi có Gates)
+// POST /api/cli/submissions, GET /api/cli/gates, POST /api/gates/{approve,reject,reopen,confirm-import}.
 func Routes(r chi.Router, h *Handlers) {
 	r.Get("/api/cli/pubkey", h.pubkey)
 	r.Post("/api/cli/mode", h.mode)
 	r.Get("/api/repos", h.repos)
 	r.Post("/api/repos/mode", h.setMode)
+	if h.Gates != nil {
+		gateRoutes(r, h.Gates)
+	}
 }
 
 func clientIP(r *http.Request) string {
@@ -31,31 +34,6 @@ func clientIP(r *http.Request) string {
 		return host
 	}
 	return r.RemoteAddr
-}
-
-// text là chuỗi bắt buộc: khác rỗng, không chỉ khoảng trắng, không NUL (GateRequests.text).
-func text(b map[string]any, field string) (string, error) {
-	s, ok := b[field].(string)
-	if !ok || strings.TrimSpace(s) == "" {
-		return "", httpx.NewError(400, "Thiếu "+field)
-	}
-	if strings.ContainsRune(s, 0) {
-		return "", httpx.NewError(400, field+" không được chứa ký tự NUL")
-	}
-	return s, nil
-}
-
-// body đọc body thành object JSON (GateRequests.body).
-func body(r *http.Request) (map[string]any, error) {
-	var raw json.RawMessage
-	if err := httpx.DecodeJSON(r, &raw); err != nil {
-		return nil, err
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
-		return nil, httpx.NewError(400, "Body phải là object JSON")
-	}
-	return m, nil
 }
 
 func (h *Handlers) pubkey(w http.ResponseWriter, r *http.Request) {

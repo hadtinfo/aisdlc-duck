@@ -17,6 +17,7 @@ import (
 	"aisdlc/internal/web/auth"
 	"aisdlc/internal/web/gates"
 	"aisdlc/internal/web/httpx"
+	"aisdlc/internal/web/ingest"
 	"aisdlc/internal/web/signing"
 	"aisdlc/internal/web/store"
 )
@@ -49,18 +50,22 @@ type Deps struct {
 	Pool *pgxpool.Pool
 	Now  func() time.Time
 	Keys *signing.Keys // khóa ký; Run nạp trước khi listen
+	// Changed được gọi sau mỗi lần snapshot/sự kiện làm đổi một tính năng (nil-safe); Task 5 nối vào SSE.
+	Changed func(repoID, feature string)
 }
 
 // services là các service dựng từ Deps, dùng chung giữa các route.
 type services struct {
-	auth  *auth.Service
-	modes *gates.ModeService
+	auth   *auth.Service
+	modes  *gates.ModeService
+	ingest *ingest.Service
 }
 
 // registerRoutes là điểm các task sau thêm route.
 func registerRoutes(r chi.Router, d Deps, s services) {
 	auth.Routes(r, s.auth)
 	gates.Routes(r, &gates.Handlers{Modes: s.modes, Keys: d.Keys})
+	ingest.Routes(r, s.ingest)
 }
 
 // NewHandler dựng router chi: recover, xác thực (bọc mọi request, trước định tuyến), 404/405 JSON cho /api/*, rồi các route.
@@ -69,7 +74,8 @@ func NewHandler(d Deps) http.Handler {
 		d.Now = func() time.Time { return time.Now().UTC() }
 	}
 	a := &auth.Service{Pool: d.Pool, Now: d.Now}
-	s := services{auth: a, modes: &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a}}
+	s := services{auth: a, modes: &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a},
+		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: d.Changed}}
 	r := chi.NewRouter()
 	r.Use(Recoverer)
 	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody

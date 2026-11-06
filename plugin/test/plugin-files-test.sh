@@ -37,6 +37,25 @@ check "install.sh không còn nhắc Maven/JDK" "! grep -qi 'mvn\|jar\|jdk' '$P/
 OS="$(uname -s | tr 'A-Z' 'a-z')"
 case "$(uname -m)" in x86_64|amd64) ARCH=amd64 ;; aarch64|arm64) ARCH=arm64 ;; *) ARCH="$(uname -m)" ;; esac
 NAME="aisdlc-$OS-$ARCH"
+# install.sh kiểm đủ cả hai binary cho nền tảng hiện tại (go giả: chỉ tạo file theo "-o" khi tên khớp $MAKE_BINS)
+I="$(mktemp -d)"; mkdir -p "$I/root/plugin/bin" "$I/fake" "$I/home"; cp "$P/install.sh" "$I/root/plugin/"; cp "$P/bin/aisdlc" "$I/root/plugin/bin/"
+cat > "$I/fake/go" <<'GO'
+#!/usr/bin/env bash
+while [ $# -gt 0 ]; do
+  if [ "$1" = -o ]; then for b in $MAKE_BINS; do case "$2" in */$b-$GOOS-$GOARCH) printf '#!/bin/sh\n' > "$2"; chmod +x "$2" ;; esac; done; fi
+  shift
+done
+GO
+chmod +x "$I/fake/go"
+inst() { rm -rf "$I/root/plugin/lib" "$I/home/.local"; err="$(cd "$I" && HOME="$I/home" PATH="$I/fake:$PATH" MAKE_BINS="$1" bash "$I/root/plugin/install.sh" 2>&1 >/dev/null)"; rc=$?; }
+inst "aisdlc"
+if [ $rc -ne 0 ] && echo "$err" | grep -q "thiếu plugin/lib/aisdlc-harness-$OS-$ARCH" && [ ! -e "$I/home/.local/bin/aisdlc" ]; then ok "install.sh: thiếu aisdlc-harness cho nền tảng này -> lỗi, không cài"; else ko "install.sh thiếu harness: rc=$rc err=$err"; fi
+inst "aisdlc-harness"
+if [ $rc -ne 0 ] && echo "$err" | grep -q "thiếu plugin/lib/aisdlc-$OS-$ARCH" ; then ok "install.sh: thiếu aisdlc cho nền tảng này -> lỗi"; else ko "install.sh thiếu aisdlc: rc=$rc err=$err"; fi
+inst "aisdlc aisdlc-harness"
+if [ $rc -eq 0 ] && [ -L "$I/home/.local/bin/aisdlc" ]; then ok "install.sh: đủ hai binary -> cài lệnh aisdlc"; else ko "install.sh đủ binary: rc=$rc err=$err"; fi
+rm -rf "$I"
+
 if [ ! -x "$P/lib/$NAME" ] && command -v go >/dev/null 2>&1; then
   mkdir -p "$P/lib"; (cd "$ROOT" && CGO_ENABLED=0 go build -o "$P/lib/$NAME" ./cmd/aisdlc)
 fi

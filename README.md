@@ -7,7 +7,7 @@ AISDLC để agent Claude Code viết tài liệu, case và code theo quy trình
 Cần Go, Docker, git và Claude Code.
 
 ```bash
-git clone <repo aisdlc> ~/aisdlc && ~/aisdlc/plugin/install.sh   # build binary vào plugin/lib, symlink ~/.local/bin/aisdlc
+git clone <repo aisdlc> ~/aisdlc && ~/aisdlc/plugin/install.sh   # build aisdlc và aisdlc-harness vào plugin/lib, symlink ~/.local/bin/aisdlc
 ```
 
 Trong Claude Code: `/plugin marketplace add ~/aisdlc` rồi `/plugin install aisdlc@aisdlc`. Ở gốc repo dịch vụ: `aisdlc setup`. Sau đó `/aisdlc:init <KEY>` để bắt đầu một tính năng.
@@ -23,9 +23,9 @@ Trong Claude Code: `/plugin marketplace add ~/aisdlc` rồi `/plugin install ais
 
 | Lệnh | Việc |
 | --- | --- |
-| `make build` | Build `bin/aisdlc` |
+| `make build` | Build `bin/aisdlc` (CLI, hook) và `bin/aisdlc-harness` (harness, aisdlc gọi khi chạy case/eval) |
 | `make check` | gofmt, vet, test |
 | `make test-short` | Test bỏ qua phần cần Docker (`AISDLC_SKIP_DOCKER=1`) |
-| `make plugin-dist` | Build binary linux/darwin, amd64/arm64 vào `plugin/lib/` |
+| `make plugin-dist` | Build `aisdlc` và `aisdlc-harness` linux/darwin, amd64/arm64 vào `plugin/lib/` |
 | `make build-web` | Dựng UI rồi build `bin/aisdlc-web` |
 | `bash docs/docs-check.sh` | Chạy các khối lệnh đánh dấu `# chạy-được` trong hướng dẫn trên repo tạm |

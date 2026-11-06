@@ -277,3 +277,30 @@ func TestBuildCoGuardArtifactUI(t *testing.T) {
 		t.Error("build phải kiểm dist UI tồn tại trước khi build binary")
 	}
 }
+
+// Binary hook aisdlc và harness aisdlc-harness tách riêng: build và plugin-dist (artifact plugin/lib/ của job build)
+// phải ra cả hai, nếu không CLI cài từ artifact sẽ báo "không tìm thấy aisdlc-harness".
+func TestMakefileBuildCaHarness(t *testing.T) {
+	b, err := os.ReadFile("../../Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"build", "plugin-dist"} {
+		i := strings.Index(string(b), "\n"+target+":")
+		if i < 0 {
+			t.Fatalf("Makefile thiếu target %s", target)
+		}
+		recipe := string(b[i+1:])
+		if j := strings.Index(recipe, "\n\n"); j >= 0 {
+			recipe = recipe[:j]
+		}
+		for _, pkg := range []string{"./cmd/aisdlc ", "./cmd/aisdlc-harness"} {
+			if !strings.Contains(recipe+" ", pkg) {
+				t.Errorf("%s không build %s:\n%s", target, strings.TrimSpace(pkg), recipe)
+			}
+		}
+	}
+	if !strings.Contains(string(b), "plugin/lib/aisdlc-harness-$$os-$$arch") {
+		t.Error("plugin-dist phải ra plugin/lib/aisdlc-harness-<os>-<arch>")
+	}
+}

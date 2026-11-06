@@ -26,7 +26,7 @@ Các thành phần dev đụng tới:
 | --- | --- |
 | Plugin Claude Code (`plugin/`) | Slash command `/aisdlc:*`, hook, subagent `aisdlc-reviewer` |
 | CLI `aisdlc` | Một binary Go: lệnh của agent và của dev; cũng là chương trình chạy hook |
-| Harness (trong `aisdlc eval`) | Build dịch vụ, dựng Postgres/Kafka bằng Docker (testcontainers), chạy `cases.yaml` như hộp đen |
+| Harness `aisdlc-harness` | Binary thứ hai, `aisdlc` gọi khi chạy case (`step finish`, nộp cổng) và `eval`: build dịch vụ, dựng Postgres/Kafka bằng Docker (testcontainers), chạy `cases.yaml` như hộp đen. Tách riêng để hook khởi động nhanh |
 | Web `aisdlc-web` (tùy chọn) | Bảng theo dõi, duyệt cổng và điều khiển agent trên web |
 
 Agent gọi plugin → `plugin/bin/aisdlc` chọn binary đúng nền tảng → CLI đọc/ghi file trạng thái trong repo. Eval build dịch vụ, chạy test cũ rồi chạy bộ case qua harness. Web là tùy chọn: CLI gửi lên `aisdlc-web` qua HTTPS kèm token.
@@ -39,7 +39,8 @@ Máy dev cần Linux hoặc macOS, Go, Docker (harness dùng cho Postgres/Kafka)
 
 ```bash
 git clone <repo aisdlc> ~/aisdlc && ~/aisdlc/plugin/install.sh
-# build binary cho máy này vào plugin/lib/aisdlc-<os>-<arch>, symlink ~/.local/bin/aisdlc (thêm ~/.local/bin vào PATH)
+# build aisdlc và aisdlc-harness cho máy này vào plugin/lib/aisdlc{,-harness}-<os>-<arch>, symlink ~/.local/bin/aisdlc
+# (thêm ~/.local/bin vào PATH)
 ```
 
 Máy không có Go thì lấy repo đã chạy `make plugin-dist` (build sẵn linux/darwin, amd64/arm64 vào `plugin/lib/`); `install.sh` chỉ cần tạo symlink.
@@ -51,7 +52,7 @@ Trong Claude Code:
 /plugin install aisdlc@aisdlc
 ```
 
-- `plugin/lib/aisdlc-*` không nằm trong git. Chạy `install.sh` (hoặc `make plugin-dist`) trước `/plugin install`; marketplace phải trỏ vào thư mục đã build, không dùng URL git.
+- `plugin/lib/aisdlc-*` không nằm trong git. `aisdlc` tìm `aisdlc-harness` cùng thư mục với nó (hoặc theo biến `AISDLC_HARNESS`, rồi `PATH`); thiếu thì mọi case ERROR "không tìm thấy aisdlc-harness: …" và eval không đạt. Chạy `install.sh` (hoặc `make plugin-dist`) trước `/plugin install`; marketplace phải trỏ vào thư mục đã build, không dùng URL git.
 - Cập nhật binary xong thì cài lại plugin.
 - Thiếu binary cho nền tảng này: trong repo AISDLC, hook chặn mọi công cụ ghi (Edit, Write, Bash ghi…) tới khi sửa xong; `Read`, `Grep`, `Glob` vẫn dùng được. Ở repo khác plugin im lặng, không làm gì.
 
@@ -270,7 +271,7 @@ Chi tiết nằm ở `eval/report.json`, diff theo bước ở `eval/diff-by-ste
 ### Bật CI GitLab (MR sau MR setup)
 
 1. Thêm vào `.gitlab-ci.yml`: `include: { local: aisdlc/gitlab-ci.aisdlc.yml }`.
-2. Đặt biến CI/CD `AISDLC_BIN` = URL tải binary `aisdlc` linux/amd64 (từ `make plugin-dist`, đưa lên registry nội bộ). Runner phải chạy được `docker:dind` (privileged); template đã khai service `docker:dind` và `DOCKER_HOST`. Không ghi đè `GIT_DEPTH: "0"`.
+2. Đặt biến CI/CD `AISDLC_BIN` và `AISDLC_HARNESS_BIN` = URL tải binary `aisdlc` và `aisdlc-harness` linux/amd64 (`plugin/lib/aisdlc-linux-amd64`, `plugin/lib/aisdlc-harness-linux-amd64` từ `make plugin-dist`, đưa lên registry nội bộ). Runner phải chạy được `docker:dind` (privileged); template đã khai service `docker:dind` và `DOCKER_HOST`. Không ghi đè `GIT_DEPTH: "0"`.
 3. Bật protected branch cho nhánh chính với "Pipelines must succeed". Hook chỉ bảo vệ trên máy dev; chặn merge do GitLab làm.
 
 Job chạy `aisdlc eval --ci --base origin/<nhánh đích>` cho mọi tính năng có thay đổi trong MR. Runner không có Docker thì harness báo "không khởi động được Postgres: …", mọi case ERROR và job thoát khác 0.
@@ -389,6 +390,7 @@ Các giới hạn khác:
 | `status` báo `Duyệt trong Claude Code: tắt (không đọc được … ở origin/main)` | Repo chưa có `origin` hoặc chưa fetch, hoặc MR bật chưa merge | `git fetch`, kiểm tra `baseRef` trong config |
 | "Có nhiều tính năng đang mở…" | Từ 2 tính năng mở, lệnh không biết chọn cái nào | Thêm `--feature <KEY>`, hoặc `aisdlc use <KEY>` trong session |
 | Hook chặn Edit/Write, nhắc `aisdlc use` | Session chưa gắn tính năng, có nhiều tính năng mở | Agent chạy `aisdlc use <KEY>`; vẫn chặn thì mở lại session Claude Code |
+| Case ERROR "không tìm thấy aisdlc-harness: …" | Chưa có `plugin/lib/aisdlc-harness-<os>-<arch>` (bản cài cũ) hoặc CI thiếu `AISDLC_HARNESS_BIN` | Chạy `plugin/install.sh` hoặc `make plugin-dist`; ở CI đặt `AISDLC_HARNESS_BIN` |
 | Hook chặn mọi lệnh ghi, báo thiếu binary | Chưa có `plugin/lib/aisdlc-<os>-<arch>` cho nền tảng này | Chạy `plugin/install.sh` hoặc `make plugin-dist`, cài lại plugin |
 | Cổng chuyển STALE | Artifact đã duyệt bị sửa trực tiếp | `aisdlc reopen <gate>`, sửa, nộp và duyệt lại |
 | Eval báo "không khởi động được Postgres: …", mọi case ERROR | Docker không chạy, hoặc CI không có `docker:dind` / `DOCKER_HOST` | Bật Docker; ở CI giữ service `docker:dind` của template |

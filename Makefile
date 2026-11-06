@@ -2,8 +2,10 @@
 
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
+# Hai binary: aisdlc (CLI và hook, khởi động nhanh) và aisdlc-harness (harness black-box, testcontainers) mà aisdlc
+# gọi như tiến trình con; aisdlc tìm aisdlc-harness cạnh nó (hoặc $$AISDLC_HARNESS, rồi PATH).
 build:
-	go build -o bin/aisdlc ./cmd/aisdlc
+	go build -o bin/aisdlc ./cmd/aisdlc && go build -o bin/aisdlc-harness ./cmd/aisdlc-harness
 
 # Số gói test chạy song song. Mặc định của Go (= số CPU) mở hàng chục container Docker cùng lúc (mỗi gói web một
 # Postgres, harness thêm Kafka) với một Ryuk dùng chung: máy bận thì test Docker chập chờn ("wait for reaper …:
@@ -31,6 +33,7 @@ plugin-dist:
 		os=$${p%/*}; arch=$${p#*/}; \
 		echo "build $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags="-s -w" -o plugin/lib/aisdlc-$$os-$$arch ./cmd/aisdlc || exit 1; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags="-s -w" -o plugin/lib/aisdlc-harness-$$os-$$arch ./cmd/aisdlc-harness || exit 1; \
 	done
 
 # UI React: build rồi chép vào thư mục nhúng của server (dist chỉ có .gitkeep được commit; chưa build UI thì server phục vụ trang placeholder).

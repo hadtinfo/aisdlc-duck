@@ -1,5 +1,7 @@
 # Vận hành server web AISDLC
 
+> English: [web-operations.md](web-operations.md).
+
 Dành cho người triển khai `aisdlc-web`. Cách dùng web của dev: mục 6 trong [huong-dan-su-dung.md](huong-dan-su-dung.md).
 
 ## 1. Thành phần

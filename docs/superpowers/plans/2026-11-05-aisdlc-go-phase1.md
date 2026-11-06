@@ -4,7 +4,7 @@
 
 **Goal:** Dựng repo Go mới với các package nền: `model`, `spec`, `gitx`, `lang` và adapter Go (phần tĩnh). Các phần này có hành vi tương đương bản Java và có test xanh.
 
-**Architecture:** Một Go module trong `/home/hadt14@shbho.shb.vn/Documents/gitlab/aisdlc`.
+**Architecture:** Một Go module trong `<repo root>`.
 - Mỗi package Java (`model`, `spec`, `git`) thành một package trong `internal/`.
 - Hành vi lấy từ code Java và **test Java tương ứng** làm chuẩn. Mỗi test Java có một test Go cùng tên, viết dạng `TestXxx`.
 - `lang` định nghĩa interface adapter. Ở giai đoạn này chỉ có các phương thức không chạy tiến trình. Build, test và start dịch vụ được thêm vào interface ở giai đoạn 3.
@@ -61,7 +61,7 @@
   - `templates.FS embed.FS`
   - `make test` = `go test ./...`; `make check` = `gofmt -l` (rỗng) + `go vet ./...` + `go test ./...`
 
-- [ ] **Step 1:** `git init` trong `/home/hadt14@shbho.shb.vn/Documents/gitlab/aisdlc`, `go mod init aisdlc`, sửa directive thành `go 1.23`. Chép docs và template như liệt kê ở trên.
+- [ ] **Step 1:** `git init` trong `<repo root>`, `go mod init aisdlc`, sửa directive thành `go 1.23`. Chép docs và template như liệt kê ở trên.
 - [ ] **Step 2:** Chạy `go build ./...`. Kết quả mong đợi: không lỗi (chưa có package nào).
 - [ ] **Step 3: Viết test fail** `internal/yamlx/yamlx_test.go`:
   - `TestParseIgnoresUnknownKeys`: `a: 1\nzzz: 2` vào `struct{A int \`yaml:"a"\`}` thì không lỗi và `A == 1`.

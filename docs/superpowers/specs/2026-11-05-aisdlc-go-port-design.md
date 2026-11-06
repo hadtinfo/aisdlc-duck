@@ -1,7 +1,7 @@
 # AISDLC — Port toàn bộ sang Go
 
 Nguồn đối chiếu: repo Java `~/Documents/git/aisdlc` (commit `f040fdf`), các spec trong `docs/superpowers/specs/` (2026-11-02 đến 2026-11-05).
-Repo đích: `/home/hadt14@shbho.shb.vn/Documents/gitlab/aisdlc` (hiện trống).
+Repo đích: `<repo root>` (hiện trống).
 
 Quy ước: **[Người dùng]** là quyết định của người dùng; **[Claude]** là lựa chọn của Claude, người dùng có thể bác.
 

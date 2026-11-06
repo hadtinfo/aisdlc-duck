@@ -682,8 +682,16 @@ func TestRunNoDatabaseWritesEmptySchema(t *testing.T) {
 	if s := readSchema(t, out); len(s.Tables) != 0 {
 		t.Errorf("schema = %+v", s)
 	}
+	// Chỉ đếm dịch vụ của test này: live là danh sách chung, test song song khác có thể đang có dịch vụ chạy.
+	n := 0
 	live.Lock()
-	n := len(live.procs)
+	rt.mu.Lock()
+	for _, p := range rt.procs {
+		if _, ok := live.procs[p]; ok {
+			n++
+		}
+	}
+	rt.mu.Unlock()
 	live.Unlock()
 	if n != 0 {
 		t.Errorf("còn %d dịch vụ trong danh sách đang chạy sau Run", n)

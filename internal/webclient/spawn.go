@@ -22,11 +22,21 @@ func StartDetached(exe string, args []string, dir string) error {
 	return nil
 }
 
-// SpawnFlush mở `aisdlc web flush` nền ở gốc repo root, bằng chính binary đang chạy.
-func SpawnFlush(root string) error {
+// SpawnFlush mở `aisdlc web flush` nền ở gốc repo root, bằng chính binary đang chạy. feature khác rỗng (tính năng
+// của phiên gọi, có thể không phải .aisdlc/active khi nhiều phiên song song) thì thêm `--feature KEY` để tiến trình
+// nền làm mới cả cổng và điều khiển của tính năng đó.
+func SpawnFlush(root, feature string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	return StartDetached(exe, []string{"web", "flush"}, root)
+	return StartDetached(exe, FlushArgs(feature), root)
+}
+
+// FlushArgs là đối số của tiến trình gửi nền: `web flush [--feature KEY]`.
+func FlushArgs(feature string) []string {
+	if feature == "" {
+		return []string{"web", "flush"}
+	}
+	return []string{"web", "flush", "--feature", feature}
 }

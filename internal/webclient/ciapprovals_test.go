@@ -122,3 +122,29 @@ func TestCiBadBodyIsUnreadable(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// 3xx: không theo redirect (Bearer CI không bị gửi sang địa chỉ khác); thành lỗi "HTTP 302" không chứa token.
+func TestCiRedirectIsNotFollowed(t *testing.T) {
+	var mu sync.Mutex
+	var hits []string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits = append(hits, r.Header.Get("Authorization"))
+		mu.Unlock()
+		_, _ = io.WriteString(w, `{"mode":"web","approvals":[]}`)
+	}))
+	t.Cleanup(target.Close)
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/api/ci/approvals?"+r.URL.RawQuery, http.StatusFound)
+	}))
+	t.Cleanup(src.Close)
+	_, err := ciSource(src.URL, "sekret", "host/g/r").Approvals(context.Background(), "PAY-1", "tree")
+	if err == nil || err.Error() != "HTTP 302" || strings.Contains(err.Error(), "sekret") {
+		t.Fatalf("err = %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(hits) != 0 {
+		t.Fatalf("đã theo redirect: %v", hits)
+	}
+}

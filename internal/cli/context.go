@@ -74,8 +74,10 @@ type Context struct {
 	bannerPrinted   bool
 	exit            int
 	// spawnFlush mở `aisdlc web flush` nền (nil: webclient.SpawnFlush); publishers: bộ gửi web theo repo
-	spawnFlush func(root string) error
-	publishers map[string]*webclient.Publisher
+	spawnFlush func(root string, feature model.FeatureKey) error
+	// flushFeature: tính năng (đã phân giải theo phiên) truyền cho `web flush --feature` (hook đặt trước khi mở)
+	flushFeature model.FeatureKey
+	publishers   map[string]*webclient.Publisher
 	// webDown: đã có một lần không với tới web trong tiến trình này (lệnh sau không thử lại)
 	webDown bool
 	// controlRefreshed: kết quả làm mới điều khiển từ web theo tính năng trong tiến trình này (mỗi tính năng một lần)
@@ -188,14 +190,14 @@ func (c *Context) WithoutBanner() *Context { c.banner = false; return c }
 
 func (c *Context) withArgs(a []string) { c.args = append([]string(nil), a...) }
 
+// truncSession cắt session_id còn tối đa maxSessionID đơn vị UTF-16 (luật của server); trống = không có.
 func truncSession(id string) string {
 	if strings.TrimSpace(id) == "" {
 		return ""
 	}
-	if r := []rune(id); len(r) > maxSessionID {
-		return string(r[:maxSessionID])
-	}
-	return id
+	// web nhận sessionId tối đa 100 đơn vị UTF-16 (như String.length() của Java): cắt theo đơn vị UTF-16, không
+	// cắt giữa một ký tự
+	return prefixUTF16(id, maxSessionID)
 }
 
 // In là stdin của lệnh.

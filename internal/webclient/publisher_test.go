@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -779,6 +780,58 @@ func TestSnapshotReplacedDuringSendIsKept(t *testing.T) {
 		// v1 đã bị v2 thay trên đĩa nên không còn gì để chuyển sang rejected; v2 chờ lượt sau
 		if box.RejectedCount() != 0 {
 			t.Fatal("bản mới bị chuyển nhầm sang rejected")
+		}
+	}
+}
+
+// Tiến trình gửi chết giữa take (sau khi đổi tên snapshot thành .sending): Drain lần sau trả file tạm về hàng đợi
+// rồi gửi; nếu đã có bản cùng tên mới hơn thì giữ bản mới, xóa file tạm. File .sending lạ (không phải snapshot) để
+// nguyên.
+func TestDrainRecoversStaleSendingFiles(t *testing.T) {
+	web := fakeweb.New(t)
+	f := newPubFix(t, web.URL())
+	box := NewOutbox(f.root)
+	mustNil(t, os.MkdirAll(box.Dir, 0o755))
+	write := func(name, body string) {
+		mustNil(t, os.WriteFile(filepath.Join(box.Dir, name), []byte(body), 0o644))
+	}
+	write(".snapshot-PAY-1.json.a1b2c3d4.sending", `{"v":"mồ côi"}`)
+	write(".snapshot-PAY-2.json.0badf00d.sending", `{"v":"cũ"}`)
+	write("snapshot-PAY-2.json", `{"v":"mới"}`)
+	write(".event-1-x.json.deadbeef.sending", `{}`) // event không bao giờ qua .sending: không đụng
+	if f.size() != 1 {
+		t.Fatalf("trước: %d", f.size())
+	}
+	mustNil(t, f.pub().Drain(t.Context()))
+	var bodies []string
+	for _, q := range web.RequestsFor("POST", "/api/ingest/snapshot") {
+		bodies = append(bodies, q.Body)
+	}
+	sort.Strings(bodies)
+	if len(bodies) != 2 || bodies[0] != `{"v":"mồ côi"}` || bodies[1] != `{"v":"mới"}` {
+		t.Fatalf("gửi: %q", bodies)
+	}
+	es, err := os.ReadDir(box.Dir)
+	mustNil(t, err)
+	var left []string
+	for _, e := range es {
+		left = append(left, e.Name())
+	}
+	if len(left) != 1 || left[0] != ".event-1-x.json.deadbeef.sending" || f.size() != 0 {
+		t.Fatalf("còn lại: %v", left)
+	}
+}
+
+func TestSendingOrig(t *testing.T) {
+	for name, want := range map[string]string{
+		".snapshot-PAY-1.json.a1b2c3d4.sending": "snapshot-PAY-1.json",
+		"snapshot-PAY-1.json":                   "",
+		".snapshot-PAY-1.json.sending":          "",
+		".event-1.json.ab.sending":              "",
+		"..sending":                             "",
+	} {
+		if got, _ := sendingOrig(name); got != want {
+			t.Errorf("%s: %q, cần %q", name, got, want)
 		}
 	}
 }

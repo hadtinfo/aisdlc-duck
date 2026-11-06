@@ -151,6 +151,52 @@ func (o Outbox) Reject(p string) error {
 	return os.Rename(p, filepath.Join(o.rejectedDir(), filepath.Base(p)))
 }
 
+// RecoverSending dọn file tạm ".<snapshot>.<rand>.sending" mà take bỏ lại khi tiến trình gửi chết giữa chừng (file
+// đó không được đếm, không được gửi, nên bản tin bị mất lặng lẽ). Phải giữ FlushLock: chỉ take (luôn dưới khóa) tạo
+// file .sending, nên khi đang giữ khóa thì mọi file như vậy là của một tiến trình đã chết, bất kể tuổi (rename giữ
+// mtime của snapshot nên tuổi theo mtime không nói gì về lúc chết). Chưa có bản cùng tên thì trả về chỗ cũ (gửi
+// lại; snapshot là bản thay thế toàn phần, gửi trùng vô hại); đã có bản cùng tên thì bản đó mới hơn: xóa file tạm.
+// Trả số file đã trả về hàng đợi.
+func (o Outbox) RecoverSending() int {
+	es, err := os.ReadDir(o.Dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range es {
+		name := e.Name()
+		orig, ok := sendingOrig(name)
+		if !ok || !e.Type().IsRegular() {
+			continue
+		}
+		tmp, dst := filepath.Join(o.Dir, name), filepath.Join(o.Dir, orig)
+		if err := os.Link(tmp, dst); err == nil {
+			n++
+		} else if !errors.Is(err, os.ErrExist) {
+			continue // không link được (hệ file lạ): để nguyên, không mạo hiểm mất bản tin
+		}
+		_ = os.Remove(tmp)
+	}
+	return n
+}
+
+// sendingOrig là tên snapshot gốc của file tạm ".snapshot-KEY.json.<hex>.sending".
+func sendingOrig(name string) (string, bool) {
+	rest, ok := strings.CutSuffix(name, ".sending")
+	if !ok || !strings.HasPrefix(rest, ".") {
+		return "", false
+	}
+	i := strings.LastIndex(rest, ".")
+	if i <= 0 {
+		return "", false
+	}
+	orig := rest[1:i]
+	if !isMessageName(orig) || !strings.HasPrefix(orig, "snapshot-") {
+		return "", false
+	}
+	return orig, true
+}
+
 // Size là số bản tin đang chờ.
 func (o Outbox) Size() int { return len(o.all()) }
 

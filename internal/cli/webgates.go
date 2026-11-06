@@ -554,7 +554,7 @@ func (w *WebCache) RequireApproveToken(f *Feature, g gate.Gate) error {
 	}
 	u := "<url web>"
 	if c, ok := w.Config(); ok {
-		u = c.URL
+		u = webclient.SafeURL(c.URL, c.Token) // không in userinfo hay token
 	}
 	return abort(2, "Chưa có token approve. Duyệt trên web: "+u+"/f/"+repoPath(w.RepoID())+"/"+
 		enc(f.Key.String())+"?g="+string(g)+" hoặc chạy `aisdlc web approve-token`")

@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"path/filepath"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -60,4 +61,16 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("migration lỗi: %w", err)
 	}
 	return nil
+}
+
+// Execer là phần của pgx.Tx/pgxpool.Pool dùng để chạy lệnh.
+type Execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// LockFeature lấy khóa giao dịch (advisory xact lock) theo tính năng: ingest snapshot/sự kiện và nộp/duyệt/trả lại của
+// cùng tính năng chạy tuần tự (GateRepository.lock). Chỉ có nghĩa trong một transaction.
+func LockFeature(ctx context.Context, tx Execer, repo, feature string) error {
+	_, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1 || chr(10) || $2, 0))", repo, feature)
+	return err
 }

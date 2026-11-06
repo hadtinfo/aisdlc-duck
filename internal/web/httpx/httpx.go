@@ -55,6 +55,19 @@ func WriteError(w http.ResponseWriter, err error) {
 // body vượt giới hạn thì trả *ApiError 413. Giới hạn là của LimitBody/DefaultLimit nếu route đã đặt; không thì
 // DecodeJSON tự chặn ở DefaultJSONLimit (không đọc bỏ phần thừa: nên đặt DefaultLimit ở router gốc).
 func DecodeJSON(r *http.Request, dst any) error {
+	b, err := ReadBody(r)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(b, dst); err != nil {
+		return NewError(http.StatusBadRequest, "JSON không hợp lệ")
+	}
+	return nil
+}
+
+// ReadBody đọc toàn bộ body theo cùng giới hạn như DecodeJSON: vượt giới hạn → *ApiError 413, lỗi đọc → 400
+// {"error":"JSON không hợp lệ"}.
+func ReadBody(r *http.Request) ([]byte, error) {
 	var body io.Reader = r.Body
 	if body == nil {
 		body = http.NoBody
@@ -67,17 +80,14 @@ func DecodeJSON(r *http.Request, dst any) error {
 	if err != nil {
 		var ae *ApiError
 		if errors.As(err, &ae) {
-			return ae
+			return nil, ae
 		}
-		return NewError(http.StatusBadRequest, "JSON không hợp lệ")
+		return nil, NewError(http.StatusBadRequest, "JSON không hợp lệ")
 	}
 	if !limited && int64(len(b)) > DefaultJSONLimit {
-		return TooLargeFor(DefaultJSONLimit)
+		return nil, TooLargeFor(DefaultJSONLimit)
 	}
-	if err := json.Unmarshal(b, dst); err != nil {
-		return NewError(http.StatusBadRequest, "JSON không hợp lệ")
-	}
-	return nil
+	return b, nil
 }
 
 // DefaultJSONLimit là giới hạn body mặc định của API JSON (route cần lớn hơn, như ingest 8 MB, tự đặt LimitBody).
@@ -129,14 +139,23 @@ func drain(w http.ResponseWriter, body io.Reader) {
 // (có hạn giờ, để client nhận được phản hồi chứ không bị reset) rồi trả 413 {"error":"Payload vượt <n> MB"}.
 // Đặt sau DefaultLimit thì thay giới hạn mặc định.
 func LimitBody(max int64) func(http.Handler) http.Handler {
+	return LimitBodyWith(max, nil)
+}
+
+// LimitBodyWith như LimitBody nhưng trả tooLarge (nil → TooLargeFor(max)) khi quá giới hạn, cho route có câu lỗi riêng
+// (API cổng: "Payload quá lớn" như GateRequests.java).
+func LimitBodyWith(max int64, tooLarge *ApiError) func(http.Handler) http.Handler {
+	if tooLarge == nil {
+		tooLarge = TooLargeFor(max)
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.ContentLength > max {
 				Drain(w, r)
-				WriteError(w, TooLargeFor(max))
+				WriteError(w, tooLarge)
 				return
 			}
-			wrap(w, r, max)
+			wrap(w, r, max, tooLarge)
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -147,13 +166,13 @@ func LimitBody(max int64) func(http.Handler) http.Handler {
 func DefaultLimit(max int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			wrap(w, r, max)
+			wrap(w, r, max, TooLargeFor(max))
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func wrap(w http.ResponseWriter, r *http.Request, max int64) {
+func wrap(w http.ResponseWriter, r *http.Request, max int64, tooLarge *ApiError) {
 	if r.Body == nil || r.Body == http.NoBody {
 		return
 	}
@@ -164,20 +183,21 @@ func wrap(w http.ResponseWriter, r *http.Request, max int64) {
 	if BodyTimeout > 0 {
 		setReadDeadline(w, time.Now().Add(BodyTimeout))
 	}
-	r.Body = &limitedBody{rc: rc, left: max, max: max, w: w}
+	r.Body = &limitedBody{rc: rc, left: max, tooLarge: tooLarge, w: w}
 }
 
 type limitedBody struct {
-	rc        io.ReadCloser
-	left, max int64
-	read      int64
-	over      bool
-	w         http.ResponseWriter
+	rc       io.ReadCloser
+	left     int64
+	read     int64
+	over     bool
+	tooLarge *ApiError
+	w        http.ResponseWriter
 }
 
 func (l *limitedBody) Read(p []byte) (int, error) {
 	if l.over {
-		return 0, TooLargeFor(l.max)
+		return 0, l.tooLarge
 	}
 	if int64(len(p)) > l.left+1 {
 		p = p[:l.left+1]
@@ -187,7 +207,7 @@ func (l *limitedBody) Read(p []byte) (int, error) {
 	if int64(n) > l.left {
 		l.over = true
 		drain(l.w, l.rc)
-		return int(l.left), TooLargeFor(l.max)
+		return int(l.left), l.tooLarge
 	}
 	l.left -= int64(n)
 	return n, err

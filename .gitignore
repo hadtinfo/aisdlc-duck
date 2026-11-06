@@ -9,3 +9,4 @@
 !/internal/web/spa/dist/.gitkeep
 /e2e/node_modules/
 /e2e/out/
+_site/

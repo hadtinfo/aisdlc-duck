@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Project site on GitHub Pages (`site/`, English and Vietnamese) with a guided tour and screenshots, assembled by
+  `make site` and published by the `Pages` workflow.
+
 ## [0.1.0] - 2026-11-06
 
 First public release.

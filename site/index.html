@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AISDLC — quality-gated feature development with Claude Code</title>
+  <meta name="description" content="AISDLC: the Claude Code agent writes the BRD, design, test cases and code; a developer approves each gate. Hooks block shortcuts, CI re-checks every merge request.">
+  <link rel="alternate" hreflang="vi" href="vi/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="dot"></span>AISDLC</a>
+    <ul>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#walkthrough">Walkthrough</a></li>
+      <li><a href="#web">Web UI</a></li>
+      <li><a href="#risk">Risk policy</a></li>
+      <li><a href="#safety">Safety</a></li>
+    </ul>
+    <div class="right">
+      <a class="lang" href="vi/">Tiếng Việt</a>
+      <a href="https://github.com/hadtinfo/aisdlc-duck">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="eyebrow">Claude Code plugin · Go · PostgreSQL</div>
+    <h1>The agent writes the code. You approve each gate.</h1>
+    <p class="lead">
+      AISDLC is a quality-gated feature workflow for teams building Go services with Claude Code agents.
+      The agent writes the BRD, design, test cases and code; a developer approves every gate. Plugin hooks
+      stop the agent from taking shortcuts, and CI re-checks every merge request.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Get started</a>
+      <a class="btn" href="#walkthrough">See a feature end to end</a>
+      <a class="btn" href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/user-guide.md">User guide</a>
+    </div>
+
+    <div class="flow" aria-label="Gate flow">
+      <div class="g"><b>BRD</b><span>business rules BR-n</span></div>
+      <div class="g"><b>Design</b><span>steps, scope, migrations</span></div>
+      <div class="g"><b>Cases</b><span>locked before code</span></div>
+      <div class="g"><b>S1…Sn</b><span>code step by step</span></div>
+      <div class="g"><b>Review</b><span>eval must PASS</span></div>
+      <div class="g end"><b>MR</b><span>CI re-runs eval</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">A feature passes through five gates. Each one must be approved before the next opens. Approved
+      artifacts are locked by hash; changing one means the developer reopens its gate.</p>
+
+    <div class="split">
+      <figure class="shot">
+        <a href="images/luong-cong.png"><img src="images/luong-cong.png" alt="Gate flow diagram: on the left the agent writes BRD, design, cases, code per step and runs eval; on the right the developer approves each gate; the last box opens the MR, where CI runs aisdlc eval --ci" loading="lazy" width="1344" height="1038"></a>
+        <figcaption><b>Agent works, developer approves.</b> Each arrow to the right is one submission; a rejection sends the agent back to revise the same gate.</figcaption>
+      </figure>
+      <div class="grid">
+        <div class="card"><h4>Approval gates</h4><p>The agent may only write product code once BRD, Design and Cases are approved. Approved artifacts are locked by hash.</p></div>
+        <div class="card"><h4>Step-by-step coding</h4><p>Each step S1…Sn declares a file scope (globs) and a budget (files, lines). Writes outside the scope are blocked unless the developer allows each file.</p></div>
+        <div class="card"><h4>Cases before code</h4><p>HTTP, DB, message and stub cases are written and locked first, and must fail at submission. The harness runs them as a black box against the real service, with Postgres (and Kafka) in Docker.</p></div>
+        <div class="card"><h4>Eval &amp; review</h4><p>Build, <code>go test</code>, the case suite, coverage of new lines and an independent subagent review, written to <code>eval/report.md</code>. CI re-runs it on the MR.</p></div>
+      </div>
+    </div>
+
+    <h3>Who does what</h3>
+    <div class="tbl">
+      <table>
+        <tr><th></th><th>Agent (Claude Code)</th><th>Developer</th></tr>
+        <tr><td><b>Writes</b></td><td><code>brd.md</code>, <code>design.md</code>, <code>design.yaml</code>, migrations, <code>cases.yaml</code>, code</td><td>Nothing required: reads the review card, diff and report</td></tr>
+        <tr><td><b>Commands</b></td><td><code>init</code>, <code>submit</code>, <code>step start</code>, <code>step finish</code>, <code>eval</code>, <code>review</code>, <code>status</code></td><td><code>approve</code>, <code>reject</code>, <code>reopen</code>, <code>step accept</code>, <code>scope allow</code>, <code>risk set</code></td></tr>
+        <tr><td><b>Cannot</b></td><td>Approve, accept steps, allow out-of-scope files, edit state files or approved artifacts</td><td>No limits — dev commands need a real console (you retype the feature key)</td></tr>
+      </table>
+    </div>
+    <p class="note"><b>Two flows.</b> FULL (default) goes through all five gates and is meant for changes touching the DB, APIs or money movement.
+      LITE (<code>aisdlc init KEY --lite</code>) is for small bug fixes: it skips BRD and Design, leaving Cases → S1 → Review.</p>
+  </div>
+</section>
+
+<section id="install" class="alt">
+  <div class="wrap">
+    <h2>Install &amp; attach to a service</h2>
+    <p class="sub">You need Linux or macOS, Go, Docker (the harness starts Postgres/Kafka), git and Claude Code.</p>
+
+    <ol class="steps">
+      <li>
+        <h3>Install the plugin on your machine</h3>
+        <p>The script builds <code>aisdlc</code> and <code>aisdlc-harness</code> for your platform and links <code>~/.local/bin/aisdlc</code> (add it to <code>PATH</code>).</p>
+<pre><code>git clone https://github.com/hadtinfo/aisdlc-duck.git ~/aisdlc
+~/aisdlc/plugin/install.sh</code></pre>
+        <p>Then, inside Claude Code:</p>
+<pre><code>/plugin marketplace add ~/aisdlc
+/plugin install aisdlc@aisdlc</code></pre>
+        <p>No Go on the machine? Download the prebuilt plugin bundle from <a href="https://github.com/hadtinfo/aisdlc-duck/releases">GitHub Releases</a>, extract it and point <code>/plugin marketplace add</code> at the extracted directory.</p>
+      </li>
+      <li>
+        <h3>Attach it to a service repo (in its own MR)</h3>
+        <p>At the root of a Go service with <code>go.mod</code>, <code>cmd/&lt;name&gt;/main.go</code> and goose migrations:</p>
+<pre><code>aisdlc setup --preset generic     # or --preset banking
+git status --short</code></pre>
+        <p>This creates <code>aisdlc/config.yaml</code>, <code>aisdlc/risk-policy.yaml</code>, <code>aisdlc/gitlab-ci.aisdlc.yml</code>, adds an AISDLC section to <code>CLAUDE.md</code> and ignores <code>.aisdlc/</code>. Check the <code>service</code> and <code>migrations</code> sections of the config.</p>
+      </li>
+      <li>
+        <h3>Make sure the service meets the harness contract</h3>
+        <ul class="check">
+          <li>Reads its port and DB URL (and Kafka brokers) from the variables named in <code>service.env</code>.</li>
+          <li><code>service.healthPath</code> returns 2xx when ready.</li>
+          <li>Exits cleanly on <code>SIGTERM</code> (otherwise new-line coverage is N/A).</li>
+          <li>Goose migrations named <code>NNNNN_name.sql</code> with <code>-- +goose Up</code>.</li>
+        </ul>
+      </li>
+      <li>
+        <h3>Build a feature</h3>
+<pre><code>/aisdlc:init PAY-123  →  /aisdlc:brd  →  /aisdlc:design  →  /aisdlc:cases
+/aisdlc:step S1  …  /aisdlc:step Sn  →  /aisdlc:review</code></pre>
+        <p>After each stage, approve <b>in a separate terminal</b>: <code>aisdlc approve design</code>, <code>aisdlc step accept S1</code>… Merge the setup MR first, then enable CI in a later MR.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="walkthrough">
+  <div class="wrap">
+    <h2>Walkthrough: PAY-1 “daily limit check”</h2>
+    <p class="sub">The same scenario the E2E test runs on the sample service <code>e2e/fixture-service</code>. The repo's risk
+      policy marks anything mentioning “hạn mức” (limit) as <span class="pill bad">high</span>, which requires a
+      duplicate-request case and a DB invariant. (CLI output is in Vietnamese; translations are in the comments.)</p>
+
+    <h3>1 · Initialize and write the BRD</h3>
+    <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc init PAY-1 --title "Kiểm tra hạn mức ngày"</span>
+Đã tạo tính năng PAY-1 (luồng FULL): Kiểm tra hạn mức ngày
+  aisdlc/features/PAY-1/brd.md
+  aisdlc/features/PAY-1/design.md
+  aisdlc/features/PAY-1/design.yaml
+  aisdlc/features/PAY-1/cases.yaml
+<span class="d">Tiếp theo: soạn brd.md rồi chạy `aisdlc submit brd`.   # next: write brd.md, then submit</span>
+
+<span class="p">$</span> <span class="c">aisdlc submit brd</span>
+<span class="w">Rủi ro tạm (từ khóa): high</span>                      <span class="d"># provisional risk from keywords</span>
+<span class="ok">Đã nộp cổng BRD, không có phát hiện.</span>            <span class="d"># BRD submitted, no findings</span></pre></div>
+
+    <h3>2 · The developer approves — in their own terminal</h3>
+    <p>If the agent tries to approve, it is refused (exit 3), and the hook blocks code writes while the gate is closed.
+      The developer reads the review card and retypes the feature key:</p>
+    <div class="term"><div class="bar"><i></i><i></i><i></i><span>developer terminal</span></div><pre><span class="p">$</span> <span class="c">aisdlc approve brd</span>
+Review card — PAY-1 · cổng BRD
+Cờ đỏ (2)                                       <span class="d"># red flags</span>
+  <span class="w">[WARN] BRD_RULE_NO_ID</span>: 4 quy tắc nghiệp vụ không có ID BR-n …
+Gõ lại feature key (PAY-1) để xác nhận: <span class="c">PAY-1</span>
+<span class="ok">Đã duyệt cổng BRD bởi dev (hash …).</span>             <span class="d"># BRD approved</span></pre></div>
+    <p>To send it back instead: <code>aisdlc reject brd -m "Number each rule BR-n"</code> — feedback lands in <code>feedback.md</code>.</p>
+
+    <h3>3 · Design: steps with scope and budget</h3>
+<pre><code>steps:
+  - id: S1
+    title: Kiểm tra request
+    scope: ["internal/limit/web/**", "cmd/server/routes.go"]
+    budget: { files: 2, lines: 60 }
+  - id: S2
+    title: Tính hạn mức theo bảng daily_limit
+    scope: ["internal/limit/**", "db/migrations/**"]
+    budget: { files: 3, lines: 80 }
+invariants:
+  - name: Số đã dùng không vượt hạn mức
+    sql: "SELECT account_id FROM daily_limit WHERE used_amount &lt; 0 OR used_amount &gt; limit_amount"
+impact: { level: medium, labels: [schema-change] }</code></pre>
+    <p><code>submit design</code> test-runs the draft migration on a real Postgres and computes the full risk level. The review card flags
+      <span class="pill bad">SCOPE_OVERLAP</span> (S1 and S2 both touch <code>internal/limit/web/**</code>) and
+      <span class="pill warn">SCOPE_MATCHES_OLD_MIGRATION</span> — see the <a href="#web">Design gate screenshot</a> below.</p>
+
+    <h3>4 · Cases are checked against the risk level</h3>
+    <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc submit cases</span>
+<span class="e">RISK_REQ: Mức high yêu cầu Case gửi trùng: … POST /api/v1/limits/check</span>
+<span class="d"># level high requires a duplicate-request case</span>
+<span class="e">(exit 1)</span></pre></div>
+    <p>The agent adds case C7 (<code>when.repeat: 2</code>, checks <code>used_amount</code> does not change) and resubmits. Since no code exists yet,
+      some cases fail — which is required. Once approved, <code>cases.yaml</code> is locked; the hook even blocks <code>sed -i</code> on it.</p>
+
+    <h3>5 · Code step by step, inside the scope</h3>
+    <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc step finish S1</span>
+<span class="ok">2/2 pass</span>                                        <span class="d"># S1 → AWAITING_DEV, agent stops</span>
+
+<span class="p">$</span> <span class="c">aisdlc step finish S2</span>
+<span class="e">Ngoài phạm vi: README2.txt</span>                      <span class="d"># out of scope → exit 1</span></pre></div>
+    <p>The developer decides: delete the file, or <code>aisdlc scope allow README2.txt</code>. After a rerun S2 reports <code>7/7 pass</code>, and the developer runs <code>aisdlc step accept S2</code>.</p>
+
+    <h3>6 · Eval, independent review, MR</h3>
+    <p><code>/aisdlc:review</code> runs <code>aisdlc eval</code> (first line of <code>eval/report.md</code>: <code>Eval PAY-1: ĐẠT</code> — PASS),
+      asks the <code>aisdlc-reviewer</code> subagent to score five criteria, then submits. After <code>aisdlc approve review</code>, open the MR:
+      the CI job runs <code>aisdlc eval --ci</code>. If anyone edits <code>cases.yaml</code> after approval, CI fails at <code>CASES_LOCKED</code>.</p>
+  </div>
+</section>
+
+<section id="web" class="alt">
+  <div class="wrap">
+    <h2>Web UI (optional)</h2>
+    <p class="sub"><code>aisdlc-web</code> adds a feature board, a live view of the agent, approving gates in the browser, pausing the agent,
+      sending instructions, and accepting steps or allowing files. The UI is currently in Vietnamese.</p>
+
+    <div class="tour">
+      <figure class="shot wide short">
+        <a href="images/web-bang.png"><img src="images/web-bang.png" alt="Feature board with columns BRD, Design, Cases, Code, Review, Done; card PAY-1 at level high, eval passed 7/7" loading="lazy" width="1440" height="900"></a>
+        <figcaption><b>Board.</b> One column per gate and a “waiting on me” list; each card shows the risk level, the latest eval result and the last sync.</figcaption>
+      </figure>
+
+      <figure class="shot wide">
+        <a href="images/web-cong-thiet-ke.png"><img src="images/web-cong-thiet-ke.png" alt="Design gate page of PAY-1: summary counters, risk panel, a map of which step touches which files, DB diff with the new daily_limit table, API table, red flags and agent assumptions" loading="lazy" width="1440" height="1668"></a>
+        <figcaption><b>Design gate review card.</b> Which step touches what (red: two steps share <code>internal/limit/web/**</code>; amber: a glob matches an old migration), the ER diff, the API table, the agent's assumptions and recent activity.</figcaption>
+      </figure>
+
+      <figure class="shot crop">
+        <a href="images/web-xac-nhan-duyet.png"><img src="images/web-xac-nhan-duyet.png" alt="Confirm approval dialog for the Design gate listing HIGH and WARN flags, two assumptions not yet seen and the submitted files" loading="lazy" width="1440" height="1400"></a>
+        <figcaption><b>Approve on the web.</b> The confirmation lists open flags, unseen assumptions and changes since the previous submission.</figcaption>
+      </figure>
+
+      <figure class="shot crop">
+        <a href="images/web-accept-buoc.png"><img src="images/web-accept-buoc.png" alt="Step S1 page awaiting acceptance: scope, budget, cases of the step, diff and an Accept S1 button" loading="lazy" width="1440" height="1619"></a>
+        <figcaption><b>Accept a step.</b> Scope, budget usage, the step's cases and its diff, with an <i>Accept S1</i> button.</figcaption>
+      </figure>
+
+      <figure class="shot crop">
+        <a href="images/web-tam-dung.png"><img src="images/web-tam-dung.png" alt="Agent monitor while paused: Resume button, instruction box and the list of delivered instructions" loading="lazy" width="1440" height="1400"></a>
+        <figcaption><b>Pause the agent &amp; send instructions.</b> While paused, the hook blocks every write; instructions are delivered exactly once.</figcaption>
+      </figure>
+
+      <figure class="shot crop">
+        <a href="images/web-token.png"><img src="images/web-token.png" alt="My tokens page: create ingest or approve tokens, list of tokens with revoke buttons" loading="lazy" width="1440" height="1400"></a>
+        <figcaption><b>Typed tokens.</b> <code>ingest</code> for the CLI and hooks, <code>approve</code> for terminal approvals, <code>ci</code> for CI — the CLI's token can't approve anything.</figcaption>
+      </figure>
+    </div>
+
+    <h3>Run it locally</h3>
+<pre><code>docker build -f Dockerfile.web -t aisdlc-web .
+docker run -d --name aisdlc-db -e POSTGRES_USER=aisdlc -e POSTGRES_PASSWORD=change-me \
+  -e POSTGRES_DB=aisdlc postgres:16-alpine
+docker run -d --name aisdlc-web -p 127.0.0.1:8080:8080 --link aisdlc-db \
+  -e AISDLC_DB_URL=postgres://aisdlc-db:5432/aisdlc -e AISDLC_DB_PASSWORD=change-me \
+  -v aisdlc-data:/data aisdlc-web
+
+docker exec aisdlc-web /aisdlc-web user add dev "Dev Name" --email dev@example.com
+# sign in with the printed token, create an ingest token on /me, then:
+aisdlc web login</code></pre>
+    <p>Set <code>approvals: web</code> in <code>aisdlc/config.yaml</code> to keep approval records on the server; CI then asks the web instead of trusting the repo.
+      Production setup: <a href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/web-operations.md">web operations</a>.</p>
+  </div>
+</section>
+
+<section id="risk">
+  <div class="wrap">
+    <h2>Risk policy</h2>
+    <p class="sub">Each repo declares a level scale, rules that detect risky features (keywords, paths, tables, endpoints, labels) and
+      requirements per level. The agent can only raise a level, never lower it. Low levels can auto-approve clean submissions — Review is always manual.</p>
+
+    <div class="split">
+      <div>
+<pre><code>flow:
+  low:    { brd: auto,   design: auto,   cases: auto,   step: auto }
+  medium: { brd: manual, design: manual, cases: manual, step: auto }
+  high:   { brd: manual, design: manual, cases: manual, step: manual }</code></pre>
+        <div class="tbl">
+          <table>
+            <tr><th>Requirement</th><th>Meaning</th></tr>
+            <tr><td><code>rule-pos-neg</code></td><td>Each BR-n rule has a happy case and an error/boundary case</td></tr>
+            <tr><td><code>idempotent</code></td><td>Each write endpoint has a case with <code>when.repeat ≥ 2</code></td></tr>
+            <tr><td><code>concurrent</code></td><td>At least one case with <code>when.parallel ≥ threads</code></td></tr>
+            <tr><td><code>invariant</code></td><td>The design declares SQL invariants that must return 0 rows</td></tr>
+            <tr><td><code>coverage</code></td><td>New-line coverage ≥ <code>min</code>%</td></tr>
+            <tr><td><code>sql-zero</code></td><td>A project query must return 0 rows after the last step</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="grid">
+        <figure class="shot crop">
+          <a href="images/web-chinh-sach-rui-ro.png"><img src="images/web-chinh-sach-rui-ro.png" alt="Risk policy page on the Requirements by level tab" loading="lazy" width="1440" height="1400"></a>
+          <figcaption><b>Edit the policy on the web</b> — drafts, publish with a reason, version history and a “try classification” tab.</figcaption>
+        </figure>
+        <figure class="shot crop">
+          <a href="images/web-tu-duyet.png"><img src="images/web-tu-duyet.png" alt="BRD gate page of feature FEE-3 marked as auto-approved at level low" loading="lazy" width="1440" height="1400"></a>
+          <figcaption><b>Auto-approved at level low.</b> FEE-3 runs straight to Review; only the final gate waits for a human.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="safety" class="alt">
+  <div class="wrap">
+    <h2>Safety model</h2>
+    <p class="sub">AISDLC assumes the agent can make <b>mistakes</b>, not that it is deliberately attacking. Hooks catch honest mistakes on the
+      developer's machine; protected branches plus the CI eval job are the real enforcement layer.</p>
+    <div class="grid c3">
+      <div class="card"><h4>PreToolUse hook</h4><p>Blocks writes to state files and approved artifacts, writes outside the step scope, access to <code>~/.config/aisdlc</code>, and commands that print environment variables.</p></div>
+      <div class="card"><h4>No network in hooks</h4><p>Hooks only read a cache signed with Ed25519 by the server; the public key is pinned on the developer machine.</p></div>
+      <div class="card"><h4>CI re-checks</h4><p>CI fails when a gate isn't approved, content doesn't match the approved hash, or code changed after the Review approval.</p></div>
+    </div>
+    <p class="note">Blocking writes via Bash is a heuristic. Known bypasses are listed in section 8.1 of the
+      <a href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/user-guide.md">user guide</a>. To report a vulnerability, see
+      <a href="https://github.com/hadtinfo/aisdlc-duck/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+  </div>
+</section>
+
+<section id="docs">
+  <div class="wrap">
+    <h2>Documentation</h2>
+    <div class="grid c3">
+      <a class="card" href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/user-guide.md"><h4>User guide →</h4><p>Install, attach a repo, a feature end to end, writing cases, eval and CI, web, risk policy, troubleshooting.</p></a>
+      <a class="card" href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/web-operations.md"><h4>Web operations →</h4><p>Deploying <code>aisdlc-web</code>, environment variables, signing keys, database, user administration.</p></a>
+      <a class="card" href="https://github.com/hadtinfo/aisdlc-duck/blob/main/CONTRIBUTING.md"><h4>Contributing →</h4><p>Build, test and E2E commands; English localisation of the CLI and web UI is welcome.</p></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>AISDLC · MIT License</span>
+    <span><a href="https://github.com/hadtinfo/aisdlc-duck">GitHub</a> · <a href="https://github.com/hadtinfo/aisdlc-duck/releases">Releases</a> · <a href="vi/">Tiếng Việt</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

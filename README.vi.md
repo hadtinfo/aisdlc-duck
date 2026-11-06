@@ -122,6 +122,7 @@ Giả định agent có thể **nhầm lẫn**, không giả định agent **c�
 
 ## Tài liệu
 
+- [Trang dự án](https://hadtinfo.github.io/aisdlc-duck/vi/): giới thiệu kèm ảnh chụp màn hình.
 - [Hướng dẫn sử dụng](docs/huong-dan-su-dung.md): cài đặt, gắn repo, làm một tính năng từ đầu đến cuối, viết case,
   eval và CI, web, chính sách rủi ro, xử lý sự cố.
 - [Vận hành web](docs/van-hanh-web.md): triển khai `aisdlc-web`, biến môi trường, khóa ký, DB, quản trị user.

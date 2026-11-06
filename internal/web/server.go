@@ -22,6 +22,7 @@ import (
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/ingest"
 	"aisdlc/internal/web/signing"
+	"aisdlc/internal/web/spa"
 	"aisdlc/internal/web/store"
 )
 
@@ -100,6 +101,7 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 	}
 	s := services{auth: a, modes: modes, gates: gs,
 		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed}, reader: reader, hub: hub}
+	ui := spa.Embedded()
 	r := chi.NewRouter()
 	r.Use(Recoverer)
 	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody
@@ -109,7 +111,7 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 			httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
-		http.NotFound(w, req)
+		ui.ServeHTTP(w, req) // SPA fallback + tệp tĩnh; không có thì 404
 	})
 	// Spring trả 405 kèm Allow; body JSON dạng ApiError với câu lỗi chuẩn của Spring.
 	r.MethodNotAllowed(func(w http.ResponseWriter, req *http.Request) {
@@ -207,6 +209,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	h, hub := build(Deps{Pool: pool, Keys: keys})
+	go SchedulePurge(ctx, time.Now, time.After, (&ingest.Service{Pool: pool, Now: func() time.Time { return time.Now().UTC() }}).PurgeOld) // dừng khi ctx hủy
 	srv := &http.Server{Addr: cfg.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout: 120 * time.Second} // không đặt WriteTimeout: SSE
 	ln, err := net.Listen("tcp", cfg.Listen)

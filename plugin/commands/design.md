@@ -11,7 +11,7 @@ Soạn và nộp cổng `design` của tính năng đang làm. Ghi chú của de
    Sequence chỉ vẽ các bước quan trọng (tối đa khoảng 7 bước); `design.yaml` liệt kê các bước Sx và scope từng bước, bám BRD đã duyệt.
    Mục `API`: mỗi endpoint một dòng `METHOD /path · body {…}` và bảng `| Mã | Khi nào | Body |` cho từng mã trả về.
    Mục `Giả định`: liệt kê mọi lựa chọn (kiểu dữ liệu, đơn vị, múi giờ, giá trị mặc định, xử lý lỗi hệ thống ngoài, khóa/giao dịch) mà BRD/ticket không ghi, mỗi dòng `- <quyết định>. (<nguồn>)`, nguồn là `tự chọn`, `suy ra từ BRD`, `câu hỏi mở đã trả lời` hoặc `ngoài phạm vi`.
-   Nếu đổi DB, viết migration nháp trong `db/` của tính năng.
+   Nếu đổi DB, viết migration goose nháp trong `db/` của tính năng: tên `NNNNN_ten.sql`, có `-- +goose Up`.
    **Rủi ro:** chạy `aisdlc policy show` để xem thang mức, rule và nhãn. Điền khối `impact` trong `design.yaml`: `level` (một mức trong thang), `labels` (đúng chữ các nhãn mà rule `label` dùng, nếu áp dụng) và `reason` (một câu: sai thì hậu quả gì). Không hạ mức cho dễ; chỉ dev đổi mức (`aisdlc risk set`).
    Khi tính năng ghi dữ liệu tiền hoặc trạng thái, khai `invariants` trong `design.yaml`: mỗi mục `{ name, sql, step }`, `sql` là một câu `SELECT`/`WITH` trả về các dòng vi phạm (đúng thì 0 dòng). Bất biến dùng bảng do một bước tạo ra thì đặt `step:` bằng bước đó (chỉ kiểm sau case của bước đó và các bước sau); bỏ `step` thì kiểm sau mọi case. Không sửa `risk.yaml` hay `aisdlc/risk-policy.yaml` (hook chặn).
 5. Chạy `aisdlc submit design`. Sửa theo findings rồi nộp lại cho tới khi hết findings.

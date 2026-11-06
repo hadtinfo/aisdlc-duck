@@ -16,6 +16,7 @@ require (
 	github.com/twmb/franz-go v1.22.2
 	github.com/twmb/franz-go/pkg/kadm v1.19.0
 	golang.org/x/mod v0.42.0
+	golang.org/x/term v0.47.0
 )
 
 require (

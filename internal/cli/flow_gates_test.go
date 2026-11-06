@@ -354,15 +354,20 @@ func TestPanicPrintsLoiAndExit2(t *testing.T) {
 	eq(t, r.err, "Lỗi: hỏng bất ngờ\n")
 }
 
-func TestWebModeGateCommandsNeedPhase4(t *testing.T) {
+// Chế độ web mà máy chưa `aisdlc web login`: lệnh nhắc đăng nhập; nộp/duyệt/trả lại/mở lại dừng exit 2, không ghi
+// gates.json, không chạy harness. Lệnh chỉ đọc vẫn chạy.
+func TestWebModeWithoutLoginGateCommandsAbortWithoutWriting(t *testing.T) {
 	r := newTestRepo(t)
 	r.ok(noConsole(), "setup", "--approvals", "web")
 	r.ok(noConsole(), "init", "PAY-1")
 	r.write("aisdlc/features/PAY-1/brd.md", validBRD)
-	for _, args := range [][]string{{"submit", "brd"}, {"approve", "brd"}, {"reject", "brd", "-m", "x"},
-		{"reopen", "brd"}} {
+	eq(t, r.run("submit", "brd"), 2)
+	contains(t, r.err, "Chưa `aisdlc web login` trên máy này",
+		"Không nộp được lên web: web chưa cấu hình; chạy `aisdlc web login`.")
+	eq(t, r.runC(typed("PAY-1"), "approve", "brd"), 2)
+	for _, args := range [][]string{{"reject", "brd", "-m", "x"}, {"reopen", "brd"}} {
 		eq(t, r.runC(typed("PAY-1"), args...), 2)
-		contains(t, r.err, WebPhase4Msg)
+		contains(t, r.err, "Chưa có token approve. Duyệt trên web: <url web>/f/")
 	}
 	eq(t, r.runner.calls == nil, true)
 	eq(t, r.exists("aisdlc/features/PAY-1/gates.json"), false)

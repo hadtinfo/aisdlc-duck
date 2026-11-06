@@ -84,6 +84,11 @@ func SaveConfig(home string, c Config) error {
 	return nil
 }
 
+// SaveApproveToken ghi token approve (0600, thư mục 0700).
+func SaveApproveToken(home, token string) error {
+	return writePrivate(ApproveTokenFile(home), []byte(strings.TrimSpace(token)+"\n"))
+}
+
 // LoadApproveToken đọc token approve đã lưu; "" khi chưa có hoặc không đọc được.
 func LoadApproveToken(home string) string {
 	f := ApproveTokenFile(home)

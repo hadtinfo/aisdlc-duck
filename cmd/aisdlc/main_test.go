@@ -83,7 +83,7 @@ func aisdlcMarker(t *testing.T) string {
 	return d
 }
 
-const codePath = "src/main/java/com/example/limit/web/A.java"
+const codePath = "internal/limit/handler/a.go"
 
 func editJSON(cwd, file string) string {
 	b, _ := json.Marshal(map[string]any{"session_id": "abc", "hook_event_name": "PreToolUse", "cwd": cwd,

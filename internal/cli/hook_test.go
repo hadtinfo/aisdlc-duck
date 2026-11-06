@@ -25,7 +25,7 @@ import (
 // stopBlockedEmitsNoSessionStopButAllowedDoes và postToolUseOutsideAisdlcRepoSilent.
 
 // codePath là file trong phạm vi S1 của design.yaml mẫu.
-const codePath = "src/main/java/com/example/limit/web/A.java"
+const codePath = "internal/limit/handler/a.go"
 
 // hookIn là input JSON của hook (session "abc"); tool rỗng thì không có tool_name/tool_input.
 func hookIn(event, cwd, tool, field, value string) string {

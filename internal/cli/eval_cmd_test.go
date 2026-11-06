@@ -95,7 +95,7 @@ func TestEvalWritesReportAndExitsByResult(t *testing.T) {
 		t.Fatal("thiếu report.md")
 	}
 	contains(t, r.read("aisdlc/features/PAY-1/eval/diff-by-step.md"), "## S1 — Validate request",
-		"+class LimitController {}")
+		"+package handler")
 
 	r.c2Fails()
 	eq(t, r.run("eval"), 1)
@@ -148,10 +148,10 @@ func TestEvalCiCodeChangeWithoutFeatureFails(t *testing.T) {
 		t.Fatalf("exit %d\n%s%s", c, r.out, r.err)
 	}
 
-	r.write("src/main/java/com/example/Other.java", "class Other {}\n")
+	r.write("internal/other/other.go", "package other\n")
 	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
 	contains(t, r.out, "Eval KHÔNG ĐẠT: thay đổi code không thuộc tính năng AISDLC nào so với HEAD: "+
-		"src/main/java/com/example/Other.java. Tạo tính năng bằng `aisdlc init <KEY>` (hoặc đặt ciRequireFeature: false).")
+		"internal/other/other.go. Tạo tính năng bằng `aisdlc init <KEY>` (hoặc đặt ciRequireFeature: false).")
 	eq(t, r.verifier.calls, 0)
 }
 
@@ -174,7 +174,7 @@ func TestEvalCiCodeChangeWithoutFeatureAllowedWhenDisabled(t *testing.T) {
 		"ciRequireFeature: false", 1))
 	r.gitCmd("add", "-A")
 	r.gitCmd("commit", "-q", "-m", "feature + config")
-	r.write("src/main/java/com/example/Other.java", "class Other {}\n")
+	r.write("internal/other/other.go", "package other\n")
 
 	if c := r.run("eval", "--ci", "--base", "HEAD"); c != 0 {
 		t.Fatalf("exit %d\n%s%s", c, r.out, r.err)
@@ -192,7 +192,7 @@ func TestEvalCiConfigChangeDisablingFeatureRequirementWithCodeFails(t *testing.T
 		t.Fatal("config mẫu thiếu ciRequireFeature: true")
 	}
 	r.write("aisdlc/config.yaml", strings.Replace(cfg, "ciRequireFeature: true", "ciRequireFeature: false", 1))
-	r.write("src/main/java/com/example/Other.java", "class Other {}\n")
+	r.write("internal/other/other.go", "package other\n")
 
 	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
 	contains(t, r.out, "Eval KHÔNG ĐẠT: aisdlc/config.yaml bị sửa trong thay đổi này — sửa cấu hình phải ở MR riêng.")
@@ -205,7 +205,7 @@ func TestEvalCiConfigChangeMakingEverythingUnmanagedWithCodeFails(t *testing.T) 
 	cfg := regexp.MustCompile(`(?m)^unmanaged:.*$`).ReplaceAllString(r.read("aisdlc/config.yaml"), `unmanaged: ["**"]`)
 	contains(t, cfg, `unmanaged: ["**"]`)
 	r.write("aisdlc/config.yaml", cfg)
-	r.write("src/main/java/com/example/Other.java", "class Other {}\n")
+	r.write("internal/other/other.go", "package other\n")
 
 	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
 	contains(t, r.out, "sửa cấu hình phải ở MR riêng")

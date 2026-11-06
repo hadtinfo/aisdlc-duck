@@ -16,7 +16,7 @@ import (
 
 	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
-	"aisdlc/internal/harness"
+	"aisdlc/internal/harness/harnessapi"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
@@ -108,7 +108,7 @@ func (s *Service) casesLocked() (HardCheck, error) {
 
 // buildCheck: build, unit test và harness. Case fail không làm hỏng check này (CASES_ALL_PASS báo); lỗi harness
 // (hạ tầng, dịch vụ) thì có, kể cả khi mọi case pass. Lỗi kèm "; xem <harness.log>" như Java (maven.log).
-func buildCheck(vr harness.VerifyResult, log string) HardCheck {
+func buildCheck(vr harnessapi.VerifyResult, log string) HardCheck {
 	const id = "BUILD_AND_TESTS"
 	var problems []string
 	if vr.TimedOut {

@@ -11,7 +11,7 @@ import (
 	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
-	"aisdlc/internal/harness"
+	"aisdlc/internal/harness/harnessapi"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/risk"
@@ -21,9 +21,9 @@ import (
 )
 
 // Verifier build, chạy unit test và bộ case đầy đủ của tính năng, ghi results.json/schema.json vào out
-// (harness.Harness trong bản thật). error chỉ khi không ghi được out.
+// (binary aisdlc-harness qua CLI trong bản thật). error chỉ khi không ghi được out.
 type Verifier interface {
-	Verify(ctx context.Context, key model.FeatureKey, out string) (harness.VerifyResult, error)
+	Verify(ctx context.Context, key model.FeatureKey, out string) (harnessapi.VerifyResult, error)
 }
 
 // CIApprovalSource: approval lấy từ web khi chạy CI (webclient.HTTPCIApprovals). nil → không có web.
@@ -112,7 +112,7 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 	if cs, err := spec.ReadCases(s.Paths.Cases()); err == nil {
 		selected = cs.Cases
 	}
-	results := harness.ReadResults(out, selected)
+	results := harnessapi.ReadResults(out, selected)
 
 	hard := []HardCheck{}
 	soft := []SoftCheck{}

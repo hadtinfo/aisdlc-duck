@@ -204,6 +204,34 @@ func TestWrongTypedValuesAreErrors(t *testing.T) {
 	}
 }
 
+// Thời hạn 0 hay âm: harness dừng ngay hoặc không bao giờ hết hạn, nên là lỗi cấu hình nêu đúng khóa.
+func TestNonPositiveTimeoutsAreErrors(t *testing.T) {
+	for y, key := range map[string]string{
+		"timeoutMinutes: 0":                         "timeoutMinutes",
+		"timeoutMinutes: -1":                        "timeoutMinutes",
+		"service:\n  startTimeoutSeconds: 0":        "service.startTimeoutSeconds",
+		"service:\n  startTimeoutSeconds: 0.5":      "service.startTimeoutSeconds",
+		"service:\n  shutdownTimeoutSeconds: -3":    "service.shutdownTimeoutSeconds",
+		"service:\n  shutdownTimeoutSeconds: \"0\"": "service.shutdownTimeoutSeconds",
+	} {
+		_, err := ParseRepoConfig(y)
+		if err == nil || !strings.Contains(err.Error(), "Giá trị "+key+" không hợp lệ") ||
+			!strings.Contains(err.Error(), "phải lớn hơn 0") {
+			t.Errorf("%q: err = %v", y, err)
+		}
+	}
+	c, err := ParseRepoConfig("timeoutMinutes: 0.5\nservice:\n  startTimeoutSeconds: 1\n  shutdownTimeoutSeconds: 2\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eq(t, "TimeoutMinutes", c.TimeoutMinutes, 0.5)
+	eq(t, "StartTimeoutSeconds", c.Service.StartTimeoutSeconds, 1)
+	eq(t, "ShutdownTimeoutSeconds", c.Service.ShutdownTimeoutSeconds, 2)
+	if !strings.Contains(func() string { _, e := ParseRepoConfig("timeoutMinutes: abc"); return e.Error() }(), ": abc") {
+		t.Error("error must show the value")
+	}
+}
+
 func TestNullAndNumericStringsStillAccepted(t *testing.T) {
 	c := mustParse(t, "timeoutMinutes: null\nservice:\n  startTimeoutSeconds: \"45\"\nsessionApprove: \"true\"")
 	if c.TimeoutMinutes != 30 || c.Service.StartTimeoutSeconds != 45 || !c.SessionApprove {

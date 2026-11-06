@@ -17,3 +17,12 @@ func For(language string) (lang.Adapter, error) {
 	}
 	return nil, fmt.Errorf("Ngôn ngữ chưa hỗ trợ: %s (hiện có: go)", language)
 }
+
+// RuntimeFor trả runtime (build, test, tiến trình) theo tên ngôn ngữ.
+func RuntimeFor(language string) (lang.Runtime, error) {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "go":
+		return golang.Runtime{}, nil
+	}
+	return nil, fmt.Errorf("Ngôn ngữ chưa hỗ trợ: %s (hiện có: go)", language)
+}

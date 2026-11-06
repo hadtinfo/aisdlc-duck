@@ -1,6 +1,6 @@
 # Test Java chưa port sang Go
 
-Danh sách này liệt kê mọi test Java của `aisdlc-cli` và `aisdlc-core` chưa có bản Go sau giai đoạn 1–2b, kèm giai đoạn sẽ port và lý do.
+Danh sách này liệt kê mọi test Java của `aisdlc-cli` và `aisdlc-core` chưa có bản Go sau giai đoạn 1–2b (mục giai đoạn 3 đã port xong), kèm giai đoạn sẽ port và lý do.
 
 Cách đối chiếu (2026-11-06, nhánh `go-phase2b`):
 - Mỗi phương thức `@Test` Java được so với tên `TestXxx` của Go: tên Java viết PascalCase, bỏ `_`, thêm `Test`.
@@ -20,102 +20,110 @@ Cách đối chiếu (2026-11-06, nhánh `go-phase2b`):
 - `WebGatesTest`: bốn test chỉ đọc cache đã port, xem `internal/cli/webcache_test.go`. Trong đó `validModeCacheBeatsConfigLocal` và `gateEnvelopeSignedByOtherKeyDoesNotSwitchMode` mới có phần cache; phần hỏi web và refresh để giai đoạn 4.
 - `EvalCommandTest`: sáu test cổng REVIEW đã port, thay `aisdlc eval` bằng báo cáo eval viết tay. Xem `internal/cli/review_gate_test.go`.
 
-## Giai đoạn 3 (harness Go, `aisdlc eval`): 65 test
+## Giai đoạn 3 (harness Go, `aisdlc eval`): 65 test, đã port
+
+Giai đoạn 3 xong (2026-11-06, nhánh `go-phase3`). Mỗi test Java dưới đây được ghép với test Go tương ứng; test Go nằm ở `internal/eval/*_test.go`, `internal/cli/eval_cmd_test.go`, `internal/cli/runner_test.go`, `internal/harness/*_test.go` và `internal/lang/golang/*_test.go`. Hai test Surefire không có tương đương, lý do ghi ở bảng.
+
+45 test của `aisdlc-junit` (bộ chạy case JUnit) đã port vào `internal/harness` (`executor_test.go`, `checks_test.go`, `pgdb_test.go`, `kafka_test.go`, `jsoncmp_test.go`, `results_test.go`, `drafts_test.go`, `schema_test.go`, `harness_test.go`). Không lập bảng từng test.
+
+Dịch vụ mẫu e2e (`e2e/fixture-service`, Go) có `TestFixtureServiceFeeCases` trong `internal/harness/fixture_test.go`.
+
+Các test cần `web != nil` (duyệt qua web) không nằm trong 65 test này; chúng ở giai đoạn 4 bên dưới.
 
 ### EvalCommandTest (aisdlc-cli, 10)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `evalWritesReportAndExitsByResult` | cần `aisdlc eval` chạy thật (harness) |
-| `ciEvaluatesChangedFeaturesWithoutActiveFeature` | cần `aisdlc eval` chạy thật (harness) |
-| `ciWithoutChangedFeaturesDoesNothing` | cần `aisdlc eval` chạy thật (harness) |
-| `localEvalNeedsActiveFeature` | cần `aisdlc eval` chạy thật (harness) |
-| `ciCodeChangeWithoutFeatureFails` | cần `aisdlc eval` chạy thật (harness) |
-| `ciCodeChangeWithoutFeatureAllowedWhenDisabled` | cần `aisdlc eval` chạy thật (harness) |
-| `ciConfigChangeDisablingFeatureRequirementWithCodeFails` | cần `aisdlc eval` chạy thật (harness) |
-| `ciConfigChangeMakingEverythingUnmanagedWithCodeFails` | cần `aisdlc eval` chạy thật (harness) |
-| `ciUsesBaseConfigNotChangedOneEvenWithoutCodeChange` | cần `aisdlc eval` chạy thật (harness) |
-| `ciReportWarnsAboutUnapprovedOrChangedGates` | cần `aisdlc eval` chạy thật (harness) |
+| `evalWritesReportAndExitsByResult` | `TestEvalWritesReportAndExitsByResult` |
+| `ciEvaluatesChangedFeaturesWithoutActiveFeature` | `TestEvalCiEvaluatesChangedFeaturesWithoutActiveFeature` |
+| `ciWithoutChangedFeaturesDoesNothing` | `TestEvalCiWithoutChangedFeaturesDoesNothing` |
+| `localEvalNeedsActiveFeature` | `TestEvalLocalNeedsActiveFeature` |
+| `ciCodeChangeWithoutFeatureFails` | `TestEvalCiCodeChangeWithoutFeatureFails` |
+| `ciCodeChangeWithoutFeatureAllowedWhenDisabled` | `TestEvalCiCodeChangeWithoutFeatureAllowedWhenDisabled` |
+| `ciConfigChangeDisablingFeatureRequirementWithCodeFails` | `TestEvalCiConfigChangeDisablingFeatureRequirementWithCodeFails` |
+| `ciConfigChangeMakingEverythingUnmanagedWithCodeFails` | `TestEvalCiConfigChangeMakingEverythingUnmanagedWithCodeFails` |
+| `ciUsesBaseConfigNotChangedOneEvenWithoutCodeChange` | `TestEvalCiUsesBaseConfigNotChangedOneEvenWithoutCodeChange` |
+| `ciReportWarnsAboutUnapprovedOrChangedGates` | `TestEvalCiReportWarnsAboutUnapprovedOrChangedGates` |
 
 ### CiAutoApprovalTest (aisdlc-core, 5)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `ci_autoApprovalMatchingFlow_pass` | cần `aisdlc eval --ci` chạy thật |
-| `ci_autoApprovalNotMatching_fail` | cần `aisdlc eval --ci` chạy thật |
-| `ci_autoApprovalWithoutRiskYaml_fail` | cần `aisdlc eval --ci` chạy thật |
-| `ci_manualApprovals_noAutoCheck` | cần `aisdlc eval --ci` chạy thật |
-| `localEval_doesNotCheckAutoApprovals` | cần `aisdlc eval --ci` chạy thật |
+| `ci_autoApprovalMatchingFlow_pass` | `TestCiAutoApprovalMatchingFlowPass` |
+| `ci_autoApprovalNotMatching_fail` | `TestCiAutoApprovalNotMatchingFail` |
+| `ci_autoApprovalWithoutRiskYaml_fail` | `TestCiAutoApprovalWithoutRiskYamlFail` |
+| `ci_manualApprovals_noAutoCheck` | `TestCiManualApprovalsNoAutoCheck` |
+| `localEval_doesNotCheckAutoApprovals` | `TestLocalEvalDoesNotCheckAutoApprovals` |
 
 ### EvalServiceTest (aisdlc-core, 35)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `allGreenPasses` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `failingCaseFailsCasesAllPass` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `caseMissingFromResultsFailsCasesAllPass` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `emptyResultsFailCasesAllPass` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `editedCasesFailsLockLocallyButWarnsInCi` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `unchangedCasesInCiIsOkSoftCheck` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `oldTestFailureFailsBuild` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `onlySuiteFailureDoesNotFailBuild` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `nonZeroExitWithoutTestFailuresFailsBuild` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `extraColumnFailsSchemaMatch` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `missingSchemaDumpFailsSchemaMatch` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `bashWrittenOutOfScopeFileFailsScope` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `scopeExtraAllowsFile` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `ciScopeUsesMergeBaseOfBaseRef` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `checkCommandNonZeroFails` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `coverageOfChangedLinesFromJacoco` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `coverageHardWhenRiskRequires` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `riskFileUnreadable_hardFail` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `fullWithImpactButNoRiskFile_hardFail` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `fullLegacyWithoutImpact_noRiskFileCheck` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `riskCoverage_noJacoco_failsWithDistinctMessage` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `riskCoverage_noNewLines_passes` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `coverageHardPassesAtOrAboveMin` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `riskCoverage_fileInModuleWithoutReport_countsAsUncovered` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `riskCoverage_onlyFilesInUnmeasuredModule_fails` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `riskCoverage_codeLessFilesInMeasuredModule_ignored` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `softCoverage_ignoresUnmeasuredFiles` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `coverageSoftWithoutRisk` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `reportRiskSectionResolvesLaterRequirements` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `reportRiskSectionOkWhenCasesPassAndCoverageMet` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `configChangedInThisChangeFailsScope` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `suiteFailureWhileEveryCasePassedFailsBuild` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `exitZeroStillReadsFreshSurefireReports` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `unapprovedCasesIsHardFailEvenInCi` | cần EvalService.run thật (harness, coverage, báo cáo test) |
-| `evaluatedTreeIgnoresFeatureDirButTracksCode` | cần EvalService.run thật (harness, coverage, báo cáo test) |
+| `allGreenPasses` | `TestEvalAllGreenPasses` |
+| `failingCaseFailsCasesAllPass` | `TestEvalFailingCaseFailsCasesAllPass` |
+| `caseMissingFromResultsFailsCasesAllPass` | `TestEvalCaseMissingFromResultsFailsCasesAllPass` |
+| `emptyResultsFailCasesAllPass` | `TestEvalEmptyResultsFailCasesAllPass` |
+| `editedCasesFailsLockLocallyButWarnsInCi` | `TestEvalEditedCasesFailsLockLocallyButWarnsInCi` |
+| `unchangedCasesInCiIsOkSoftCheck` | `TestEvalUnchangedCasesInCiIsOkSoftCheck` |
+| `oldTestFailureFailsBuild` | `TestEvalOldTestFailureFailsBuild` |
+| `onlySuiteFailureDoesNotFailBuild` | `TestEvalOnlySuiteFailureDoesNotFailBuild` |
+| `nonZeroExitWithoutTestFailuresFailsBuild` | `TestEvalNonZeroExitWithoutTestFailuresFailsBuild` |
+| `extraColumnFailsSchemaMatch` | `TestEvalExtraColumnFailsSchemaMatch` |
+| `missingSchemaDumpFailsSchemaMatch` | `TestEvalMissingSchemaDumpFailsSchemaMatch` |
+| `bashWrittenOutOfScopeFileFailsScope` | `TestEvalBashWrittenOutOfScopeFileFailsScope` |
+| `scopeExtraAllowsFile` | `TestEvalScopeExtraAllowsFile` |
+| `ciScopeUsesMergeBaseOfBaseRef` | `TestEvalCiScopeUsesMergeBaseOfBaseRef` |
+| `checkCommandNonZeroFails` | `TestEvalCheckCommandNonZeroFails` |
+| `coverageOfChangedLinesFromJacoco` | `TestEvalCoverageOfChangedLines` |
+| `coverageHardWhenRiskRequires` | `TestEvalCoverageHardWhenRiskRequires` |
+| `riskFileUnreadable_hardFail` | `TestEvalRiskFileUnreadableHardFail` |
+| `fullWithImpactButNoRiskFile_hardFail` | `TestEvalFullWithImpactButNoRiskFileHardFail` |
+| `fullLegacyWithoutImpact_noRiskFileCheck` | `TestEvalFullLegacyWithoutImpactNoRiskFileCheck` |
+| `riskCoverage_noJacoco_failsWithDistinctMessage` | `TestEvalRiskCoverageNoCoverageFailsWithDistinctMessage` |
+| `riskCoverage_noNewLines_passes` | `TestEvalRiskCoverageNoNewLinesPasses` |
+| `coverageHardPassesAtOrAboveMin` | `TestEvalCoverageHardPassesAtOrAboveMin` |
+| `riskCoverage_fileInModuleWithoutReport_countsAsUncovered` | `TestEvalRiskCoverageFileInPackageWithoutCoverageCountsAsUncovered` |
+| `riskCoverage_onlyFilesInUnmeasuredModule_fails` | `TestEvalRiskCoverageOnlyFilesInUnmeasuredPackageFails` |
+| `riskCoverage_codeLessFilesInMeasuredModule_ignored` | `TestEvalRiskCoverageCodeLessFilesInMeasuredPackageIgnored` |
+| `softCoverage_ignoresUnmeasuredFiles` | `TestEvalSoftCoverageIgnoresUnmeasuredFiles` |
+| `coverageSoftWithoutRisk` | `TestEvalCoverageSoftWithoutRisk` |
+| `reportRiskSectionResolvesLaterRequirements` | `TestEvalReportRiskSectionResolvesLaterRequirements` |
+| `reportRiskSectionOkWhenCasesPassAndCoverageMet` | `TestEvalReportRiskSectionOkWhenCasesPassAndCoverageMet` |
+| `configChangedInThisChangeFailsScope` | `TestEvalConfigChangedInThisChangeFailsScope` |
+| `suiteFailureWhileEveryCasePassedFailsBuild` | `TestEvalSuiteFailureWhileEveryCasePassedFailsBuild` |
+| `exitZeroStillReadsFreshSurefireReports` | `TestEvalExitZeroStillReadsUnitFailures` |
+| `unapprovedCasesIsHardFailEvenInCi` | `TestEvalUnapprovedCasesIsHardFailEvenInCi` |
+| `evaluatedTreeIgnoresFeatureDirButTracksCode` | `TestEvalEvaluatedTreeIgnoresFeatureDirButTracksCode` |
 
 ### JacocoCoverageTest (aisdlc-core, 5)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `parsesLinesPerSourceFile` | đọc coverage JaCoCo; bản Go thay bằng coverage của harness Go |
-| `mapsChangedLinesToCoverage` | đọc coverage JaCoCo; bản Go thay bằng coverage của harness Go |
-| `onlyMainJavaFilesCount` | đọc coverage JaCoCo; bản Go thay bằng coverage của harness Go |
-| `strict_filesInUnreportedModuleCountAndAreNamedUpToFive` | đọc coverage JaCoCo; bản Go thay bằng coverage của harness Go |
-| `noMeasurableLinesIsNa` | đọc coverage JaCoCo; bản Go thay bằng coverage của harness Go |
+| `parsesLinesPerSourceFile` | `TestChangedCoverageParsesLinesPerFile` |
+| `mapsChangedLinesToCoverage` | `TestChangedCoverageMapsChangedLines` |
+| `onlyMainJavaFilesCount` | `TestChangedCoverageOnlySourceFilesCount` |
+| `strict_filesInUnreportedModuleCountAndAreNamedUpToFive` | `TestChangedCoverageStrictUnmeasuredFilesNamedUpToFive` |
+| `noMeasurableLinesIsNa` | `TestChangedCoverageNoMeasurableIsNA` |
 
 ### MavenRunnerTest (aisdlc-core, 7)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `runCasesPassesContractAndReadsResults` | runner Maven; bản Go là CaseRunner của harness (giai đoạn 3) |
-| `missingResultsMakesEverySelectedCaseErrorEvenIfStaleFileExisted` | runner Maven; bản Go là CaseRunner của harness (giai đoạn 3) |
-| `verifyRunsVerifyWithoutTestFilter` | runner Maven; bản Go là CaseRunner của harness (giai đoạn 3) |
-| `selectedCaseWithoutResultRowBecomesError` | runner Maven; bản Go là CaseRunner của harness (giai đoạn 3) |
-| `emptyResultsMakeEverySelectedCaseError` | runner Maven; bản Go là CaseRunner của harness (giai đoạn 3) |
-| `timeoutKillsMavenAndMarksCasesError` | runner Maven; bản Go là CaseRunner của harness (giai đoạn 3) |
-| `verifyClearsStaleResultsAndReadsThemLikeRunCases` | runner Maven; bản Go là CaseRunner của harness (giai đoạn 3) |
+| `runCasesPassesContractAndReadsResults` | `TestRunDemo1Cases`, `TestResultsRoundTripAndFormat` |
+| `missingResultsMakesEverySelectedCaseErrorEvenIfStaleFileExisted` | `TestReadResultsMissingFileIsNoResults`, `TestRunnerClearsStaleResults` |
+| `verifyRunsVerifyWithoutTestFilter` | `TestVerifyAllGreen` |
+| `selectedCaseWithoutResultRowBecomesError` | `TestReadResultsMissingRowIsError` |
+| `emptyResultsMakeEverySelectedCaseError` | `TestReadResultsEmptyMakesEveryCaseError` |
+| `timeoutKillsMavenAndMarksCasesError` | `TestRunTimeoutKillsServiceAndContainers`, `TestRunnerTimeoutMarksCasesError` |
+| `verifyClearsStaleResultsAndReadsThemLikeRunCases` | `TestRunnerClearsStaleResults`, `TestVerifyAllGreen` |
 
 ### SurefireReportsTest (aisdlc-core, 3)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `collectsFailuresAndErrorsFromEveryModule` | đọc báo cáo Surefire; bản Go thay bằng kết quả của harness Go |
-| `staleReportsFromAnEarlierBuildAreIgnored` | đọc báo cáo Surefire; bản Go thay bằng kết quả của harness Go |
-| `casesSuiteClassMatchesSimpleOrQualifiedName` | đọc báo cáo Surefire; bản Go thay bằng kết quả của harness Go |
+| `collectsFailuresAndErrorsFromEveryModule` | `TestUnitTestsCollectsFailures` |
+| `staleReportsFromAnEarlierBuildAreIgnored` | không có tương đương: `go test -json` chạy mới mỗi lần nên không có báo cáo cũ để bỏ qua. |
+| `casesSuiteClassMatchesSimpleOrQualifiedName` | không có tương đương: bản Go không có lớp suite case chạy qua JUnit; harness tự chạy case nên không cần khớp tên lớp. |
 
 ## Giai đoạn 4 (web client có mạng): 139 test
 

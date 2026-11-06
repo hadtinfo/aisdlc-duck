@@ -192,9 +192,12 @@ func (s *submission) cases(f *Feature) (int, error) {
 			s.ctx.Println("Đang chạy bộ case qua harness trên code hiện tại...")
 		}
 		// Chưa có code: chạy trên schema đã thiết kế (migration chính + nháp), case được dùng bảng mới
-		res, err := s.ctx.Runner(f.Root, f.Config).RunCases(f.Key, nil, "cases-with-drafts")
-		if err != nil {
-			return 0, err
+		var res run.CaseRunResult
+		if err := s.ctx.interruptible(func() (err error) {
+			res, err = s.ctx.Runner(f.Root, f.Config).RunCases(f.Key, nil, "cases-with-drafts")
+			return err
+		}); err != nil {
+			return 0, err // bị hủy: không nộp cổng
 		}
 		var errs, passed []string
 		anyFailed := false
@@ -271,8 +274,11 @@ func (s *submission) laterTableSetup(f *Feature, steps []spec.StepSpec) (*spec.F
 		return nil, nil
 	}
 	s.ctx.Println("Đang chạy case của " + first.ID + " trên schema hiện tại (chưa có migration nháp)...")
-	res, err := s.ctx.Runner(f.Root, f.Config).RunCases(f.Key, []string{first.ID}, "cases")
-	if err != nil {
+	var res run.CaseRunResult
+	if err := s.ctx.interruptible(func() (err error) {
+		res, err = s.ctx.Runner(f.Root, f.Config).RunCases(f.Key, []string{first.ID}, "cases")
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	var bad []string
@@ -548,10 +554,14 @@ func (s *submission) precheck(f *Feature, g gate.Gate) error {
 // migrationCheck chạy migration nháp; thành công thì chép schema.json thành schema-expected.json.
 func (s *submission) migrationCheck(f *Feature, code string) (*spec.Finding, error) {
 	s.ctx.Println("Đang chạy migration nháp qua harness (migration-check)...")
-	runner := s.ctx.Runner(f.Root, f.Config)
-	res, err := runner.RunCases(f.Key, nil, "migration-check")
-	if err != nil {
-		return nil, err
+	var runner CaseRunner
+	var res run.CaseRunResult
+	if err := s.ctx.interruptible(func() (err error) {
+		runner = s.ctx.Runner(f.Root, f.Config)
+		res, err = runner.RunCases(f.Key, nil, "migration-check")
+		return err
+	}); err != nil {
+		return nil, err // bị hủy: không chép schema-expected.json, không nộp cổng
 	}
 	schema := filepath.Join(runner.OutDir(f.Key), "schema.json")
 	if res.ExitCode != 0 || !exists(schema) {

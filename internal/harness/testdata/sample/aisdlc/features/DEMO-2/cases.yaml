@@ -1,0 +1,38 @@
+# Port từ aisdlc-junit DEMO-2. Dịch vụ mẫu Go gộp TransferController và KafkaTransferController nên mọi case
+# chuyển tiền cần stub số dư (bản Java của app Kafka không gọi core banking).
+reset_sql: ["DELETE FROM transfer"]
+stubs:
+  - id: balance-a1
+    request:  { method: GET, urlPath: /accounts/A1/balance }
+    response: { status: 200, jsonBody: { balance: 1000 } }
+  - id: balance-a2
+    request:  { method: GET, urlPath: /accounts/A2/balance }
+    response: { status: 200, jsonBody: { balance: 1000 } }
+cases:
+  - id: K1
+    step: S1
+    kind: happy
+    title: Tạo giao dịch thì phát transfer.created
+    given: { sql: [], stubs: [balance-a1] }
+    when:  { method: POST, path: /api/transfers, body: { fromAccount: A1, toAccount: B1, amount: 100 } }
+    then:
+      status: 200
+      messages:
+        - { topic: transfer.created, value: { status: CREATED } }
+  - id: K2
+    step: S1
+    kind: error
+    title: Mong đợi sai trạng thái DONE
+    given: { sql: [], stubs: [balance-a1] }
+    when:  { method: POST, path: /api/transfers, body: { fromAccount: A1, toAccount: B1, amount: 100 } }
+    then:
+      status: 200
+      messages:
+        - { topic: transfer.created, value: { status: DONE } }
+  - id: K3
+    step: S1
+    kind: happy
+    title: Case không kiểm message vẫn chạy khi có Kafka
+    given: { sql: [], stubs: [balance-a2] }
+    when:  { method: POST, path: /api/transfers, body: { fromAccount: A2, toAccount: B1, amount: 5 } }
+    then: { status: 200 }

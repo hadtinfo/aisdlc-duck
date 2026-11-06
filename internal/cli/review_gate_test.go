@@ -11,8 +11,8 @@ import (
 )
 
 // EvalCommandTest, phần cổng REVIEW không cần chạy eval thật: thay `aisdlc eval` bằng eval/report.json và report.md
-// viết tay (handEval). Để giai đoạn 3 (cần eval thật hoặc eval --ci): evalWritesReportAndExitsByResult, ci*,
-// localEvalNeedsActiveFeature.
+// viết tay (handEval). Các test chạy `aisdlc eval` thật (evalWritesReportAndExitsByResult, ci*,
+// localEvalNeedsActiveFeature) ở eval_cmd_test.go.
 
 // evalReviewCriteria như CRITERIA của Java: 4 ĐẠT, security CẦN_SỬA.
 const evalReviewCriteria = `[{"id":"sequence","label":"DAT","reason":"đúng"},` +

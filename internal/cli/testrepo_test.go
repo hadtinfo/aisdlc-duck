@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"aisdlc/internal/eval"
 	"aisdlc/internal/gitx"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
@@ -75,7 +77,8 @@ type fakeRunner struct {
 	writeSchema   bool
 	log           string
 	cases         func(steps []string) []run.CaseResult
-	err           error // khác nil: RunCases trả lỗi này
+	err           error  // khác nil: RunCases trả lỗi này
+	onRun         func() // gọi đầu RunCases (ví dụ giả Ctrl-C giữa lúc harness chạy)
 }
 
 func newFakeRunner(root string) *fakeRunner {
@@ -93,6 +96,9 @@ func (f *fakeRunner) OutputTail(key model.FeatureKey, n int) string {
 
 func (f *fakeRunner) RunCases(key model.FeatureKey, steps []string, mode string) (run.CaseRunResult, error) {
 	f.calls = append(f.calls, mode+":"+strings.Join(steps, ","))
+	if f.onRun != nil {
+		f.onRun()
+	}
 	if f.err != nil {
 		return run.CaseRunResult{}, f.err
 	}
@@ -137,6 +143,10 @@ type testRepo struct {
 	root   string
 	env    map[string]string
 	runner *fakeRunner
+	// verifier thay harness của `aisdlc eval`; dùng chung kết quả case với runner.
+	verifier *fakeVerifier
+	// setupDone: setup đã chạy (và commit) trước, setupInit chỉ còn init.
+	setupDone bool
 	// presetFlow false (mặc định): sau setup bỏ khối flow khỏi risk-policy.yaml để mọi cổng duyệt tay.
 	presetFlow bool
 	// setupDefaultApprovals false (mặc định): setup không nêu --approvals thì thêm --approvals local.
@@ -145,10 +155,15 @@ type testRepo struct {
 	git func(root string) *gitx.Repo
 	// extra là lệnh chỉ có trong test, thêm vào cây lệnh (vd. lệnh thăm dò Feature()).
 	extra []func(ctx *Context) *cobra.Command
-	now   time.Time
-	out   string
-	err   string
-	live  *bytes.Buffer
+	// interrupts: nguồn tín hiệu giả (nil: không bắt tín hiệu); std: ctx của lệnh (nil: Background)
+	interrupts *Interrupts
+	std        context.Context
+	// runnerStd là ctx.Std() lúc lệnh lấy runner gần nhất (ctx mà harness thật sẽ dùng)
+	runnerStd context.Context
+	now       time.Time
+	out       string
+	err       string
+	live      *bytes.Buffer
 }
 
 // hermeticGit cô lập git khỏi cấu hình của máy.
@@ -171,6 +186,7 @@ func newTestRepo(t *testing.T) *testRepo {
 	r.gitCmd("add", "-A")
 	r.gitCmd("commit", "-q", "-m", "init")
 	r.runner = newFakeRunner(root)
+	r.verifier = &fakeVerifier{runner: r.runner}
 	return r
 }
 
@@ -179,7 +195,14 @@ func (r *testRepo) context(console DevConsole, stdin string, o, e *bytes.Buffer)
 	ctx := NewContext(strings.NewReader(stdin), o, e, console, r.root).
 		WithEnv(r.env).
 		WithNow(func() time.Time { return r.now }).
-		WithRunner(func(string, model.RepoConfig) CaseRunner { return r.runner })
+		WithVerifier(func(string, model.RepoConfig) eval.Verifier { return r.verifier })
+	ctx.WithRunner(func(string, model.RepoConfig) CaseRunner { r.runnerStd = ctx.Std(); return r.runner })
+	if r.interrupts != nil {
+		ctx.WithInterrupts(r.interrupts)
+	}
+	if r.std != nil {
+		ctx.WithStd(r.std)
+	}
 	if r.git != nil {
 		ctx.WithGit(r.git)
 	}
@@ -272,7 +295,9 @@ func (r *testRepo) ok(console DevConsole, args ...string) {
 // setupInit là setup + init PAY-1 (TestRepo.t() của Java).
 func (r *testRepo) setupInit() {
 	r.t.Helper()
-	r.ok(noConsole(), "setup")
+	if !r.setupDone {
+		r.ok(noConsole(), "setup")
+	}
 	r.ok(noConsole(), "init", "PAY-1")
 }
 

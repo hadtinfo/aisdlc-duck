@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt-check check plugin-dist
+.PHONY: build test test-short vet fmt-check check plugin-dist
 
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
@@ -7,6 +7,9 @@ build:
 
 test:
 	go test ./...
+
+test-short:
+	AISDLC_SKIP_DOCKER=1 go test ./...
 
 vet:
 	go vet ./...

@@ -1,5 +1,5 @@
-// Package eval đọc và ghi báo cáo eval (eval/report.json, report.md, review-agent.json). Phần chạy eval
-// (EvalService.run, JaCoCo, Surefire) thuộc giai đoạn 3.
+// Package eval chạy eval tầng 1 (Service: build, unit test, bộ case qua harness, hard/soft check) và đọc, ghi báo
+// cáo eval (eval/report.json, report.md, review-agent.json).
 package eval
 
 import (

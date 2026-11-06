@@ -1,0 +1,20 @@
+steps:
+  - id: S1
+    title: Kiểm tra request
+    scope: ["internal/limit/web/**", "cmd/server/routes.go"]
+    budget: { files: 2, lines: 60 }
+  - id: S2
+    title: Tính hạn mức theo bảng daily_limit
+    scope: ["internal/limit/**", "db/migrations/**"]
+    budget: { files: 3, lines: 80 }
+# Bất biến không khai step chạy sau mọi case; có `step: S2` thì chỉ chạy cho case từ S2 (daily_limit có từ S2).
+invariants:
+  - name: Tài khoản luôn có tên chủ
+    sql: "SELECT id FROM account WHERE TRIM(owner_name) = ''"
+  - name: Số đã dùng không vượt hạn mức
+    sql: "SELECT account_id FROM daily_limit WHERE used_amount < 0 OR used_amount > limit_amount"
+    step: S2
+impact:
+  level: medium
+  labels: [schema-change]
+  reason: "Thêm bảng daily_limit; API chỉ đọc, không ghi số đã dùng."

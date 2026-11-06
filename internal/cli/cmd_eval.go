@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -15,7 +16,9 @@ import (
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
 	"aisdlc/internal/model"
+	"aisdlc/internal/snapshot"
 	"aisdlc/internal/step"
+	"aisdlc/internal/webclient"
 )
 
 const (
@@ -145,10 +148,14 @@ func runEval(ctx *Context, f *Feature, ci bool, base string) (int, error) {
 	svc := &eval.Service{Paths: f.Paths, Meta: f.Meta, Config: f.Config, Git: f.Git(),
 		Verifier: ctx.Verifier(f.Root, f.Config), Gates: gates, Steps: f.Steps(), Specs: f.Specs(),
 		Adapter: f.Adapter, Now: ctx.Clock()}
-	// chưa có nguồn approval web (giai đoạn 4): CI chế độ web thì Service fail closed (GATE:WEB)
+	// thiếu biến thì web nil: CI chế độ web khi đó Service fail closed (GATE:WEB)
+	var web eval.CIApprovalSource
+	if ci {
+		web = ciApprovalSource(ctx, f)
+	}
 	var r eval.EvalReport
 	if err := ctx.interruptible(func() (err error) {
-		r, err = svc.Run(ctx.Std(), ci, base, nil)
+		r, err = svc.Run(ctx.Std(), ci, base, web)
 		return err
 	}); err != nil {
 		return 0, err // bị hủy: eval.Service không ghi report
@@ -165,6 +172,19 @@ func runEval(ctx *Context, f *Feature, ci bool, base string) (int, error) {
 		return ExitOK, nil
 	}
 	return ExitFindings, nil
+}
+
+// ciApprovalSource: nguồn approval web của CI từ AISDLC_WEB_URL và AISDLC_CI_TOKEN; thiếu một trong hai thì nil.
+// Chuyển nil thẳng vào Service (không bọc vào interface) để nó nhận ra là không có web.
+func ciApprovalSource(ctx *Context, f *Feature) eval.CIApprovalSource {
+	url, okURL := ctx.Env("AISDLC_WEB_URL")
+	token, okTok := ctx.Env("AISDLC_CI_TOKEN")
+	if !okURL || !okTok {
+		return nil
+	}
+	return &webclient.HTTPCIApprovals{BaseURL: url, Token: token, Repo: func(c context.Context) string {
+		return snapshot.RepoID(c, f.Git(), f.Root)
+	}}
 }
 
 // managedChanges: file thay đổi không thuộc thư mục tính năng nào và không thuộc unmanaged, đã sắp xếp.

@@ -1,0 +1,3 @@
+# Default reviewers for every change. Add more owners per directory as maintainers join, e.g.
+#   /web/ui/   @some-frontend-maintainer
+*   @hadtinfo

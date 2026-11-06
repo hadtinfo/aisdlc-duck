@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    groups:
+      go-deps: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /web/ui
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    groups:
+      ui-deps: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule: { interval: monthly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: monthly }
+    cooldown: { default-days: 7 }

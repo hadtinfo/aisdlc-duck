@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -330,19 +331,50 @@ func TestHookLatencyP95(t *testing.T) {
 	waitFlushDone(t, root)
 }
 
-// waitFlushDone chờ (tối đa 10 giây) tiến trình `web flush` nền đã mở xong việc gửi: khóa gửi rảnh. Gọi trước khi
-// thư mục repo tạm bị xóa, để tiến trình nền không còn ghi vào đó.
+// waitFlushDone chờ (tối đa 10 giây) mọi tiến trình `web flush` nền đã mở ở repo root xong hẳn: khóa gửi rảnh và
+// không còn tiến trình `aisdlc web flush` nào có thư mục làm việc là root (sau khi nhả khóa gửi, tiến trình còn làm
+// mới chế độ, cổng, điều khiển và chính sách — vẫn ghi vào .aisdlc/web). Gọi trước khi thư mục repo tạm bị xóa.
 func waitFlushDone(t *testing.T, root string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if l, ok, err := webclient.TryFlushLock(root); err == nil && ok {
 			l.Close()
-			return
+			if len(flushProcesses(root)) == 0 {
+				return
+			}
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Errorf("web flush nền chưa xong sau 10 giây")
+	t.Errorf("web flush nền chưa xong sau 10 giây (còn %v)", flushProcesses(root))
+}
+
+// flushProcesses là pid các tiến trình `<binPath> web flush` đang chạy ở thư mục root (đọc /proc; Linux).
+func flushProcesses(root string) []int {
+	want, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		want = root
+	}
+	es, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, e := range es {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		dir := filepath.Join("/proc", e.Name())
+		cmdline, err := os.ReadFile(filepath.Join(dir, "cmdline"))
+		if err != nil || !strings.HasSuffix(string(cmdline), "\x00web\x00flush\x00") {
+			continue
+		}
+		if cwd, err := os.Readlink(filepath.Join(dir, "cwd")); err == nil && (cwd == want || cwd == root) {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
 }
 
 // hookP95 gọi hook 60 lần mỗi lượt, p95 phải dưới 50 ms. Máy bận (test Docker chạy song song) làm lệch số đo: đo

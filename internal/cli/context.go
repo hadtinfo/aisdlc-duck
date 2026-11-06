@@ -78,6 +78,8 @@ type Context struct {
 	publishers map[string]*webclient.Publisher
 	// webDown: đã có một lần không với tới web trong tiến trình này (lệnh sau không thử lại)
 	webDown bool
+	// controlRefreshed: kết quả làm mới điều khiển từ web theo tính năng trong tiến trình này (mỗi tính năng một lần)
+	controlRefreshed map[model.FeatureKey]bool
 }
 
 // NewContext tạo Context với mặc định của tiến trình: env của OS, đồng hồ UTC, git thật, runner và verifier là
@@ -406,7 +408,15 @@ func (c *Context) FeatureAt(root string, key model.FeatureKey) (*Feature, error)
 			return nil, err
 		}
 	}
-	f.Control = f.Web.Control(key)
+	f.WebControl = NewWebControl(f.Web)
+	f.applyControl()
+	f.Control = f.WebControl.Cached(key)
+	if f.snapshotPending {
+		// vừa áp dụng lệnh từ web: web thấy trạng thái bước mới ở lần gửi kế tiếp (hook: không in gì)
+		if p := c.Publisher(root); p.Enabled() {
+			p.Stage(key.String(), func() ([]byte, error) { return c.featureSnapshot(p, f) }, !c.network)
+		}
+	}
 	return f, nil
 }
 
@@ -505,8 +515,17 @@ type Feature struct {
 	Store   gate.GateStore
 	Gates   *gate.Service
 	Adapter lang.Adapter
-	// Control là điều khiển từ web (tạm dừng, chỉ dẫn, lệnh chờ) đọc từ cache đã ký; nil nếu không có.
+	// Control là điều khiển từ web (tạm dừng, chỉ dẫn, lệnh chờ) đọc từ cache đã ký sau khi áp lệnh chờ; nil nếu
+	// không có.
 	Control *snapshot.FeatureControl
+	// WebControl làm mới và đọc điều khiển từ web của repo.
+	WebControl *WebControl
+	// ControlOffline: lệnh CLI đã thử làm mới điều khiển từ web và thất bại vì web không với tới được.
+	ControlOffline bool
+	// ControlBusy (hook): không lấy được control.lock trong thời hạn nên lệnh chờ chưa xét (PreToolUse ghi thì chặn).
+	ControlBusy bool
+	// snapshotPending: đã áp dụng lệnh từ web khi dựng; FeatureAt đặt snapshot vào outbox.
+	snapshotPending bool
 	// Web đọc cấu hình web, khóa ghim và các cache đã ký của repo (không gọi mạng).
 	Web *WebCache
 	ctx *Context
@@ -576,7 +595,7 @@ func (f *Feature) PendingActions() []snapshot.Action {
 	if f.Control == nil {
 		return nil
 	}
-	_, done := readLedger(f.Root, f.Key)
+	done := NewControlLedger(f.Root, f.Key, 0).Done()
 	var out []snapshot.Action
 	for _, a := range f.Control.Actions {
 		if !done[a.ID] {
@@ -588,17 +607,96 @@ func (f *Feature) PendingActions() []snapshot.Action {
 
 // UndeliveredInstructions là chỉ dẫn trong cache điều khiển chưa giao cho agent trên máy này.
 func (f *Feature) UndeliveredInstructions() []snapshot.Instruction {
-	if f.Control == nil {
-		return nil
+	return f.WebControl.Undelivered(f.Key)
+}
+
+// applyControl: lệnh CLI có mạng làm mới điều khiển trước (mỗi tính năng một lần mỗi tiến trình); rồi áp dụng lệnh
+// chờ trong cache dưới khóa sổ cục bộ, mỗi kết quả ghi sổ và một event ACTION_RESULT. Lệnh CLI in kết quả ra stderr;
+// hook không in gì. Điều khiển từ web không bao giờ làm hỏng lệnh hay hook: lỗi bỏ qua, trừ hết hạn chờ khóa
+// (ControlBusy).
+func (f *Feature) applyControl() {
+	defer func() { _ = recover() }()
+	c := f.ctx
+	if !c.network && !exists(snapshot.ControlCacheFile(f.Root, f.Key)) {
+		return // hook: không có cache thì khỏi đọc khóa ghim
 	}
-	delivered, _ := readLedger(f.Root, f.Key)
-	var out []snapshot.Instruction
-	for _, i := range f.Control.Instructions {
-		if !delivered[i.ID] {
-			out = append(out, i)
+	if !f.Web.LoggedIn() {
+		return
+	}
+	if c.network {
+		ok, done := c.controlRefreshed[f.Key]
+		if !done {
+			ok = f.WebControl.Refresh(f.Key)
+			if c.controlRefreshed == nil {
+				c.controlRefreshed = map[model.FeatureKey]bool{}
+			}
+			c.controlRefreshed[f.Key] = ok
+		}
+		f.ControlOffline = !ok && f.WebControl.Unreachable()
+	}
+	fc := f.WebControl.Cached(f.Key)
+	if fc == nil || len(fc.Actions) == 0 {
+		return
+	}
+	results, err := NewControlLedger(f.Root, f.Key, c.lockBudget()).Apply(func(done map[int64]bool) []step.PendingResult {
+		return step.ApplyPending(*fc, f.Steps(), f.ScopeExtras(), done, c.now())
+	})
+	if err != nil {
+		f.ControlBusy = isControlBusy(err)
+		return
+	}
+	if len(results) == 0 {
+		return
+	}
+	p := c.Publisher(f.Root)
+	sender := ""
+	if p.Enabled() {
+		sender = webclient.Sender(f.Git())
+	}
+	for _, r := range results {
+		var a *snapshot.Action
+		for i := range fc.Actions {
+			if fc.Actions[i].ID == r.ID {
+				a = &fc.Actions[i]
+				break
+			}
+		}
+		e := webclient.Event{Type: "ACTION_RESULT", At: c.now(), Feature: f.Key.String(), Sender: sender,
+			Detail: resultJSON(r), SessionID: c.SessionID()}
+		if a != nil {
+			e.Step, e.Path = a.Step, a.Path
+		}
+		p.Emit(e)
+		if r.Status == step.PendingApplied {
+			f.snapshotPending = true
+			if c.network && a != nil {
+				what := "đã accept " + a.Step
+				if a.Kind == "ALLOW_SCOPE" {
+					what = "đã cho phép " + a.Path + " ở " + a.Step
+				}
+				c.Eprintln("Áp dụng từ web: " + what + " (" + a.By + ")")
+			}
+		} else if c.network {
+			c.Eprintln("Lệnh từ web hết hiệu lực: " + r.Reason)
 		}
 	}
-	return out
+}
+
+// resultJSON là detail của event ACTION_RESULT: {"id":..,"status":..,"reason":..|null}.
+func resultJSON(r step.PendingResult) string {
+	var reason *string
+	if r.Reason != "" {
+		reason = &r.Reason
+	}
+	b, err := jsonMarshal(struct {
+		ID     int64   `json:"id"`
+		Status string  `json:"status"`
+		Reason *string `json:"reason"`
+	}{r.ID, r.Status, reason})
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
 func exists(path string) bool {

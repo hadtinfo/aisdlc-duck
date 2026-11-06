@@ -117,9 +117,8 @@ func errText(err error) string {
 }
 
 // newWebFlushCmd: tiến trình gửi nền do hook mở (WebCommand.flush). Gửi hết outbox (tối đa 5 giây), rồi làm mới chế
-// độ, trạng thái cổng của tính năng đang làm (chế độ web) và chính sách rủi ro: hook không gọi mạng nên cache được
-// làm mới ở đây. Không in gì (kể cả cảnh báo cấu hình và lỗi gửi), luôn exit 0.
-// TODO(4b Task 5): làm mới điều khiển từ web (WebControl.refresh) cho tính năng đang làm.
+// độ, trạng thái cổng của tính năng đang làm (chế độ web), điều khiển từ web (cả chế độ local) và chính sách rủi ro:
+// hook không gọi mạng nên cache được làm mới ở đây. Không in gì (kể cả cảnh báo cấu hình và lỗi gửi), luôn exit 0.
 func newWebFlushCmd(ctx *Context) *cobra.Command {
 	return &cobra.Command{Use: "flush", Short: "Gửi outbox ở nền (hook dùng).", Hidden: true, Args: cobra.ArbitraryArgs,
 		RunE: Wrap(ctx, func(*cobra.Command, []string) (int, error) {
@@ -135,7 +134,8 @@ func newWebFlushCmd(ctx *Context) *cobra.Command {
 		})}
 }
 
-// flushRefresh làm mới chế độ, trạng thái cổng của tính năng đang làm (chế độ web) và chính sách từ web; im lặng.
+// flushRefresh làm mới chế độ, trạng thái cổng của tính năng đang làm (chế độ web), điều khiển từ web và chính sách
+// từ web; im lặng.
 func flushRefresh(ctx *Context, root string) {
 	defer func() { _ = recover() }()
 	w := NewWebCache(ctx, root)
@@ -147,9 +147,11 @@ func flushRefresh(ctx *Context, root string) {
 		return
 	}
 	w.RefreshMode(cfg)
-	if k, ok, err := model.ReadActive(root); err == nil && ok &&
-		exists(model.FeaturePaths{RepoRoot: root, Key: k}.Meta()) && w.CachedMode(cfg) == gate.ModeWeb {
-		w.Refresh(k)
+	if k, ok, err := model.ReadActive(root); err == nil && ok && exists(model.FeaturePaths{RepoRoot: root, Key: k}.Meta()) {
+		if w.CachedMode(cfg) == gate.ModeWeb {
+			w.Refresh(k)
+		}
+		NewWebControl(w).Refresh(k)
 	}
 	w.PolicyPullQuietly()
 }

@@ -303,8 +303,9 @@ func printControl(ctx *Context, f *Feature) {
 		if _, ok := f.Web.Config(); !ok {
 			suffix = " — chưa cấu hình web trên máy này; xóa .aisdlc/web/control/" + f.Key.String() +
 				".json để bỏ tạm dừng cũ"
+		} else if f.ControlOffline {
+			suffix = " — web không truy cập được, chưa nhận lệnh tiếp tục"
 		}
-		// Java thêm " — web không truy cập được, ..." khi vừa thử làm mới mà lỗi mạng; bản Go chưa làm mới (giai đoạn 4).
 		ctx.Println("Đang tạm dừng từ web (" + p.By + ", " + at + ")" + suffix)
 	}
 	var pending []string

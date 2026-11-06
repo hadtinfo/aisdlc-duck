@@ -3,9 +3,11 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"aisdlc/internal/model"
 	"aisdlc/internal/policy"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/step"
@@ -16,8 +18,20 @@ import (
 // và mở `aisdlc web flush` nền. Hook không bao giờ gọi mạng và không bao giờ chờ web; web tắt thì không đọc gì thêm.
 // Mọi lỗi ở đây im lặng: không đụng stdout (Claude Code đọc nó), không đổi mã thoát.
 
-// flushEvery: hook mở `web flush` vì tạm dừng tối đa một lần mỗi chừng này (mtime của .aisdlc/web/control/spawned).
-const flushEvery = 5 * time.Second
+const (
+	// flushEvery: hook mở `web flush` vì tạm dừng tối đa một lần mỗi chừng này (mtime của
+	// .aisdlc/web/control/spawned).
+	flushEvery = 5 * time.Second
+	// flushWait: PreToolUse bị chặn vì tạm dừng mà có `web flush` đang chạy: chờ nó ghi cache điều khiển tối đa
+	// chừng này.
+	flushWait = 2 * time.Second
+	// flushPoll: khoảng xem lại cache trong lúc chờ.
+	flushPoll = 50 * time.Millisecond
+)
+
+// controlBusyMsg: PreToolUse của tool ghi khi không lấy được control.lock (lệnh chờ chưa xét được).
+const controlBusyMsg = "aisdlc: không khóa được sổ điều khiển web (.aisdlc/web/control/control.lock) trong 1 giây" +
+	" — một tiến trình aisdlc khác đang giữ (treo hoặc bị dừng?). Thử lại sau giây lát."
 
 // emit ghi event vào outbox rồi mở tiến trình gửi nền (Publisher.Emit). Lỗi chỉ ra stderr.
 func (h *hook) emit(root string, e webclient.Event) {
@@ -31,13 +45,21 @@ func (h *hook) emit(root string, e webclient.Event) {
 
 func (h *hook) webEnabled(root string) bool { return h.ctx.Publisher(root).Enabled() }
 
-// postToolUse: tool ghi vừa chạy → event FILE_EDIT (đường dẫn tương đối repo, bước đang chạy, ngoài phạm vi hay
-// không); Bash chỉ khi có bước đang chạy (detail = 120 ký tự đầu của lệnh). Không in gì.
+// postToolUse: giao chỉ dẫn từ web chưa giao cho agent chính (additionalContext); rồi, khi web bật, tool ghi vừa
+// chạy → event FILE_EDIT (đường dẫn tương đối repo, bước đang chạy, ngoài phạm vi hay không); Bash chỉ khi có bước
+// đang chạy (detail = 120 ký tự đầu của lệnh).
 func (h *hook) postToolUse() int {
 	defer func() { _ = recover() }() // im lặng: hook này không bao giờ làm hỏng phiên làm việc
 	in := h.read()
 	root, found := FindRepo(in.cwd)
-	if !found || in.json == nil || !h.webEnabled(root) { // web tắt: không đọc trạng thái gì
+	if !found || in.json == nil {
+		return ExitOK
+	}
+	// tool của subagent: chỉ dẫn vào ngữ cảnh subagent là mất với agent chính → để lần sau của agent chính
+	if !in.subagent {
+		h.printContext("PostToolUse", h.claimInstructions(root))
+	}
+	if !h.webEnabled(root) { // web tắt: không đọc trạng thái gì
 		return ExitOK
 	}
 	tool := text(in.json, "tool_name")
@@ -135,10 +157,10 @@ func (h *hook) pausedFlush(root string) {
 	h.spawn(root, mark)
 }
 
-// userPromptSubmit (dev vừa gõ prompt, thường ngay sau khi bấm Tiếp tục trên web): chỉ khi repo có
-// .aisdlc/web/control/, mở `web flush` nền để làm mới cờ tạm dừng và chỉ dẫn, trừ khi lần mở trước (< 5 giây) chưa
-// ghi xong cache điều khiển. Không in gì, không gọi mạng.
-// TODO(4b Task 5): nhận chỉ dẫn qua sổ điều khiển (additionalContext, event INSTRUCTION_DELIVERED).
+// userPromptSubmit (dev vừa gõ prompt, thường ngay sau khi bấm Tiếp tục / gửi chỉ dẫn trên web): chỉ khi repo có
+// .aisdlc/web/control/. Mở `web flush` nền (làm mới cờ tạm dừng và chỉ dẫn; PreToolUse kế tiếp chờ nó tối đa 2 giây)
+// trừ khi lần mở trước (< 5 giây) chưa ghi xong cache điều khiển, rồi giao chỉ dẫn chưa giao qua additionalContext.
+// Không gọi mạng, luôn exit 0.
 func (h *hook) userPromptSubmit() int {
 	defer func() { _ = recover() }() // im lặng: hook này không bao giờ chặn prompt của dev
 	in := h.read()
@@ -149,23 +171,101 @@ func (h *hook) userPromptSubmit() int {
 	if st, err := os.Stat(controlDir(root)); err != nil || !st.IsDir() {
 		return ExitOK // repo chưa dùng điều khiển web
 	}
-	r, err := h.resolve(root)
-	if err != nil {
-		return ExitOK
+	if r, err := h.resolve(root); err == nil {
+		if key := activeKey(root, r); key != "" {
+			h.promptFlush(root, key)
+		}
 	}
-	key := activeKey(root, r)
-	if key == "" || !h.webEnabled(root) {
-		return ExitOK
+	if !in.subagent {
+		h.printContext("UserPromptSubmit", h.claimInstructions(root))
 	}
-	mark := spawnedMark(root)
-	if h.recentlySpawned(mark) && !writtenSince(snapshot.ControlCacheFile(root, key), mtime(mark)) {
-		return ExitOK
-	}
-	h.spawn(root, mark)
 	return ExitOK
 }
 
-func controlDir(root string) string { return filepath.Join(webclient.WebDir(root), "control") }
+// promptFlush mở `web flush` trừ khi lần mở trước (< 5 giây) chưa ghi xong cache điều khiển: mỗi lúc tối đa một
+// tiến trình đang chạy. Không dùng luật 5 giây cứng của pausedFlush: dev bấm Tiếp tục rồi gõ prompt ngay sau một lần
+// bị chặn thì vẫn phải tải lại.
+func (h *hook) promptFlush(root string, key model.FeatureKey) {
+	defer func() { _ = recover() }()
+	if !h.webEnabled(root) {
+		return
+	}
+	mark := spawnedMark(root)
+	if h.recentlySpawned(mark) && !writtenSince(snapshot.ControlCacheFile(root, key), mtime(mark)) {
+		return
+	}
+	h.spawn(root, mark)
+}
+
+// claimInstructions: chỉ dẫn từ web chưa giao của tính năng đang làm. Nhận qua sổ cục bộ (dưới khóa, mỗi chỉ dẫn một
+// lần trên máy này), mỗi chỉ dẫn một event INSTRUCTION_DELIVERED, cập nhật cờ inbox; trả khối additionalContext
+// ("" nếu không có hoặc lỗi, vd. control.lock bị giữ).
+func (h *hook) claimInstructions(root string) (text string) {
+	defer func() {
+		if recover() != nil {
+			text = ""
+		}
+	}()
+	key := model.FeatureKey("")
+	if r, err := h.resolve(root); err == nil {
+		key = activeKey(root, r)
+	}
+	if key == "" || !exists(snapshot.ControlCacheFile(root, key)) {
+		_ = os.Remove(ControlInbox(root)) // cờ cũ
+		return ""
+	}
+	control := NewWebControl(NewWebCache(h.ctx, root))
+	got, err := NewControlLedger(root, key, h.ctx.lockBudget()).Claim(control.Undelivered(key))
+	if err != nil {
+		return ""
+	}
+	control.UpdateInbox(key)
+	if len(got) == 0 {
+		return ""
+	}
+	for _, i := range got {
+		h.emit(root, webclient.Event{Type: "INSTRUCTION_DELIVERED", Feature: key.String(),
+			Detail: strconv.FormatInt(i.ID, 10)})
+	}
+	return policy.InstructionContext(got, time.Local)
+}
+
+// printContext in khối additionalContext của sự kiện hook (không in gì khi rỗng).
+func (h *hook) printContext(event, text string) {
+	if text == "" {
+		return
+	}
+	h.printJSON(struct {
+		Out sessionStartOut `json:"hookSpecificOutput"`
+	}{sessionStartOut{event, text}})
+}
+
+// awaitFlush: có `web flush` mở < 5 giây trước mà chưa ghi lại cache điều khiển thì chờ tối đa 2 giây tới khi cache
+// được ghi. True nếu cache vừa được ghi trong lúc chờ (người gọi xét lại); hết hạn hay không có tiến trình đang
+// chạy → false (chặn như thường).
+func (h *hook) awaitFlush(root string, key model.FeatureKey) (written bool) {
+	defer func() {
+		if recover() != nil {
+			written = false
+		}
+	}()
+	mark := spawnedMark(root)
+	if !h.recentlySpawned(mark) {
+		return false
+	}
+	cache := snapshot.ControlCacheFile(root, key)
+	if writtenSince(cache, mtime(mark)) {
+		return false // tiến trình đó đã xong: trạng thái vừa đọc là mới
+	}
+	before := mtime(cache)
+	for end := time.Now().Add(flushWait); time.Now().Before(end); {
+		time.Sleep(flushPoll)
+		if st, err := os.Stat(cache); err == nil && st.ModTime().After(before) {
+			return true
+		}
+	}
+	return false
+}
 
 func spawnedMark(root string) string { return filepath.Join(controlDir(root), "spawned") }
 

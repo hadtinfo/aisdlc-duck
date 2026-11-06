@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -233,11 +232,22 @@ func (h *hook) guarded(in *hookInput, root, tool string) (preDecision, bool, err
 			return h.devOnly(root, in, command)
 		}
 	}
-	st, _, err := h.state(root)
+	st, f, err := h.state(root)
 	if err != nil {
 		return preDecision{}, false, err
 	}
-	dec := policy.PreToolUse(policy.ToolCall{ToolName: tool, FilePath: file, Command: command, Cwd: in.cwd}, st)
+	call := policy.ToolCall{ToolName: tool, FilePath: file, Command: command, Cwd: in.cwd}
+	dec := policy.PreToolUse(call, st)
+	if !dec.Allow && dec.Code == "PAUSED" && st.Active != "" && h.awaitFlush(root, st.Active) {
+		// web flush đang chạy (vd. do UserPromptSubmit mở sau khi dev bấm Tiếp tục) vừa ghi cache: xét lại
+		if st, f, err = h.state(root); err != nil {
+			return preDecision{}, false, err
+		}
+		dec = policy.PreToolUse(call, st)
+	}
+	if dec.Allow && f != nil && f.ControlBusy {
+		return preDecision{"deny", controlBusyMsg}, true, nil
+	}
 	if !dec.Allow {
 		switch dec.Code {
 		case "PAUSED":
@@ -325,14 +335,14 @@ func (h *hook) sessionStart() int {
 // sessionContext in quy tắc và trạng thái (additionalContext); lỗi thì im lặng.
 func (h *hook) sessionContext(in *hookInput, root string) {
 	defer func() { _ = recover() }()
-	st, f, err := h.state(root)
+	st, _, err := h.state(root)
 	if err != nil || !stateReadable(st) {
 		return
 	}
 	text := policy.SessionContext(st)
-	// 2b chỉ đọc cache: chỉ dẫn chưa có trong sổ cục bộ (không ghi sổ, không event — giai đoạn 4)
-	if f != nil && !in.subagent {
-		if instr := policy.InstructionContext(f.UndeliveredInstructions(), time.Local); instr != "" {
+	// chỉ dẫn chưa giao: nhận qua sổ (mỗi chỉ dẫn một lần); lỗi (vd. control.lock bị giữ) thì quy tắc vẫn nạp
+	if !in.subagent {
+		if instr := h.claimInstructions(root); instr != "" {
 			text += "\n\n" + instr
 		}
 	}

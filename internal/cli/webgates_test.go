@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -222,11 +223,14 @@ func TestOpenFeaturesInWebModeReadsCacheOnlyAfterStatusTalkedToWeb(t *testing.T)
 	g.webMode()
 	g.ok(noConsole(), "status", "--feature", "PAY-1")
 	before := len(g.web.Requests())
+	// status đã làm mới điều khiển từ web (cache .aisdlc/web/control/PAY-1.json); liệt kê không ghi gì thêm
+	files := g.tree(".aisdlc/web")
 	open, err := NewFeatureResolver(g.context(noConsole(), "", &bytes.Buffer{}, &bytes.Buffer{})).OpenFeatures(g.root)
 	must(t, err)
 	eq(t, len(open), 2)
 	eq(t, len(g.web.Requests()), before)
-	eq(t, g.exists(".aisdlc/web/control"), false)
+	eq(t, fmt.Sprint(g.tree(".aisdlc/web")), fmt.Sprint(files))
+	eq(t, g.exists(".aisdlc/web/control/PAY-2.json"), false)
 }
 
 func TestAfterOneNetworkFailureNoMoreRequestsInProcessAndBackoffStarts(t *testing.T) {
@@ -741,4 +745,19 @@ func TestWebFlushRefreshesModeAndActiveGatesSilently(t *testing.T) {
 	eq(t, g.run("web", "flush"), 0)
 	eq(t, g.gates().CachedMode(g.cfg()), gate.ModeLocal)
 	eq(t, len(g.web.RequestsFor("GET", "/api/cli/gates")), 1)
+}
+
+// tree là danh sách "đường dẫn mtime kích thước" của mọi file dưới rel (thứ tự WalkDir).
+func (r *testRepo) tree(rel string) []string {
+	var out []string
+	_ = filepath.WalkDir(filepath.Join(r.root, rel), func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if st, err := os.Stat(p); err == nil {
+			out = append(out, fmt.Sprint(p, " ", st.ModTime().UnixNano(), " ", st.Size()))
+		}
+		return nil
+	})
+	return out
 }

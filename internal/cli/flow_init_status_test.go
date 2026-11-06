@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -306,8 +307,18 @@ func TestStatusShowsPendingActionsAndInstructionsFromCache(t *testing.T) {
 		}})
 	r.write(".aisdlc/web/control/PAY-1.local.json", `{"delivered":[4],"results":{"10":"APPLIED"}}`)
 	eq(t, r.run("status"), 0)
-	contains(t, r.out, "Lệnh từ web chờ áp dụng: accept S1\n", "Chỉ dẫn chờ giao cho agent: 1\n")
-	notContains(t, r.out, "tạm dừng")
+	// S1 chưa làm: lệnh 9 STALE ngay khi dựng tính năng (Java parity), 10 đã xử lý từ trước → không còn lệnh chờ
+	contains(t, r.out, "Chỉ dẫn chờ giao cho agent: 1\n")
+	contains(t, r.err, "Lệnh từ web hết hiệu lực: Bước S1 chưa được làm\n")
+	notContains(t, r.out, "tạm dừng", "Lệnh từ web chờ áp dụng")
+	eq(t, r.read(".aisdlc/web/control/PAY-1.local.json"),
+		`{"delivered":[4],"results":{"10":"APPLIED","9":"STALE"}}`)
+	// lệnh chưa có trong sổ (vd. lúc dựng không lấy được khóa): printControl liệt kê
+	f := r.feature()
+	r.write(".aisdlc/web/control/PAY-1.local.json", `{"delivered":[4],"results":{"10":"APPLIED"}}`)
+	o := &bytes.Buffer{}
+	printControl(r.context(noConsole(), "", o, &bytes.Buffer{}), f)
+	contains(t, o.String(), "Lệnh từ web chờ áp dụng: accept S1\n", "Chỉ dẫn chờ giao cho agent: 1\n")
 	// cache ký bằng khóa khác: không tin, không in gì
 	_, other := pinKey(t, t.TempDir())
 	b, err := (snapshot.FeatureControl{Repo: "x", Feature: "PAY-1", Pause: &snapshot.Pause{By: "an"}}).ToJSON()

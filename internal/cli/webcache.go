@@ -2,10 +2,8 @@ package cli
 
 import (
 	"crypto/ed25519"
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/model"
@@ -161,30 +159,4 @@ func (w *WebCache) Policy() (snapshot.CachedPolicy, bool) {
 func (w *WebCache) PolicyWebMode() bool {
 	_, ok := w.Config()
 	return ok && w.LoggedIn()
-}
-
-// readLedger đọc sổ cục bộ .aisdlc/web/control/<KEY>.local.json (ControlLedger của Java, chỉ đọc):
-// {"delivered":[id...],"results":{"<id>":"APPLIED|STALE"}}. Thiếu hoặc hỏng thì rỗng.
-func readLedger(root string, key model.FeatureKey) (delivered, done map[int64]bool) {
-	delivered, done = map[int64]bool{}, map[int64]bool{}
-	b, err := os.ReadFile(filepath.Join(root, ".aisdlc", "web", "control", key.String()+".local.json"))
-	if err != nil {
-		return
-	}
-	var l struct {
-		Delivered []int64           `json:"delivered"`
-		Results   map[string]string `json:"results"`
-	}
-	if json.Unmarshal(b, &l) != nil {
-		return
-	}
-	for _, id := range l.Delivered {
-		delivered[id] = true
-	}
-	for k := range l.Results {
-		if id, err := strconv.ParseInt(k, 10, 64); err == nil {
-			done[id] = true
-		}
-	}
-	return
 }

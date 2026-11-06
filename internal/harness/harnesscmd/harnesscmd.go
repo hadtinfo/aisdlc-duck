@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"aisdlc/internal/buildinfo"
 	"aisdlc/internal/harness"
 	"aisdlc/internal/harness/harnessapi"
 	"aisdlc/internal/lang/langs"
@@ -80,7 +81,7 @@ func Main(args []string, stderr io.Writer, sig *Signals) int {
 	}
 	fail := func(err error) int {
 		fmt.Fprintln(stderr, err)
-		_ = harnessapi.WriteResult(outDir, harnessapi.Result{Error: err.Error()})
+		_ = harnessapi.WriteResult(outDir, harnessapi.Result{Error: err.Error(), Version: buildinfo.Version()})
 		return harnessapi.ExitError
 	}
 	key, err := model.ParseFeatureKey(*feature)
@@ -107,6 +108,7 @@ func Main(args []string, stderr io.Writer, sig *Signals) int {
 	} else {
 		r = Verify(ctx, h, key, outDir)
 	}
+	r.Version = buildinfo.Version()
 	if err := harnessapi.WriteResult(outDir, r); err != nil {
 		fmt.Fprintln(stderr, err)
 		return harnessapi.ExitError

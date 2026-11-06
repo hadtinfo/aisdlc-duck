@@ -160,15 +160,18 @@ func TestRunnerHarnessErrorIsError(t *testing.T) {
 
 // Không tìm thấy aisdlc-harness: fail closed — mọi case ERROR với lý do, eval báo lỗi harness; không đọc kết quả cũ.
 func TestRunnerMissingHarnessFailsClosed(t *testing.T) {
-	t.Setenv(HarnessEnv, filepath.Join(t.TempDir(), "khong-co"))
-	_, ferr := findHarness()
+	missing := func() (string, error) {
+		return locateHarness(func(string) string { return "" }, func() (string, error) { return t.TempDir() + "/aisdlc", nil },
+			func(string) (string, error) { return "", exec.ErrNotFound })
+	}
+	_, ferr := missing()
 	if ferr == nil {
 		t.Fatal("findHarness không lỗi")
 	}
-	contains(t, ferr.Error(), "không tìm thấy aisdlc-harness: ", HarnessEnv)
+	contains(t, ferr.Error(), "không tìm thấy aisdlc-harness: ")
 
 	r := sampleRunner(t, context.Background(), "")
-	r.find = findHarness
+	r.find = missing
 	writeStale(t, r.OutDir("DEMO-1"))
 	res, err := r.RunCases("DEMO-1", nil, "cases")
 	must(t, err)
@@ -176,7 +179,7 @@ func TestRunnerMissingHarnessFailsClosed(t *testing.T) {
 	allError(t, res.Cases, "không tìm thấy aisdlc-harness: ")
 	contains(t, r.OutputTail("DEMO-1", 5), "không tìm thấy aisdlc-harness")
 
-	vr, err := harnessVerifier{root: r.root, find: findHarness}.Verify(context.Background(), "DEMO-1", r.OutDir("DEMO-1"))
+	vr, err := harnessVerifier{root: r.root, find: missing}.Verify(context.Background(), "DEMO-1", r.OutDir("DEMO-1"))
 	must(t, err)
 	contains(t, vr.HarnessErr, "không tìm thấy aisdlc-harness: ")
 	if vr.Run.ExitCode != 2 || vr.Coverage.NA == "" {
@@ -184,26 +187,6 @@ func TestRunnerMissingHarnessFailsClosed(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(r.OutDir("DEMO-1"), "results.json")); err == nil {
 		t.Error("results.json cũ vẫn còn")
-	}
-}
-
-// Tìm binary: $AISDLC_HARNESS, rồi cạnh binary đang chạy (tên trần hoặc theo nền tảng của plugin/lib), rồi PATH.
-func TestFindHarnessOrder(t *testing.T) {
-	bin := fakeHarness(t, "exit 0")
-	t.Setenv(HarnessEnv, bin)
-	p, err := findHarness()
-	must(t, err)
-	eq(t, p, bin)
-
-	t.Setenv(HarnessEnv, "")
-	t.Setenv("PATH", filepath.Dir(bin))
-	p, err = findHarness()
-	must(t, err)
-	eq(t, p, bin)
-
-	t.Setenv("PATH", t.TempDir())
-	if _, err := findHarness(); err == nil || !strings.Contains(err.Error(), "không tìm thấy aisdlc-harness: ") {
-		t.Errorf("err = %v", err)
 	}
 }
 

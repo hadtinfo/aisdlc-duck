@@ -33,6 +33,8 @@ type Result struct {
 	Verify *VerifyResult `json:"verify,omitempty"`
 	Error  string        `json:"error,omitempty"` // lỗi trả về của Run/Verify (không ghi được out, language lạ…)
 	Panic  string        `json:"panic,omitempty"` // giá trị panic
+	// Version là phiên bản build của aisdlc-harness (buildinfo.Version); CLI từ chối kết quả khi khác bản với nó.
+	Version string `json:"version,omitempty"`
 }
 
 // WriteResult ghi out/harness-result.json.

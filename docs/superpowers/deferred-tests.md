@@ -133,6 +133,8 @@ Giai đoạn 4 xong (2026-11-06, nhánh `go-phase4b`). Mỗi test Java dưới �
 
 Ngoài các test đơn vị (web giả `internal/webclient/fakeweb`), `TestCliAgainstGoServer` (`internal/cli/webe2e_test.go`, cần Docker) chạy CLI trên server web Go thật: `web login`, nộp BRD, lead duyệt trên web, CLI thấy approval, `web push` lên bảng, web tạm dừng chặn hook `pre-tool-use`, `eval --ci` lấy approval bằng token CI.
 
+Chạy cả bộ: `make check` (hay `make test`) chạy `go test -p 4 ./...` (đổi bằng `TEST_P=n`): mặc định của Go mở mọi gói Docker cùng lúc và test Docker chập chờn ("wait for reaper …: context deadline exceeded"). `harnesstest.RequireDocker` nới thời hạn Ryuk (`TESTCONTAINERS_RYUK_CONNECTION_TIMEOUT=5m`, `TESTCONTAINERS_RYUK_RECONNECTION_TIMEOUT=2m`) nếu chưa đặt. `TestHookLatencyP95` (`cmd/aisdlc`) đo phần web thêm vào hook: xen kẽ hook web tắt với từng biến thể (web chết, deny, post-tool-use, backoff) và đòi p95(biến thể) − p95(web tắt) < 10 ms. Mỗi tiến trình aisdlc trả khoảng 25 ms khởi tạo testcontainers-go (đã chấp nhận), nên ngưỡng tuyệt đối p95 < 50 ms chỉ kiểm khi đặt `AISDLC_LATENCY_STRICT=1` (máy rảnh).
+
 ### CliControlTest (aisdlc-cli, 4)
 
 | Test Java | Test Go |

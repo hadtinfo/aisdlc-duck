@@ -63,7 +63,7 @@ type Publisher struct {
 // NewPublisher tạo Publisher cho repo root.
 func NewPublisher(root string, client func() (*Client, bool), errw io.Writer) *Publisher {
 	p := &Publisher{Root: root, Client: client, Outbox: NewOutbox(root), Err: errw}
-	p.Spawn = func() error { return SpawnFlush(root) }
+	p.Spawn = func() error { return SpawnFlush(root, "") }
 	return p
 }
 
@@ -282,6 +282,7 @@ func (p *Publisher) Drain(ctx context.Context) error {
 			var o outcome
 			err = func() error {
 				defer l.Close()
+				p.Outbox.RecoverSending() // file .sending của tiến trình gửi đã chết: trả về hàng đợi
 				for {
 					var err error
 					if o, err = p.doFlush(ctx, c, deadline); err != nil || o.stopped || o.pending == 0 {

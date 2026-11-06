@@ -179,6 +179,9 @@ func scrub(s, token string) string {
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
+// SafeURL bỏ userinfo (user:mật khẩu@) và token khỏi URL web trước khi in ra (web status, link duyệt).
+func SafeURL(s, token string) string { return safeURL(s, token) }
+
 // safeURL bỏ userinfo và token khỏi URL trước khi đưa vào thông báo lỗi.
 func safeURL(s, token string) string {
 	if u, err := neturl.Parse(s); err == nil {

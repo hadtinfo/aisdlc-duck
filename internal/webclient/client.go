@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 )
@@ -70,11 +71,17 @@ var defaultHTTP = &http.Client{Transport: &http.Transport{
 	ForceAttemptHTTP2: false,
 	MaxIdleConns:      4,
 	IdleConnTimeout:   10 * time.Second,
-}}
+}, CheckRedirect: noRedirect}
+
+// noRedirect: không theo redirect (Redirect.NEVER của Java); 3xx trả về như phản hồi thường rồi thành HTTPError.
+// Theo redirect sẽ gửi lại Bearer sang địa chỉ khác và đổi POST thành GET.
+func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func (c *Client) httpc() *http.Client {
 	if c.HTTP != nil {
-		return c.HTTP
+		cp := *c.HTTP // luôn không theo redirect, kể cả client do người gọi cấp
+		cp.CheckRedirect = noRedirect
+		return &cp
 	}
 	return defaultHTTP
 }
@@ -130,7 +137,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body []byte) (Resp
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, rd)
 	if err != nil {
-		return Response{}, fmt.Errorf("URL không hợp lệ: %s", scrub(url, c.Token))
+		return Response{}, fmt.Errorf("URL không hợp lệ: %s", safeURL(url, c.Token))
 	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
@@ -151,11 +158,15 @@ func (c *Client) Do(ctx context.Context, method, path string, body []byte) (Resp
 }
 
 func netError(c *Client, err error) error {
+	var ue *neturl.Error
+	if errors.As(err, &ue) {
+		err = ue.Err // url.Error chứa cả URL (có thể có userinfo)
+	}
 	msg := scrub(err.Error(), c.Token)
 	if errors.Is(err, context.DeadlineExceeded) {
 		msg = "hết thời gian"
 	}
-	return fmt.Errorf("Không kết nối được web %s: %s", scrub(c.BaseURL, c.Token), msg)
+	return fmt.Errorf("Không kết nối được web %s: %s", safeURL(c.BaseURL, c.Token), msg)
 }
 
 // scrub bỏ token khỏi s (phòng server hoặc thư viện phản chiếu header vào lỗi).
@@ -167,3 +178,14 @@ func scrub(s, token string) string {
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// safeURL bỏ userinfo và token khỏi URL trước khi đưa vào thông báo lỗi.
+func safeURL(s, token string) string {
+	if u, err := neturl.Parse(s); err == nil {
+		u.User = nil
+		s = u.String()
+	} else if i := strings.LastIndex(s, "@"); i >= 0 {
+		s = s[i+1:]
+	}
+	return scrub(s, token)
+}

@@ -92,3 +92,50 @@ func TestInvalidURL(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestRedirectsAreNeverFollowed(t *testing.T) {
+	for name, custom := range map[string]*http.Client{"mặc định": nil, "client người gọi": {}} {
+		var hits, authAtTarget int
+		target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits++
+			if r.Header.Get("Authorization") != "" {
+				authAtTarget++
+			}
+		}))
+		var first int
+		redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			first++
+			http.Redirect(w, r, target.URL+"/dest", http.StatusTemporaryRedirect)
+		}))
+		c := &webclient.Client{BaseURL: redir.URL, Token: "tok", HTTP: custom}
+		err := c.PostJSON(context.Background(), "/p", map[string]int{"a": 1}, nil)
+		var he *webclient.HTTPError
+		if !errors.As(err, &he) || he.Status != http.StatusTemporaryRedirect {
+			t.Errorf("%s: %v", name, err)
+		}
+		if first != 1 || hits != 0 || authAtTarget != 0 {
+			t.Errorf("%s: first=%d target=%d auth=%d", name, first, hits, authAtTarget)
+		}
+		redir.Close()
+		target.Close()
+	}
+}
+
+func TestUserinfoAndTokenNeverInErrors(t *testing.T) {
+	for _, base := range []string{"http://admin:pw-secret@127.0.0.1:1", "http://user-secret@127.0.0.1:1", "http://TOK-IN-URL@127.0.0.1:1"} {
+		c := &webclient.Client{BaseURL: base, Token: "TOK-IN-URL"}
+		err := c.GetJSON(context.Background(), "/x", nil)
+		if err == nil {
+			t.Fatal("phải lỗi")
+		}
+		for _, bad := range []string{"pw-secret", "user-secret", "admin", "TOK-IN-URL"} {
+			if strings.Contains(err.Error(), bad) {
+				t.Errorf("%s: lỗi chứa %q: %v", base, bad, err)
+			}
+		}
+	}
+	c := &webclient.Client{BaseURL: "http://u:pw-secret@host:bad port", Token: "t"}
+	if err := c.GetJSON(context.Background(), "/x", nil); err == nil || strings.Contains(err.Error(), "pw-secret") {
+		t.Errorf("URL hỏng: %v", err)
+	}
+}

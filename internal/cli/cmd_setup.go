@@ -72,7 +72,7 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool) (int, erro
 	}
 	cfg, hints := detectService(root, cfg)
 	if web {
-		cfg += "# Duyệt cổng trên web (README mục 10); bỏ dòng này để duyệt local (gates.json).\napprovals: web\n"
+		cfg += "# Duyệt cổng trên web (docs/huong-dan-su-dung.md mục 6.3); bỏ dòng này để duyệt local (gates.json).\napprovals: web\n"
 	}
 	newConfig, err := createFile(ctx, root, "aisdlc/config.yaml", cfg)
 	if err != nil {
@@ -113,7 +113,7 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool) (int, erro
 			ctx.Println("  CI cần biến AISDLC_WEB_URL và AISDLC_CI_TOKEN (Masked, Protected).")
 		} else {
 			ctx.Println("Chế độ duyệt: local (gates.json), vì máy này chưa `aisdlc web login`.")
-			ctx.Println("  Muốn duyệt trên web: thêm `approvals: web` vào aisdlc/config.yaml (README mục 10).")
+			ctx.Println("  Muốn duyệt trên web: thêm `approvals: web` vào aisdlc/config.yaml (docs/huong-dan-su-dung.md mục 6.3).")
 		}
 	}
 

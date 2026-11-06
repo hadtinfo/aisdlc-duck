@@ -239,3 +239,6 @@ func utf16Len(s string) int {
 	}
 	return n
 }
+
+// ParseInstant đọc thời điểm như Instant.parse/OffsetDateTime.parse của Java (BoardRules.doneAt dùng).
+func ParseInstant(s string) (time.Time, error) { return parseInstant(s) }

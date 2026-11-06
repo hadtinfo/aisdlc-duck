@@ -4,7 +4,9 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -15,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"aisdlc/internal/web/auth"
+	"aisdlc/internal/web/board"
 	"aisdlc/internal/web/gates"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/ingest"
@@ -50,7 +53,7 @@ type Deps struct {
 	Pool *pgxpool.Pool
 	Now  func() time.Time
 	Keys *signing.Keys // khóa ký; Run nạp trước khi listen
-	// Changed được gọi sau mỗi lần snapshot/sự kiện làm đổi một tính năng (nil-safe); Task 5 nối vào SSE.
+	// Changed được gọi (thêm vào Hub.Publish) sau mỗi lần snapshot/sự kiện làm đổi một tính năng (nil-safe).
 	Changed func(repoID, feature string)
 }
 
@@ -59,6 +62,8 @@ type services struct {
 	auth   *auth.Service
 	modes  *gates.ModeService
 	ingest *ingest.Service
+	reader *board.Reader
+	hub    *board.Hub
 }
 
 // registerRoutes là điểm các task sau thêm route.
@@ -66,16 +71,31 @@ func registerRoutes(r chi.Router, d Deps, s services) {
 	auth.Routes(r, s.auth)
 	gates.Routes(r, &gates.Handlers{Modes: s.modes, Keys: d.Keys})
 	ingest.Routes(r, s.ingest)
+	board.Routes(r, s.reader, s.hub)
 }
 
 // NewHandler dựng router chi: recover, xác thực (bọc mọi request, trước định tuyến), 404/405 JSON cho /api/*, rồi các route.
 func NewHandler(d Deps) http.Handler {
+	h, _ := build(d)
+	return h
+}
+
+// build dựng handler và trả kèm hub SSE (Run đóng hub khi Shutdown).
+func build(d Deps) (*chi.Mux, *board.Hub) {
 	if d.Now == nil {
 		d.Now = func() time.Time { return time.Now().UTC() }
 	}
 	a := &auth.Service{Pool: d.Pool, Now: d.Now}
+	reader := &board.Reader{Pool: d.Pool, Now: d.Now} // Gates (Task 6), Control (Task 8) gắn sau
+	hub := board.NewHub(reader)
+	changed := func(repoID, feature string) {
+		hub.Publish(repoID, feature)
+		if d.Changed != nil {
+			d.Changed(repoID, feature)
+		}
+	}
 	s := services{auth: a, modes: &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a},
-		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: d.Changed}}
+		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed}, reader: reader, hub: hub}
 	r := chi.NewRouter()
 	r.Use(Recoverer)
 	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody
@@ -99,7 +119,7 @@ func NewHandler(d Deps) http.Handler {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 	})
 	registerRoutes(r, d, s)
-	return r
+	return r, hub
 }
 
 func isAPI(req *http.Request) bool {
@@ -121,21 +141,51 @@ func allowed(mux *chi.Mux, req *http.Request) string {
 	return strings.Join(out, ",")
 }
 
-// Recoverer biến panic thành 500 {"error":"internal"} và ghi log.
+// Recoverer biến panic thành 500 {"error":"internal"} và ghi log. Phản hồi đã bắt đầu (header đã gửi, vd. SSE) thì
+// không ghi thêm 500 mà hủy kết nối (http.ErrAbortHandler), để client thấy phản hồi bị cắt chứ không nhận body lẫn lộn.
 func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tw := &trackingWriter{ResponseWriter: w}
 		defer func() {
 			if v := recover(); v != nil {
 				if v == http.ErrAbortHandler {
 					panic(v)
 				}
 				log.Printf("web: panic %s %s: %v\n%s", r.Method, r.URL.Path, v, debug.Stack())
+				if tw.started {
+					panic(http.ErrAbortHandler)
+				}
 				httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 			}
 		}()
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(tw, r)
 	})
 }
+
+// trackingWriter ghi nhận phản hồi đã bắt đầu; Unwrap/Flush để http.ResponseController và SSE vẫn tới writer gốc.
+type trackingWriter struct {
+	http.ResponseWriter
+	started bool
+}
+
+func (t *trackingWriter) WriteHeader(code int) {
+	if code >= 200 || code == http.StatusSwitchingProtocols {
+		t.started = true
+	}
+	t.ResponseWriter.WriteHeader(code)
+}
+
+func (t *trackingWriter) Write(b []byte) (int, error) {
+	t.started = true
+	return t.ResponseWriter.Write(b)
+}
+
+func (t *trackingWriter) Flush() {
+	t.started = true
+	_ = http.NewResponseController(t.ResponseWriter).Flush()
+}
+
+func (t *trackingWriter) Unwrap() http.ResponseWriter { return t.ResponseWriter }
 
 // Run mở DB, migrate, phục vụ HTTP cho đến khi ctx hủy rồi Shutdown (tối đa 10s).
 func Run(ctx context.Context, cfg Config) error {
@@ -152,19 +202,41 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := store.Migrate(ctx, pool); err != nil {
 		return err
 	}
-	srv := &http.Server{Addr: cfg.Listen, Handler: NewHandler(Deps{Pool: pool, Keys: keys}), ReadHeaderTimeout: 10 * time.Second,
+	h, hub := build(Deps{Pool: pool, Keys: keys})
+	srv := &http.Server{Addr: cfg.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout: 120 * time.Second} // không đặt WriteTimeout: SSE
+	ln, err := net.Listen("tcp", cfg.Listen)
+	if err != nil {
+		return err
+	}
+	return serve(ctx, srv, ln, hub, ShutdownTimeout)
+}
+
+// ShutdownTimeout là thời gian tối đa chờ request đang chạy khi tắt.
+const ShutdownTimeout = 10 * time.Second
+
+// serve phục vụ trên ln cho đến khi ctx hủy, rồi Shutdown: hub đóng mọi stream SSE ngay (RegisterOnShutdown), request
+// thường được chờ tối đa timeout; quá hạn thì Close cưỡng bức.
+func serve(ctx context.Context, srv *http.Server, ln net.Listener, hub *board.Hub, timeout time.Duration) error {
+	if hub != nil {
+		srv.RegisterOnShutdown(hub.Close)
+	}
 	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
+	go func() { errc <- srv.Serve(ln) }()
 	select {
 	case err := <-errc:
+		if hub != nil {
+			hub.Close()
+		}
 		return err
 	case <-ctx.Done():
 	}
-	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	sctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if err := srv.Shutdown(sctx); err != nil {
-		return err
+		_ = srv.Close()
+		<-errc
+		return fmt.Errorf("web: tắt server quá hạn %v, đã đóng cưỡng bức: %w", timeout, err)
 	}
 	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err

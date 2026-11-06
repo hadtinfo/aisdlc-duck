@@ -1,5 +1,7 @@
 # AISDLC user guide
 
+> Tiếng Việt: [huong-dan-su-dung.md](huong-dan-su-dung.md).
+
 Updated: 2026-11-06
 
 ## 1. What AISDLC is

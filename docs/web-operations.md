@@ -1,5 +1,7 @@
 # Operating the AISDLC web server
 
+> Tiếng Việt: [van-hanh-web.md](van-hanh-web.md).
+
 For whoever deploys `aisdlc-web`. How devs use the web: section 6 of [user-guide.md](user-guide.md).
 
 ## 1. Components

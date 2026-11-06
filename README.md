@@ -31,6 +31,8 @@ BRD ──▶ Design ──▶ Cases ──▶ Code step by step S1…Sn ──�
 
 > **Language note:** the CLI messages, slash-command prompts and web UI are currently in Vietnamese. The documentation
 > is in English. Contributions that add English localisation are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+> Vietnamese documentation: [README.vi.md](README.vi.md), [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md),
+> [docs/van-hanh-web.md](docs/van-hanh-web.md).
 
 ## Components
 

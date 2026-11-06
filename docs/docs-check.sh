@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Kiểm tài liệu: chạy mọi khối ```bash có dòng `# runnable` trong docs/user-guide.md trên repo tạm dựng từ
+# Kiểm tài liệu: chạy mọi khối ```bash có dòng `# runnable` (hoặc `# chạy-được`) trong tài liệu chỉ định
+# (mặc định docs/user-guide.md; vd. `docs/docs-check.sh docs/huong-dan-su-dung.md`) trên repo tạm dựng từ
 # e2e/fixture-service, với binary vừa build và HOME tạm. Các khối chạy lần lượt trong cùng một repo. Khối nào lỗi
 # thì fail. Cuối cùng soát tài liệu không còn nhắc công cụ Java.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
-DOC="$ROOT/docs/user-guide.md"
+DOC="$(readlink -f "${1:-$ROOT/docs/user-guide.md}")"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -15,13 +16,13 @@ mkdir -p "$TMP/bin" "$TMP/home" "$TMP/blocks"
 awk -v dir="$TMP/blocks" '
   /^```bash[ \t]*$/ && !inb { inb = 1; keep = 0; buf = ""; next }
   /^```[ \t]*$/ && inb { inb = 0; if (keep) { n++; f = sprintf("%s/%02d.sh", dir, n); printf "%s", buf > f; close(f) } next }
-  inb { buf = buf $0 "\n"; if ($0 ~ /# runnable/) keep = 1 }
+  inb { buf = buf $0 "\n"; if ($0 ~ /# (runnable|chạy-được)/) keep = 1 }
 ' "$DOC"
 
 shopt -s nullglob
 blocks=("$TMP"/blocks/*.sh)
 if [ "${#blocks[@]}" -eq 0 ]; then
-  echo "docs-check: không có khối nào đánh dấu '# runnable' trong $DOC" >&2
+  echo "docs-check: không có khối nào đánh dấu '# runnable' hoặc '# chạy-được' trong $DOC" >&2
   exit 1
 fi
 
@@ -56,7 +57,7 @@ done
 [ "$fail" -eq 0 ] || exit 1
 
 # Không còn nhắc công cụ Java (trừ docs/legacy-java/).
-if grep -niE 'mvn|maven|junit|jacoco|flyway|src/main/java|pom\.xml' "$ROOT"/docs/*.md "$ROOT/README.md"; then
+if grep -niE 'mvn|maven|junit|jacoco|flyway|src/main/java|pom\.xml' "$ROOT"/docs/*.md "$ROOT"/README*.md; then
   echo "docs-check: tài liệu còn nhắc công cụ Java" >&2
   exit 1
 fi

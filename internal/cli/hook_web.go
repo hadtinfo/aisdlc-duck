@@ -206,6 +206,10 @@ func (h *hook) claimInstructions(root string) (text string) {
 			text = ""
 		}
 	}()
+	// đường nhanh: chưa có thư mục điều khiển thì không có cache, không có cờ inbox để dọn (khỏi resolve tính năng)
+	if !exists(controlDir(root)) {
+		return ""
+	}
 	key := model.FeatureKey("")
 	if r, err := h.resolve(root); err == nil {
 		key = activeKey(root, r)

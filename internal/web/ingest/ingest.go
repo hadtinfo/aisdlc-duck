@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"aisdlc/internal/web/httpx"
+	"aisdlc/internal/web/store"
 )
 
 // MaxBytes là giới hạn thân request ingest.
@@ -134,6 +135,5 @@ func (s *Service) PurgeOld(ctx context.Context) (int64, error) {
 
 // lockFeature là khóa giao dịch theo tính năng, cùng khóa với nộp/duyệt (GateRepository.lock).
 func lockFeature(ctx context.Context, tx pgx.Tx, repo, feature string) error {
-	_, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1 || chr(10) || $2, 0))", repo, feature)
-	return err
+	return store.LockFeature(ctx, tx, repo, feature)
 }

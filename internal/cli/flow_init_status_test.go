@@ -157,6 +157,28 @@ func TestInitJiraUnreachableWarnsAndContinues(t *testing.T) {
 	eq(t, readMeta(t, r, "PAY-1").Title, "PAY-1")
 }
 
+// Jira trả 3xx: không theo redirect (Bearer không bị gửi sang địa chỉ khác); chỉ cảnh báo HTTP 302 rồi tiếp tục.
+func TestInitJiraRedirectIsNotFollowed(t *testing.T) {
+	hit := make(chan string, 4)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit <- r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"fields":{"summary":"lạ"}}`))
+	}))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.RequestURI(), http.StatusFound)
+	}))
+	defer srv.Close()
+	r := newTestRepo(t)
+	r.env["JIRA_URL"] = srv.URL
+	r.env["JIRA_TOKEN"] = "tok"
+	r.run("setup")
+	eq(t, r.run("init", "PAY-1"), 0)
+	contains(t, r.err, "Cảnh báo: Jira trả HTTP 302 cho PAY-1, bỏ qua kiểm tra ticket Jira.")
+	eq(t, len(hit), 0)
+	eq(t, readMeta(t, r, "PAY-1").Title, "PAY-1")
+}
+
 func TestUseSwitchesActiveFeature(t *testing.T) {
 	r := newTestRepo(t)
 	r.run("setup")

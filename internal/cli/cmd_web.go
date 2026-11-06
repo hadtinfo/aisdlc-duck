@@ -60,7 +60,7 @@ func webStatus(ctx *Context) (int, error) {
 	}
 	web := "tắt"
 	if c, ok := LoadWebConfig(ctx); ok {
-		web = c.URL
+		web = webclient.SafeURL(c.URL, c.Token) // không in userinfo (user:mật khẩu@) hay token
 	}
 	ob := webclient.NewOutbox(root)
 	last, ok := webclient.LastOK(root)
@@ -118,10 +118,13 @@ func errText(err error) string {
 
 // newWebFlushCmd: tiến trình gửi nền do hook mở (WebCommand.flush). Gửi hết outbox (tối đa 5 giây), rồi làm mới chế
 // độ, trạng thái cổng của tính năng đang làm (chế độ web), điều khiển từ web (cả chế độ local) và chính sách rủi ro:
-// hook không gọi mạng nên cache được làm mới ở đây. Không in gì (kể cả cảnh báo cấu hình và lỗi gửi), luôn exit 0.
+// hook không gọi mạng nên cache được làm mới ở đây. `--feature KEY` (ẩn, hook truyền tính năng của phiên) làm mới
+// thêm tính năng đó ngoài .aisdlc/active. Không phân tích cờ (DisableFlagParsing): đối số lạ hay sai đều bị bỏ qua.
+// Không in gì (kể cả cảnh báo cấu hình và lỗi gửi), luôn exit 0.
 func newWebFlushCmd(ctx *Context) *cobra.Command {
 	return &cobra.Command{Use: "flush", Short: "Gửi outbox ở nền (hook dùng).", Hidden: true, Args: cobra.ArbitraryArgs,
-		RunE: Wrap(ctx, func(*cobra.Command, []string) (int, error) {
+		DisableFlagParsing: true,
+		RunE: Wrap(ctx, func(_ *cobra.Command, args []string) (int, error) {
 			defer func() { _ = recover() }()
 			ctx.out, ctx.err = io.Discard, io.Discard // tiến trình nền: im lặng
 			root, ok := FindRepo(ctx.Cwd())
@@ -129,14 +132,35 @@ func newWebFlushCmd(ctx *Context) *cobra.Command {
 				return ExitOK, nil
 			}
 			_ = ctx.newPublisher(root, io.Discard, false).Drain(ctx.Std())
-			flushRefresh(ctx, root)
+			flushRefresh(ctx, root, flushFeatureArg(args))
 			return ExitOK, nil
 		})}
 }
 
-// flushRefresh làm mới chế độ, trạng thái cổng của tính năng đang làm (chế độ web), điều khiển từ web và chính sách
-// từ web; im lặng.
-func flushRefresh(ctx *Context, root string) {
+// flushFeatureArg là KEY của `--feature KEY` hoặc `--feature=KEY` trong args ("" nếu không có hay không hợp lệ).
+func flushFeatureArg(args []string) model.FeatureKey {
+	for i, a := range args {
+		v, ok := "", false
+		if a == "--feature" && i+1 < len(args) {
+			v, ok = args[i+1], true
+		} else if after, found := strings.CutPrefix(a, "--feature="); found {
+			v, ok = after, true
+		}
+		if !ok {
+			continue
+		}
+		if k, err := model.ParseFeatureKey(v); err == nil {
+			return k
+		}
+		return ""
+	}
+	return ""
+}
+
+// flushRefresh làm mới chế độ, trạng thái cổng (chế độ web) và điều khiển từ web của tính năng đang làm
+// (.aisdlc/active) và của extra (tính năng của phiên đã mở tiến trình này, có thể khác active), rồi chính sách từ
+// web; im lặng.
+func flushRefresh(ctx *Context, root string, extra model.FeatureKey) {
 	defer func() { _ = recover() }()
 	w := NewWebCache(ctx, root)
 	if _, ok := w.Config(); !ok || !w.LoggedIn() {
@@ -147,7 +171,17 @@ func flushRefresh(ctx *Context, root string) {
 		return
 	}
 	w.RefreshMode(cfg)
-	if k, ok, err := model.ReadActive(root); err == nil && ok && exists(model.FeaturePaths{RepoRoot: root, Key: k}.Meta()) {
+	var keys []model.FeatureKey
+	if k, ok, err := model.ReadActive(root); err == nil && ok {
+		keys = append(keys, k)
+	}
+	if extra != "" && (len(keys) == 0 || keys[0] != extra) {
+		keys = append(keys, extra)
+	}
+	for _, k := range keys {
+		if !exists(model.FeaturePaths{RepoRoot: root, Key: k}.Meta()) {
+			continue
+		}
 		if w.CachedMode(cfg) == gate.ModeWeb {
 			w.Refresh(k)
 		}

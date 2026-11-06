@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,12 +22,41 @@ const SkipEnv = "AISDLC_SKIP_DOCKER"
 // Skipping cho biết AISDLC_SKIP_DOCKER=1.
 func Skipping() bool { return os.Getenv(SkipEnv) == "1" }
 
+// Thời hạn của Ryuk (container dọn dẹp của testcontainers) khi chạy test: `go test ./...` chạy nhiều gói Docker song
+// song và các gói dùng chung một Ryuk (cùng session = cùng tiến trình cha). Mặc định (kết nối 1 phút, kết nối lại 10
+// giây) thì khi máy bận, Ryuk do gói trước mở có thể đã hết hạn và đang thoát lúc gói sau tìm thấy nó → "wait for
+// reaper …: context deadline exceeded". Biến môi trường đặt sẵn (vd. từ Makefile hay CI) thì giữ nguyên.
+const (
+	ryukConnectionTimeout   = "5m"
+	ryukReconnectionTimeout = "2m"
+)
+
+var tuneOnce sync.Once
+
+// TuneTestcontainers đặt TESTCONTAINERS_RYUK_CONNECTION_TIMEOUT và TESTCONTAINERS_RYUK_RECONNECTION_TIMEOUT (nếu
+// chưa đặt) trước lần dùng testcontainers đầu tiên của tiến trình test (testcontainers đọc cấu hình một lần).
+// RequireDocker gọi nó; chỉ dùng trong test, không đụng binary aisdlc.
+func TuneTestcontainers() { tuneOnce.Do(setRyukDefaults) }
+
+// setRyukDefaults đặt các thời hạn Ryuk chưa đặt (testcontainers nhận cả tên không tiền tố TESTCONTAINERS_).
+func setRyukDefaults() {
+	for k, v := range map[string]string{
+		"TESTCONTAINERS_RYUK_CONNECTION_TIMEOUT":   ryukConnectionTimeout,
+		"TESTCONTAINERS_RYUK_RECONNECTION_TIMEOUT": ryukReconnectionTimeout,
+	} {
+		if os.Getenv(k) == "" && os.Getenv(strings.TrimPrefix(k, "TESTCONTAINERS_")) == "" {
+			_ = os.Setenv(k, v)
+		}
+	}
+}
+
 // RequireDocker bỏ qua test khi AISDLC_SKIP_DOCKER=1; Docker không tới được thì test fail (không tự skip).
 func RequireDocker(t *testing.T) {
 	t.Helper()
 	if Skipping() {
 		t.Skip(SkipEnv + "=1")
 	}
+	TuneTestcontainers()
 	if err := Ping(); err != nil {
 		t.Fatalf("cần Docker cho test harness: %v; đặt AISDLC_SKIP_DOCKER=1 để bỏ qua", err)
 	}

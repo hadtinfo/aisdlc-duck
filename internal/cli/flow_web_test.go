@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/snapshot"
@@ -244,4 +245,49 @@ func TestWebModeRiskSetSendsOverrideAndReclassifyNeedsApproveToken(t *testing.T)
 	eq(t, r.runC(typed("PAY-1"), "risk", "reclassify"), 2)
 	contains(t, r.err, "Chưa có token approve. Duyệt trên web: "+web.URL()+"/f/", "?g=CASES")
 	eq(t, len(web.RequestsFor("POST", "/api/gates/reopen")), 0)
+}
+
+// Chế độ web, có token approve: `risk reclassify` khi cổng Case đã duyệt trên web gửi /api/gates/reopen bằng token
+// approve, nhận phong bì mới (Case không còn duyệt) và ghi risk.yaml.
+func TestWebModeReclassifyReopensCasesWithApproveToken(t *testing.T) {
+	r, web := flowWeb(t, true)
+	r.okRun("submit", "brd")
+	serverAutoBRD(web)
+	r.okRun("submit", "design")
+	web.Update(func(s *fakeweb.Server) {
+		s.State.Approvals = append(s.State.Approvals, snapshot.Appr{Gate: "CASES", Hash: "h", Approver: "dev",
+			At: fakeweb.T, Channel: "web"})
+	})
+	r.ok(noConsole(), "status")
+	must(t, webclient.SaveApproveToken(r.env["HOME"], "appr-tok"))
+	// phong bì server trả cho reopen: bỏ approval CASES, issuedAt mới hơn
+	var payload []byte
+	web.Update(func(s *fakeweb.Server) {
+		st := s.State
+		var keep []snapshot.Appr
+		for _, a := range st.Approvals {
+			if a.Gate != "CASES" {
+				keep = append(keep, a)
+			}
+		}
+		st.Approvals, st.IssuedAt = keep, fakeweb.T.Add(time.Minute)
+		var err error
+		payload, err = st.ToJSON()
+		must(t, err)
+	})
+	reopened := web.Envelope(payload) // Envelope tự giữ khóa của server: gọi ngoài Update
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/gates/reopen"] = fakeweb.Resp{Status: 200, Body: reopened}
+	})
+	if code := r.runC(typed("PAY-1"), "risk", "reclassify"); code != 0 {
+		t.Fatalf("exit %d\n%s%s", code, r.out, r.err)
+	}
+	contains(t, r.out, "Cổng Case đã duyệt: lệnh này sẽ mở lại cổng Case.", "Cổng Case đã mở lại")
+	qs := web.RequestsFor("POST", "/api/gates/reopen")
+	eq(t, len(qs), 1)
+	eq(t, qs[0].Auth, "Bearer appr-tok")
+	eq(t, qs[0].Field("gate"), "CASES")
+	eq(t, qs[0].Field("channel"), "terminal")
+	notContains(t, r.out+r.err, "appr-tok")
+	eq(t, r.exists("aisdlc/features/PAY-1/risk.yaml"), true)
 }

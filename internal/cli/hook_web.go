@@ -40,7 +40,16 @@ func (h *hook) emit(root string, e webclient.Event) {
 	if e.Sender == "" {
 		e.Sender = webclient.Sender(h.ctx.Git(root))
 	}
+	h.setFlushFeature(root)
 	h.ctx.Publisher(root).Emit(e)
+}
+
+// setFlushFeature: tiến trình `web flush` nền mở từ hook này làm mới cả tính năng của phiên (phân giải theo
+// session_id của hook), không chỉ .aisdlc/active — nhiều phiên song song mỗi phiên một tính năng.
+func (h *hook) setFlushFeature(root string) {
+	if r, err := h.resolve(root); err == nil {
+		h.ctx.flushFeature = activeKey(root, r)
+	}
 }
 
 func (h *hook) webEnabled(root string) bool { return h.ctx.Publisher(root).Enabled() }
@@ -304,6 +313,7 @@ func (h *hook) spawn(root, mark string) {
 	}
 	now := h.ctx.now()
 	_ = os.Chtimes(mark, now, now)
+	h.setFlushFeature(root)
 	_ = h.ctx.SpawnFlush(root)
 }
 

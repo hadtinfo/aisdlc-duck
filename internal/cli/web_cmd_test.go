@@ -355,6 +355,17 @@ func (g *gatesFx) overrideAll(paths []string, status int, body string) {
 	})
 }
 
+// `web status` không in userinfo (user:mật khẩu@) của URL web.
+func TestWebStatusStripsUserinfo(t *testing.T) {
+	r := newTestRepo(t)
+	r.ok(noConsole(), "setup")
+	r.env["AISDLC_WEB_URL"] = "http://alice:s3cret@127.0.0.1:1"
+	r.env["AISDLC_WEB_TOKEN"] = "x"
+	eq(t, r.run("web", "status"), 0)
+	contains(t, r.out, "Web: http://127.0.0.1:1")
+	notContains(t, r.out+r.err, "alice", "s3cret")
+}
+
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	return lines[len(lines)-1]

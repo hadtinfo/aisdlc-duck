@@ -156,6 +156,8 @@ func jiraSummary(ctx *Context, k model.FeatureKey) (string, error) {
 	client := &http.Client{
 		Timeout:   10 * time.Second,
 		Transport: &http.Transport{DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext},
+		// không theo redirect: theo sẽ gửi lại Bearer sang địa chỉ khác; 3xx thành cảnh báo "Jira trả HTTP 3xx"
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	resp, err := client.Do(req)
 	if err != nil {

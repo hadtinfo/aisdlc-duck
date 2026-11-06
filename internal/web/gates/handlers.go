@@ -18,7 +18,8 @@ type Handlers struct {
 }
 
 // Routes đăng ký GET /api/cli/pubkey, POST /api/cli/mode, GET /api/repos, POST /api/repos/mode, và (khi có Gates)
-// POST /api/cli/submissions, GET /api/cli/gates, POST /api/gates/{approve,reject,reopen,confirm-import}.
+// POST /api/cli/submissions, GET /api/cli/gates, POST /api/gates/{approve,reject,reopen,confirm-import},
+// POST /api/cli/import, GET /api/ci/approvals.
 func Routes(r chi.Router, h *Handlers) {
 	r.Get("/api/cli/pubkey", h.pubkey)
 	r.Post("/api/cli/mode", h.mode)

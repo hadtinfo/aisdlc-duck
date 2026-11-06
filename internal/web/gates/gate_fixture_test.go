@@ -89,6 +89,7 @@ type feat struct {
 	text                map[string]string
 	evalJSON, stepsJSON string
 	tree                string // "" = không gửi
+	cardsJSON           string // reviewCards; "" = không gửi
 }
 
 func (f *gfx) feat(t *testing.T, repo, key, flow string) *feat {
@@ -127,6 +128,9 @@ func (ft *feat) push() {
 	if ft.tree != "" {
 		s["tree"] = ft.tree
 	}
+	if ft.cardsJSON != "" {
+		s["reviewCards"] = json.RawMessage(ft.cardsJSON)
+	}
 	b, _ := json.Marshal(s)
 	r := ft.f.w.PostBearer("/api/ingest/snapshot", string(b), ft.f.ingest)
 	if r.Status != 200 || r.JSON(t)["accepted"] != true {
@@ -142,6 +146,30 @@ func (ft *feat) submissionBody(gate, findingsJSON string) string {
 
 func (ft *feat) submit(gate, findingsJSON string) webtest.Resp {
 	return ft.f.w.PostBearer("/api/cli/submissions", ft.submissionBody(gate, findingsJSON), ft.f.ingest)
+}
+
+// submitWithRisk nộp sạch kèm risk.level (mức trong risk.yaml).
+func (ft *feat) submitWithRisk(gate, level string) webtest.Resp {
+	b := ft.submissionBody(gate, "[]")
+	b = b[:strings.LastIndex(b, "}")] + `,"risk":{"level":"` + level + `"}}`
+	return ft.f.w.PostBearer("/api/cli/submissions", b, ft.f.ingest)
+}
+
+// importPolicy: chính sách đầu tiên của repo (phiên bản 1), như POST /api/cli/policy/import (Task 9) lưu.
+func (ft *feat) importPolicy(yaml string) {
+	ft.t.Helper()
+	ft.f.exec(ft.t, "INSERT INTO risk_policy_versions(repo_id, version, body, hash, author, reason, source) "+
+		"VALUES ($1, 1, $2, 'sha256:x', $3, 'import', 'import')", ft.repo, yaml, ft.f.owner)
+}
+
+// riskEvent gửi một sự kiện rủi ro của tính năng (Bearer ingest).
+func (ft *feat) riskEvent(typ, detailJSON string) {
+	ft.t.Helper()
+	b, _ := json.Marshal(map[string]any{"repoId": ft.repo, "events": []any{map[string]any{"type": typ,
+		"at": time.Now().UTC().Format(time.RFC3339Nano), "feature": ft.key, "detail": detailJSON}}})
+	if r := ft.f.w.PostBearer("/api/ingest/events", string(b), ft.f.ingest); r.Status != 200 {
+		ft.t.Fatal("events", r.Status, r.Body)
+	}
 }
 
 func (ft *feat) submitOk(gate string) {

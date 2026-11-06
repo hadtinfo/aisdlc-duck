@@ -91,6 +91,7 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 	hub := board.NewHub(reader)
 	modes := &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a}
 	gs := &gates.Service{Pool: d.Pool, Keys: d.Keys, Modes: modes, Auth: a, Hub: hub, Now: d.Now}
+	gs.AfterSubmit = gs.AutoApprove // tự duyệt theo mức rủi ro, trong tx nộp
 	reader.Gates = gs
 	changed := func(repoID, feature string) {
 		hub.Publish(repoID, feature)
@@ -99,7 +100,8 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 		}
 	}
 	s := services{auth: a, modes: modes, gates: gs,
-		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed}, reader: reader, hub: hub}
+		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed, RiskChanged: gs.OnRiskChanged}, // thay thế bản tự duyệt, trong tx ingest
+		reader: reader, hub: hub}
 	r := chi.NewRouter()
 	r.Use(Recoverer)
 	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody

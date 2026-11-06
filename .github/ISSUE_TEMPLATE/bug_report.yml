@@ -1,0 +1,43 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug, needs-triage]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands you ran (`aisdlc ...`, `/aisdlc:...`), the flow (full or lite) and the gate/step involved.
+      placeholder: |
+        1. aisdlc init PAY-1 --lite
+        2. /aisdlc:cases
+        3. ...
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output / logs
+      description: Relevant output. Remove tokens, URLs and anything private before pasting.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release tag or commit (`git -C <aisdlc checkout> rev-parse --short HEAD`).
+    validations: { required: true }
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [CLI / hooks, harness / cases / eval, plugin (slash commands), web server, web UI, docs, other]
+    validations: { required: true }
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS and arch, Go version, Docker version, Claude Code version.

@@ -38,7 +38,7 @@ OS="$(uname -s | tr 'A-Z' 'a-z')"
 case "$(uname -m)" in x86_64|amd64) ARCH=amd64 ;; aarch64|arm64) ARCH=arm64 ;; *) ARCH="$(uname -m)" ;; esac
 NAME="aisdlc-$OS-$ARCH"
 # install.sh kiểm đủ cả hai binary cho nền tảng hiện tại (go giả: chỉ tạo file theo "-o" khi tên khớp $MAKE_BINS)
-I="$(mktemp -d)"; mkdir -p "$I/root/plugin/bin" "$I/fake" "$I/home"; cp "$P/install.sh" "$I/root/plugin/"; cp "$P/bin/aisdlc" "$I/root/plugin/bin/"
+I="$(mktemp -d)"; mkdir -p "$I/root/plugin/bin" "$I/root/cmd/aisdlc" "$I/fake" "$I/home"; cp "$P/install.sh" "$I/root/plugin/"; cp "$P/bin/aisdlc" "$I/root/plugin/bin/"
 cat > "$I/fake/go" <<'GO'
 #!/usr/bin/env bash
 while [ $# -gt 0 ]; do

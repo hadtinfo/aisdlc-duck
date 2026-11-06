@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/hadtinfo/aisdlc-duck/discussions
+    about: Ask usage questions and discuss ideas here instead of opening an issue.
+  - name: Security vulnerability
+    url: https://github.com/hadtinfo/aisdlc-duck/security/advisories/new
+    about: Report vulnerabilities privately. Do not open a public issue.

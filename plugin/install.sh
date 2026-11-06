@@ -7,7 +7,7 @@ cd "$ROOT"
 # Nền tảng như plugin/bin/aisdlc chọn binary lúc chạy.
 OS="$(uname -s | tr 'A-Z' 'a-z')"
 case "$(uname -m)" in x86_64|amd64) ARCH=amd64 ;; aarch64|arm64) ARCH=arm64 ;; *) ARCH="$(uname -m)" ;; esac
-if command -v go >/dev/null 2>&1; then
+if command -v go >/dev/null 2>&1 && [ -d cmd/aisdlc ]; then  # bản release (không có mã nguồn) dùng sẵn plugin/lib
   mkdir -p plugin/lib
   CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" go build -o "plugin/lib/aisdlc-$OS-$ARCH" ./cmd/aisdlc
   CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" go build -o "plugin/lib/aisdlc-harness-$OS-$ARCH" ./cmd/aisdlc-harness

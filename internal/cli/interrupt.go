@@ -7,8 +7,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-
-	"aisdlc/internal/harness"
 )
 
 // ExitInterrupted là mã thoát khi dev hủy lệnh bằng Ctrl-C/SIGTERM lúc harness chạy (128 + SIGINT).
@@ -35,7 +33,7 @@ func OSInterrupts() *Interrupts {
 			signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 			return ch, func() { signal.Stop(ch) }
 		},
-		Kill: harness.KillServices,
+		Kill: KillHarness,
 		Exit: os.Exit,
 	}
 }

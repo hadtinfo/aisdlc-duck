@@ -100,8 +100,8 @@ func NewContext(in io.Reader, out, errw io.Writer, console DevConsole, cwd strin
 		network: true,
 		banner:  true,
 	}
-	c.runner = func(root string, cfg model.RepoConfig) CaseRunner { return newHarnessRunner(c.std, root, cfg, c.now) }
-	c.verifier = func(root string, cfg model.RepoConfig) eval.Verifier { return newHarnessVerifier(root, cfg, c.now) }
+	c.runner = func(root string, cfg model.RepoConfig) CaseRunner { return newHarnessRunner(c.std, root, cfg) }
+	c.verifier = func(root string, cfg model.RepoConfig) eval.Verifier { return newHarnessVerifier(root, cfg) }
 	return c
 }
 

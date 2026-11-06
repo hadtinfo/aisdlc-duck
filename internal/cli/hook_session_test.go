@@ -70,7 +70,7 @@ func TestNoEnvFileIsSilent(t *testing.T) {
 func TestScopeCheckedAgainstSessionFeature(t *testing.T) {
 	r := newTestRepo(t)
 	r.twoFeaturesS1Open()
-	file := filepath.Join(r.root, "src/main/java/com/example/other/Nope.java")
+	file := filepath.Join(r.root, "internal/other/nope.go")
 	r.hook("pre-tool-use", sessionIn(r.root, "a", "Write", "file_path", file))
 	o := hookSpecific(t, r.out)
 	eq(t, str(o, "permissionDecision"), "deny")

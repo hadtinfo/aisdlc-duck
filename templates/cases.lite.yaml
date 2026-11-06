@@ -1,4 +1,4 @@
-scope: ["src/main/java/**/limit/**"]
+scope: ["internal/limit/handler/*.go"]
 budget: { files: 3, lines: 120 }
 # Đánh giá tác động (luồng lite không có design.yaml): xem `aisdlc policy show` để chọn level và labels.
 impact: { level: low, labels: [], reason: "Thay đổi nhỏ, không ghi dữ liệu tiền hay trạng thái." }

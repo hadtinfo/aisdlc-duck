@@ -144,8 +144,8 @@ func TestHighFlagNoAuto(t *testing.T) {
 	r.assertAuto(gate.BRD, "low")
 	// S2 chồng phạm vi với S1: review card có cờ SCOPE_OVERLAP mức HIGH
 	d := r.read(designFile)
-	r.write(designFile, regexp.MustCompile(regexp.QuoteMeta(`scope: ["src/main/java/**/limit/service/**"`)).
-		ReplaceAllLiteralString(d, `scope: ["src/main/java/**/limit/web/**", "src/main/java/**/limit/service/**"`))
+	r.write(designFile, regexp.MustCompile(regexp.QuoteMeta(`scope: ["internal/limit/service/**"`)).
+		ReplaceAllLiteralString(d, `scope: ["internal/limit/handler/**", "internal/limit/service/**"`))
 	r.ok(noConsole(), "review", "design", "--json")
 	contains(t, r.out, `"SCOPE_OVERLAP"`, `"HIGH"`)
 
@@ -295,7 +295,7 @@ func TestLowFeatureStepsAutoAcceptedReviewManual(t *testing.T) {
 		r.ok(noConsole(), "step", "start", id)
 		file := s1File
 		if id == "S2" {
-			file = "src/main/java/com/example/limit/service/LimitService.java"
+			file = "internal/limit/service/limit_service.go"
 		}
 		r.write(file, "class X"+id+" {}\n")
 		r.runner.cases = passing("C1", "C2")
@@ -312,7 +312,7 @@ func TestStepAutoAcceptWhenClean(t *testing.T) {
 	r := flowRepo(t)
 	r.lowThroughCases()
 	r.ok(noConsole(), "step", "start", "S1")
-	r.write(s1File, "class LimitController {}\n")
+	r.write(s1File, "package handler\n")
 	r.runner.cases = passing("C1")
 	r.ok(noConsole(), "step", "finish", "S1")
 	contains(t, r.out, "Đã chấp nhận bước S1: tự duyệt (mức low).", "Bước kế: `aisdlc step start S2`.")
@@ -333,11 +333,11 @@ func TestStepWithAllowScopeNeedsDev(t *testing.T) {
 	r := flowRepo(t)
 	r.lowThroughCases()
 	r.ok(noConsole(), "step", "start", "S1")
-	r.write(s1File, "class LimitController {}\n")
-	r.write("src/main/java/com/example/Shared.java", "class Shared {}\n") // ngoài phạm vi S1
+	r.write(s1File, "package handler\n")
+	r.write("internal/shared/shared.go", "package shared\n") // ngoài phạm vi S1
 	r.runner.cases = passing("C1")
 	eq(t, r.run("step", "finish", "S1"), 1)
-	r.ok(typed("PAY-1"), "scope", "allow", "src/main/java/com/example/Shared.java")
+	r.ok(typed("PAY-1"), "scope", "allow", "internal/shared/shared.go")
 	r.ok(noConsole(), "step", "start", "S1")
 	r.ok(noConsole(), "step", "finish", "S1")
 	contains(t, r.out, "Dừng lại. Dev xem rồi chạy `aisdlc step accept S1`")
@@ -350,7 +350,7 @@ func TestStepCasesFailNoAutoAccept(t *testing.T) {
 	r.lowThroughCases()
 	eq(t, r.risk().Flow["step"], "auto")
 	r.ok(noConsole(), "step", "start", "S1")
-	r.write(s1File, "class LimitController {}\n")
+	r.write(s1File, "package handler\n")
 	r.runner.cases = func([]string) []run.CaseResult {
 		return []run.CaseResult{caseResult("C1", "S1", run.CaseOutcomeFailed)}
 	}
@@ -424,7 +424,7 @@ func TestStepFinishSupersedesStaleAutoGates(t *testing.T) {
 	p, err := risk.ParsePolicy(r.read(policyFile))
 	must(t, err)
 	must(t, r.risk().WithOverride(p, "high", "Dev Một", "r", testNow).Write(filepath.Join(r.root, riskFile)))
-	r.write(s1File, "class LimitController {}\n")
+	r.write(s1File, "package handler\n")
 	r.runner.cases = passing("C1")
 	r.ok(noConsole(), "step", "finish", "S1")
 	contains(t, r.out, "Mức tăng low → high: cổng BRD, Thiết kế, Case cần dev duyệt lại.")

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -69,9 +70,13 @@ func TestAssetContentType(t *testing.T) {
 	}
 }
 
+// Checkout sạch (dist chỉ có .gitkeep): Embedded phục vụ trang placeholder; có bản build thật thì phục vụ index.html đó.
 func TestEmbeddedPlaceholderOrBuild(t *testing.T) {
 	rec := get(spa.Embedded(), "GET", "/")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `id="root"`) {
 		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat("dist/index.html"); err != nil && !strings.Contains(rec.Body.String(), "UI chưa build: chạy make ui") {
+		t.Fatal("thiếu placeholder:", rec.Body.String())
 	}
 }

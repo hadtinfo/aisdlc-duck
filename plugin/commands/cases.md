@@ -9,7 +9,7 @@ Soạn và nộp cổng `cases` của tính năng đang làm. Ghi chú của dev
 3. Số case xấp xỉ số quy tắc nghiệp vụ/tiêu chí chấp nhận trong BRD, cộng một case lỗi hoặc biên cho mỗi bước Sx. Tối đa 15 case, trừ khi dev yêu cầu thêm. Không thêm luồng suy đoán.
 4. `reset_sql` và `given.sql` của một case chỉ được dùng bảng đã có ở bước của case đó. Bảng do migration của bước sau tạo không được xuất hiện trong case của bước trước, cũng không được nằm trong `reset_sql`. Dọn bảng đó trong `given.sql` của case thuộc bước tạo bảng.
 5. Quy tắc so DB trong `then.db` (`query` + `rows`): số so theo giá trị (`100` khớp `100.00`); bool viết `true`/`false`; NULL viết `null`; timestamp, date viết dạng RFC 3339 UTC (`2026-01-31T10:00:00Z`, date `2026-01-31`); json/jsonb so theo cấu trúc (không quan tâm thứ tự khóa); còn lại so dạng text. Số dòng phải khớp đúng.
-   Migration viết theo goose: `NNNNN_ten.sql` (5 chữ số, ví dụ `00002_them_bang_han_muc.sql`) với `-- +goose Up`; bản nháp ở `aisdlc/features/<KEY>/db/`.
+   Migration viết theo goose: `NNNNN_ten.sql` (5 chữ số, ví dụ `00002_them_bang_han_muc.sql`) với `-- +goose Up` (bắt buộc; `-- +goose Down` nên có); bản nháp ở `aisdlc/features/<KEY>/db/`.
    Stub chỉ hỗ trợ tập con WireMock. `request`: `method`, `url`, `urlPath`, `urlPathPattern`, `queryParameters`, `headers`, `bodyPatterns` (`equalToJson`, `contains`); matcher là `equalTo` hoặc `matches`. `response`: `status`, `headers`, `body`, `jsonBody`, `fixedDelayMilliseconds`. Khóa khác bị báo `CASES_STUB_UNSUPPORTED`.
 6. Case kiểm một quy tắc BRD thì ghi `rules: [BR-n]`.
    Case phải **cụ thể**: dùng giá trị thật (không ghi 'giá trị hợp lệ'). Không viết case để dễ pass; case phải fail trước khi code (lệnh submit sẽ chạy kiểm).

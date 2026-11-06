@@ -161,7 +161,27 @@ if [ "$rc" -eq 2 ] && [ "$ms" -lt 2000 ]; then ok "thiếu binary: payload 2 MB,
 run "$T/repo" '{"tool_name":"Read","tool_input":{"cwd":"'"$T/plain"'"},"cwd":"'"$T/repo"'"}' "$W" hook stop; expect "thiếu binary: cwd lồng trong tool_input bị bỏ qua" 1 'plugin/install.sh'
 run "$T/repo" '{"tool_name":"Read"}' "$W" hook stop; expect "thiếu binary: stop dù tool_name Read vẫn rc 1" 1 'plugin/install.sh'
 run "$T/plain" '{"tool_name":"Edit"}' "$W" hook pre-tool-use; expect "thiếu binary, ngoài repo AISDLC: Edit rc 0 im lặng" 0
+# Binary có mà không chạy được: không có quyền chạy, hoặc hỏng (exec thất bại) -> xử lý như thiếu binary (fail closed)
+printf '#!/bin/sh\nexit 0\n' > "$T/lib/aisdlc-$OS-$ARCH"; chmod 644 "$T/lib/aisdlc-$OS-$ARCH"
+run "$T/repo" "{\"tool_name\":\"Write\",\"cwd\":\"$T/repo\"}" "$W" hook pre-tool-use; expect "binary không có quyền chạy, repo AISDLC: pre-tool-use Write rc 2 (chặn)" 2 'plugin/install.sh'
+printf '\177ELF\002\001\001\000\000\000hong' > "$T/lib/aisdlc-$OS-$ARCH"; chmod 755 "$T/lib/aisdlc-$OS-$ARCH"
+run "$T/repo" "{\"tool_name\":\"Write\",\"cwd\":\"$T/repo\"}" "$W" hook pre-tool-use
+if [ "$rc" -eq 2 ] && [ -z "$out" ] && echo "$err" | grep -q 'không chạy được'; then ok "binary hỏng (exec thất bại), repo AISDLC: pre-tool-use Write rc 2 (chặn)"; else ko "binary hỏng Write: rc=$rc out=$out err=$err"; fi
+run "$T/repo" "{\"tool_name\":\"Read\",\"cwd\":\"$T/repo\"}" "$W" hook pre-tool-use
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then ok "binary hỏng, repo AISDLC: pre-tool-use Read rc 0 (cho đọc)"; else ko "binary hỏng Read: rc=$rc out=$out err=$err"; fi
+run "$T/plain" '{"tool_name":"Write"}' "$W" hook pre-tool-use
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then ok "binary hỏng, ngoài repo AISDLC: Write rc 0"; else ko "binary hỏng ngoài repo: rc=$rc out=$out err=$err"; fi
+run "$T/plain" '{}' "$W" status
+if [ "$rc" -eq 2 ] && echo "$err" | grep -q 'không chạy được'; then ok "binary hỏng, lệnh thường: rc 2 kèm lỗi"; else ko "binary hỏng lệnh thường: rc=$rc err=$err"; fi
 rm -rf "$T"
+
+# Launcher gọi qua symlink (lệnh aisdlc do install.sh cài vào ~/.local/bin) vẫn tìm plugin/lib cạnh script thật
+L="$(mktemp -d)"; ln -s "$P/bin/aisdlc" "$L/aisdlc"; mkdir -p "$L/d"; ln -s "$L/aisdlc" "$L/d/aisdlc"
+check "launcher qua symlink tuyệt đối" "'$L/aisdlc' --version | grep -q '^aisdlc 0.1.0-SNAPSHOT\$'"
+check "launcher qua chuỗi symlink" "'$L/d/aisdlc' --version | grep -q '^aisdlc 0.1.0-SNAPSHOT\$'"
+check "launcher qua symlink trên PATH (gọi tên trần)" "cd / && PATH='$L/d':\"\$PATH\" aisdlc --version | grep -q '^aisdlc 0.1.0-SNAPSHOT\$'"
+check "launcher gọi bằng đường tương đối" "cd '$P' && bin/aisdlc --version | grep -q '^aisdlc 0.1.0-SNAPSHOT\$'"
+rm -rf "$L"
 
 # Binary thật: luật thư mục cấu hình web cho tool đọc (Read|Grep|Glob gọi hook pre-tool-use)
 H2="$(mktemp -d)"; mkdir -p "$H2/.config/aisdlc"

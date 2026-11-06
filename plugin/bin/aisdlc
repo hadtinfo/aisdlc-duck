@@ -74,15 +74,32 @@ fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
   done
   exit 0
 }
-OS="$(uname -s | tr 'A-Z' 'a-z')"
-case "$(uname -m)" in
+# Không fork tiến trình nào trước exec (hook chạy ở mỗi tool call, spec §7 p95 < 50 ms): nền tảng lấy từ biến có sẵn
+# của bash, thư mục từ BASH_SOURCE; chỉ gọi readlink khi chính script là symlink (lệnh aisdlc do install.sh cài).
+case "$OSTYPE" in
+  linux*) OS=linux ;;
+  darwin*) OS=darwin ;;
+  *) OS="$(uname -s | tr 'A-Z' 'a-z')" ;;
+esac
+case "$HOSTTYPE" in
   x86_64|amd64) ARCH=amd64 ;;
   aarch64|arm64) ARCH=arm64 ;;
-  *) ARCH="$(uname -m)" ;;
+  *) case "$(uname -m)" in
+       x86_64|amd64) ARCH=amd64 ;;
+       aarch64|arm64) ARCH=arm64 ;;
+       *) ARCH="$(uname -m)" ;;
+     esac ;;
 esac
-BIN="$(dirname "$(readlink -f "$0")")/../lib/aisdlc-$OS-$ARCH"
+SRC="${BASH_SOURCE[0]}"
+[ -L "$SRC" ] && SRC="$(readlink -f "$SRC")"
+case "$SRC" in */*) DIR="${SRC%/*}" ;; *) DIR=. ;; esac
+BIN="$DIR/../lib/aisdlc-$OS-$ARCH"
 if [ ! -x "$BIN" ]; then
   MSG="không tìm thấy binary aisdlc cho $OS/$ARCH. Chạy plugin/install.sh."
   fail "$@"
 fi
+# exec thất bại (binary hỏng, sai nền tảng): không thoát ngay mà xử lý như thiếu binary (hook ở repo AISDLC thì chặn ghi).
+shopt -s execfail
 exec "$BIN" "$@"
+MSG="binary aisdlc cho $OS/$ARCH không chạy được ($BIN). Chạy plugin/install.sh."
+fail "$@"

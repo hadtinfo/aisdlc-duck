@@ -18,13 +18,6 @@ import (
 	"aisdlc/internal/harness/harnessapi"
 )
 
-// HarnessEnv là biến môi trường trỏ tới binary aisdlc-harness, chỉ để test/dev: bị bỏ qua khi chạy trong Claude Code
-// (CLAUDECODE đặt) để agent không trỏ được tới harness giả mà làm giả kết quả.
-const HarnessEnv = "AISDLC_HARNESS"
-
-// claudeCodeEnv được Claude Code đặt cho mọi lệnh nó chạy.
-const claudeCodeEnv = "CLAUDECODE"
-
 const (
 	harnessBin     = "aisdlc-harness"
 	harnessMissing = "không tìm thấy aisdlc-harness: "
@@ -39,17 +32,12 @@ const (
 var cliVersion = buildinfo.Version
 
 // findHarness tìm binary aisdlc-harness của tiến trình đang chạy (xem locateHarness).
-func findHarness() (string, error) { return locateHarness(os.Getenv, os.Executable, exec.LookPath) }
+func findHarness() (string, error) { return locateHarness(os.Executable, exec.LookPath) }
 
-// locateHarness: $AISDLC_HARNESS (chỉ ngoài Claude Code); cạnh binary aisdlc (và thư mục đích nếu nó là symlink):
-// aisdlc-harness hoặc aisdlc-harness-<os>-<arch> theo bố cục plugin/lib; chỉ khi không có cạnh aisdlc mới tìm PATH.
-func locateHarness(getenv func(string) string, exe func() (string, error), lookPath func(string) (string, error)) (string, error) {
-	if p := getenv(HarnessEnv); p != "" && getenv(claudeCodeEnv) == "" {
-		if executable(p) {
-			return p, nil
-		}
-		return "", errors.New(harnessMissing + HarnessEnv + "=" + p + " không phải file chạy được")
-	}
+// locateHarness: cạnh binary aisdlc (và thư mục đích nếu nó là symlink): aisdlc-harness hoặc
+// aisdlc-harness-<os>-<arch> theo bố cục plugin/lib; chỉ khi không có cạnh aisdlc mới tìm PATH. Không có biến môi
+// trường nào đổi được binary (agent không trỏ được tới harness giả); test tiêm qua exe/lookPath.
+func locateHarness(exe func() (string, error), lookPath func(string) (string, error)) (string, error) {
 	names := []string{harnessBin, harnessBin + "-" + runtime.GOOS + "-" + runtime.GOARCH}
 	var dirs []string
 	if e, err := exe(); err == nil {

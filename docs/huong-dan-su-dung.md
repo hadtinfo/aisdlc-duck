@@ -180,7 +180,7 @@ aisdlc policy show
 
 ### 3.5. Viết `cases.yaml`
 
-Một case gồm `given` (SQL dọn dữ liệu, stub), `when` (một request HTTP), `then` (status, body, DB, message). Mẫu đầy đủ: `templates/cases.full.yaml`; chưa có ví dụ tính năng hoàn chỉnh nào trong repo (thư mục `e2e/solutions/` chưa được port).
+Một case gồm `given` (SQL dọn dữ liệu, stub), `when` (một request HTTP), `then` (status, body, DB, message). Mẫu đầy đủ: `templates/cases.full.yaml`. Ví dụ thật trong repo: `e2e/solutions/PAY-1` (luồng FULL: BRD, thiết kế, `cases.yaml`, code từng bước), `e2e/solutions/FIX-2` (LITE: `cases.yaml` và code) và `e2e/solutions/FEE-3` (BRD, thiết kế, `cases.yaml`).
 
 ```yaml
 reset_sql: ["DELETE FROM account"]
@@ -376,6 +376,7 @@ Các giới hạn khác:
 - **Mỗi MR một tính năng.**
 - Chỉ có adapter Go (chi/pgx/goose hoặc tương tự) và PostgreSQL qua Docker. Adapter cho ngôn ngữ khác (ví dụ Java) là việc tương lai.
 - Mới chạy trên Linux và macOS.
+- Kiểm phiên bản `aisdlc-harness` (phải cùng bản build với `aisdlc`) và kiểm biến `CLAUDECODE` chỉ chặn nhầm lẫn, **không phải ranh giới an ninh**: lớp cưỡng chế là job eval trong CI với binary ghim phiên bản. `aisdlc` bị SIGKILL (không kịp dọn) thì `aisdlc-harness` con vẫn chạy tới hết `timeoutMinutes`.
 
 ## 8. Xử lý sự cố và tra cứu nhanh
 

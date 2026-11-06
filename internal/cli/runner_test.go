@@ -161,7 +161,7 @@ func TestRunnerHarnessErrorIsError(t *testing.T) {
 // Không tìm thấy aisdlc-harness: fail closed — mọi case ERROR với lý do, eval báo lỗi harness; không đọc kết quả cũ.
 func TestRunnerMissingHarnessFailsClosed(t *testing.T) {
 	missing := func() (string, error) {
-		return locateHarness(func(string) string { return "" }, func() (string, error) { return t.TempDir() + "/aisdlc", nil },
+		return locateHarness(func() (string, error) { return t.TempDir() + "/aisdlc", nil },
 			func(string) (string, error) { return "", exec.ErrNotFound })
 	}
 	_, ferr := missing()

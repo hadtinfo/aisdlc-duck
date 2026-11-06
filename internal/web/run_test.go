@@ -83,7 +83,7 @@ func TestServerEndToEnd(t *testing.T) {
 	if st, h, body := do(t, hc, "GET", base+"/login", "", nil); st != 200 || !strings.HasPrefix(h.Get("Content-Type"), "text/html") || !strings.Contains(body, `id="root"`) {
 		t.Fatal(st, h, body)
 	}
-	if st, _, body := do(t, hc, "GET", base+"/api/khong-co", "", nil); st != 401 && st != 404 {
+	if st, _, body := do(t, hc, "GET", base+"/api/khong-co", "", nil); st != 401 {
 		t.Fatal(st, body)
 	}
 	if st, _, _ := do(t, hc, "GET", base+"/api/me", "", nil); st != 401 {

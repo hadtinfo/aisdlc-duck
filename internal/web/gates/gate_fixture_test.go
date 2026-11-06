@@ -30,6 +30,7 @@ type gfx struct {
 	ownerS, devS, leadS              webtest.Session
 	ingest, approveOwner, approveDev string
 	seq                              int
+	onChanged                        func(repo, feature string) // quan sát Deps.Changed; đặt sau newGfx, trước khi gọi API
 }
 
 // tickingClock: giờ thật, cắt micro giây, luôn tăng ngặt giữa các lần gọi.
@@ -59,6 +60,11 @@ func newGfx(t *testing.T, prefix string) *gfx {
 		f.keys = k
 		d.Keys = k
 		d.Now = tickingClock()
+		d.Changed = func(r, k string) {
+			if f.onChanged != nil {
+				f.onChanged(r, k)
+			}
+		}
 		return web.NewHandler(d)
 	})
 	f.w = f.e.Client(t)

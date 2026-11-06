@@ -237,7 +237,7 @@ func TestCiAutoApprovalWebManualApprovalNoAutoCheck(t *testing.T) {
 	}
 }
 
-// ---- carry-over giai đoạn 3: hủy giữa lúc chạy lệnh checks ----
+// ---- hủy giữa lúc chạy lệnh checks ----
 
 // Ctrl-C giữa lúc một lệnh checks đang chạy: lệnh bị kill do ctx, Run trả lỗi ctx, không ghi report, không báo
 // "quá thời gian".

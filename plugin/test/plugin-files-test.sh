@@ -59,7 +59,7 @@ rm -rf "$I"
 if [ ! -x "$P/lib/$NAME" ] && command -v go >/dev/null 2>&1; then
   mkdir -p "$P/lib"; (cd "$ROOT" && CGO_ENABLED=0 go build -o "$P/lib/$NAME" ./cmd/aisdlc)
 fi
-check "bin/aisdlc --help chạy được" "'$P/bin/aisdlc' --help | grep -q 'Usage:'"
+check "bin/aisdlc --help chạy được" "'$P/bin/aisdlc' --help | grep -q 'Cách dùng:'"
 check "bin/aisdlc --version" "'$P/bin/aisdlc' --version | grep -q '^aisdlc 0.1.0-SNAPSHOT\$'"
 out="$(echo '{"tool_name":"Read","cwd":"/tmp"}' | "$P/bin/aisdlc" hook pre-tool-use 2>&1)"
 if [ -z "$out" ]; then ok "hook pre-tool-use với Read ở /tmp in rỗng"; else ko "hook pre-tool-use in: $out"; fi

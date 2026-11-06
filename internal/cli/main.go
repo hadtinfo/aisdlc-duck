@@ -110,6 +110,7 @@ func Wrap(ctx *Context, fn func(cmd *cobra.Command, args []string) (int, error))
 }
 
 func execute(ctx *Context, root *cobra.Command, args []string) int {
+	localizeHelp(root)
 	root.SetArgs(args)
 	root.SetIn(ctx.in)
 	root.SetOut(ctx.out)

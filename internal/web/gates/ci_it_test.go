@@ -14,7 +14,7 @@ import (
 )
 
 // Port CiIT (2): GET /api/ci/approvals (Bearer ci): chỉ approval còn hiệu lực, JSON thường. Thêm
-// TestCiApprovalsJSONShape: hợp đồng với HttpCiApprovalSource (CLI Java) và eval.CIApprovals (CLI Go, giai đoạn 4b).
+// TestCiApprovalsJSONShape: hợp đồng với HttpCiApprovalSource (CLI Java) và eval.CIApprovals (CLI Go).
 
 func TestCiReturnsLiveApprovalsOnlyNotRevokedNorUnconfirmedImports(t *testing.T) {
 	fx := newGfx(t, "ci")

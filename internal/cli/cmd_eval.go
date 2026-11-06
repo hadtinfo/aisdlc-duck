@@ -140,7 +140,7 @@ func evalNoFeature(ctx *Context, git *gitx.Repo, mergeBase, ref string, changes 
 // runEval eval một tính năng, in report.md; ExitOK khi report đạt, ExitFindings khi không.
 func runEval(ctx *Context, f *Feature, ci bool, base string) (int, error) {
 	ctx.Println("Đang eval " + f.Key.String() + " (build, unit test, bộ case đầy đủ qua harness)...")
-	// CI: approval web lấy từ nguồn web của CI (giai đoạn 4), không từ cache ký; gates.json dùng khi repo ở local
+	// CI: approval web lấy từ nguồn web của CI, không từ cache ký; gates.json dùng khi repo ở local
 	gates := f.Gates
 	if ci {
 		gates = gate.NewService(f.Paths, f.Flow(), f.Config, gate.NewLocalGateStore(f.Paths), ctx.Clock())

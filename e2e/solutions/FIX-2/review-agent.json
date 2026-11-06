@@ -1,0 +1,11 @@
+{
+  "summary": "Sửa một dòng làm tròn phí, đúng phạm vi luồng nhẹ.",
+  "criteria": [
+    {"id": "sequence", "label": "DAT", "reason": "Luồng không đổi: handler gọi fee.Fee như cũ."},
+    {"id": "error-handling", "label": "DAT", "reason": "Không đổi xử lý lỗi; số âm vẫn trả 400."},
+    {"id": "over-engineering", "label": "DAT", "reason": "Chỉ cộng 5.000 trước phép chia nguyên để làm tròn nửa lên."},
+    {"id": "naming", "label": "DAT", "reason": "Không thêm tên mới."},
+    {"id": "security", "label": "DAT", "reason": "Không có đầu vào mới."}
+  ],
+  "issues": []
+}

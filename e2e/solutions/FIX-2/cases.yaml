@@ -1,0 +1,26 @@
+scope: ["internal/fee/**"]
+budget: { files: 1, lines: 10 }
+reset_sql: []
+stubs: []
+cases:
+  - id: C1
+    step: S1
+    kind: boundary
+    title: Phí lẻ 0,5 đồng thì làm tròn lên (1.000 → 2)
+    given: { sql: [], stubs: [] }
+    when:  { method: GET, path: "/api/v1/fees?amount=1000" }
+    then:  { status: 200, body: { fee: 2 } }
+  - id: C2
+    step: S1
+    kind: happy
+    title: Phí dưới 0,5 đồng lẻ thì làm tròn xuống (900 → 1)
+    given: { sql: [], stubs: [] }
+    when:  { method: GET, path: "/api/v1/fees?amount=900" }
+    then:  { status: 200, body: { fee: 1 } }
+  - id: C3
+    step: S1
+    kind: error
+    title: Số tiền âm thì trả 400
+    given: { sql: [], stubs: [] }
+    when:  { method: GET, path: "/api/v1/fees?amount=-1" }
+    then:  { status: 400, body: { code: VALIDATION_ERROR } }

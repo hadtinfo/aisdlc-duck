@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -194,10 +195,20 @@ func TestCsrfConstantTime(t *testing.T) {
 	if r := w.PostSession("/api/zz", "{}", p.sess, c); r.Status != 200 {
 		t.Fatal(r.Status, r.Body)
 	}
-	// header lặp: chỉ giá trị đầu được xét (như getHeader)
-	r := w.Do("POST", "/api/zz", "{}", map[string]string{"Cookie": "AISDLC_SESSION=" + p.sess.ID, "X-CSRF-Token": "sai"})
-	if r.Status != 403 {
-		t.Fatal(r.Status)
+	// header lặp: chỉ giá trị đầu được xét (như getHeader của Servlet)
+	dup := func(first, second string) int {
+		h := http.Header{}
+		h.Set("Cookie", "AISDLC_SESSION="+p.sess.ID)
+		h.Set("Content-Type", "application/json")
+		h.Add("X-CSRF-Token", first)
+		h.Add("X-CSRF-Token", second)
+		return w.DoHeader("POST", "/api/zz", "{}", h).Status
+	}
+	if got := dup("sai", c); got != 403 {
+		t.Fatal("sai trước, đúng sau:", got)
+	}
+	if got := dup(c, "sai"); got != 200 {
+		t.Fatal("đúng trước, sai sau:", got)
 	}
 }
 

@@ -66,6 +66,7 @@ func NewHandler(d Deps) http.Handler {
 	s := services{auth: &auth.Service{Pool: d.Pool, Now: d.Now}}
 	r := chi.NewRouter()
 	r.Use(Recoverer)
+	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody
 	r.Use(s.auth.Middleware)
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
 		if isAPI(req) {
@@ -134,7 +135,8 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := store.Migrate(ctx, pool); err != nil {
 		return err
 	}
-	srv := &http.Server{Addr: cfg.Listen, Handler: NewHandler(Deps{Pool: pool}), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: cfg.Listen, Handler: NewHandler(Deps{Pool: pool}), ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout: 120 * time.Second} // không đặt WriteTimeout: SSE
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
 	select {

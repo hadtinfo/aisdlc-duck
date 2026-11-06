@@ -52,9 +52,18 @@ func WriteError(w http.ResponseWriter, err error) {
 }
 
 // DecodeJSON đọc body thành dst. Body sai thì trả *ApiError 400 {"error":"JSON không hợp lệ"} (như BadRequestException);
-// body vượt giới hạn của LimitBody thì trả *ApiError 413.
+// body vượt giới hạn thì trả *ApiError 413. Giới hạn là của LimitBody/DefaultLimit nếu route đã đặt; không thì
+// DecodeJSON tự chặn ở DefaultJSONLimit (không đọc bỏ phần thừa: nên đặt DefaultLimit ở router gốc).
 func DecodeJSON(r *http.Request, dst any) error {
-	b, err := io.ReadAll(r.Body)
+	var body io.Reader = r.Body
+	if body == nil {
+		body = http.NoBody
+	}
+	_, limited := r.Body.(*limitedBody)
+	if !limited {
+		body = io.LimitReader(body, DefaultJSONLimit+1)
+	}
+	b, err := io.ReadAll(body)
 	if err != nil {
 		var ae *ApiError
 		if errors.As(err, &ae) {
@@ -62,61 +71,123 @@ func DecodeJSON(r *http.Request, dst any) error {
 		}
 		return NewError(http.StatusBadRequest, "JSON không hợp lệ")
 	}
+	if !limited && int64(len(b)) > DefaultJSONLimit {
+		return TooLargeFor(DefaultJSONLimit)
+	}
 	if err := json.Unmarshal(b, dst); err != nil {
 		return NewError(http.StatusBadRequest, "JSON không hợp lệ")
 	}
 	return nil
 }
 
-// TooLarge là lỗi trả về khi body vượt giới hạn.
-func TooLarge() *ApiError { return NewError(http.StatusRequestEntityTooLarge, "Payload vượt 8 MB") }
+// DefaultJSONLimit là giới hạn body mặc định của API JSON (route cần lớn hơn, như ingest 8 MB, tự đặt LimitBody).
+const DefaultJSONLimit int64 = 1 << 20
+
+// TooLarge là lỗi 413 của giới hạn ingest 8 MB.
+func TooLarge() *ApiError { return TooLargeFor(8 << 20) }
+
+// TooLargeFor là lỗi 413 {"error":"Payload vượt <n> MB"} của giới hạn max byte.
+func TooLargeFor(max int64) *ApiError {
+	if max >= 1<<20 && max%(1<<20) == 0 {
+		return NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf("Payload vượt %d MB", max>>20))
+	}
+	return NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf("Payload vượt %d byte", max))
+}
 
 const maxDrain = 256 << 20
 
-// Drain đọc bỏ phần thân request còn lại (tối đa 256 MB) để client đang gửi nhận được phản hồi chứ không bị reset,
-// như Tomcat max-swallow-size -1 của Java.
-func Drain(r *http.Request) {
-	if r.Body != nil {
-		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxDrain))
+// DrainTimeout bao thời gian đọc bỏ thân request (client gửi nhỏ giọt không giữ được goroutine mãi). Hết hạn thì
+// ngừng đọc; phản hồi vẫn được ghi và server đóng kết nối.
+var DrainTimeout = 15 * time.Second
+
+// BodyTimeout bao thời gian đọc toàn bộ thân request có body (DefaultLimit/LimitBody), chống client gửi nhỏ giọt.
+// Đọc tới EOF thì net/http tự bỏ hạn khi bắt đầu đọc nền (startBackgroundRead), nên ctx không bị hủy sau đó.
+var BodyTimeout = 60 * time.Second
+
+func setReadDeadline(w http.ResponseWriter, t time.Time) {
+	if w != nil {
+		// ResponseRecorder không hỗ trợ: bỏ qua lỗi.
+		_ = http.NewResponseController(w).SetReadDeadline(t)
 	}
 }
 
+// Drain đọc bỏ phần thân request còn lại (tối đa 256 MB, tối đa DrainTimeout) để client đang gửi nhận được phản hồi
+// chứ không bị reset, như Tomcat max-swallow-size -1 của Java.
+func Drain(w http.ResponseWriter, r *http.Request) {
+	// Không có body thì server đã đọc nền (phát hiện client ngắt): không đặt hạn đọc lên đó.
+	if r.Body != nil && r.Body != http.NoBody {
+		drain(w, r.Body)
+	}
+}
+
+func drain(w http.ResponseWriter, body io.Reader) {
+	setReadDeadline(w, time.Now().Add(DrainTimeout))
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxDrain))
+}
+
 // LimitBody giới hạn body tối đa max byte. Quá giới hạn (theo Content-Length hoặc khi đọc) thì đọc bỏ phần còn lại
-// (để client nhận được phản hồi chứ không bị reset) rồi trả 413 {"error":"Payload vượt 8 MB"}.
+// (có hạn giờ, để client nhận được phản hồi chứ không bị reset) rồi trả 413 {"error":"Payload vượt <n> MB"}.
+// Đặt sau DefaultLimit thì thay giới hạn mặc định.
 func LimitBody(max int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.ContentLength > max {
-				_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxDrain))
-				WriteError(w, TooLarge())
+				Drain(w, r)
+				WriteError(w, TooLargeFor(max))
 				return
 			}
-			if r.Body != nil {
-				r.Body = &limitedBody{rc: r.Body, left: max}
-			}
+			wrap(w, r, max)
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
+// DefaultLimit đặt giới hạn đọc max byte cho mọi body (lười: chỉ báo 413 khi đọc quá, không từ chối theo
+// Content-Length, để route đặt LimitBody lớn hơn sau đó vẫn hoạt động).
+func DefaultLimit(max int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			wrap(w, r, max)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func wrap(w http.ResponseWriter, r *http.Request, max int64) {
+	if r.Body == nil || r.Body == http.NoBody {
+		return
+	}
+	rc := r.Body
+	if l, ok := rc.(*limitedBody); ok && l.read == 0 {
+		rc = l.rc // thay giới hạn bên ngoài
+	}
+	if BodyTimeout > 0 {
+		setReadDeadline(w, time.Now().Add(BodyTimeout))
+	}
+	r.Body = &limitedBody{rc: rc, left: max, max: max, w: w}
+}
+
 type limitedBody struct {
-	rc   io.ReadCloser
-	left int64
-	over bool
+	rc        io.ReadCloser
+	left, max int64
+	read      int64
+	over      bool
+	w         http.ResponseWriter
 }
 
 func (l *limitedBody) Read(p []byte) (int, error) {
 	if l.over {
-		return 0, TooLarge()
+		return 0, TooLargeFor(l.max)
 	}
 	if int64(len(p)) > l.left+1 {
 		p = p[:l.left+1]
 	}
 	n, err := l.rc.Read(p)
+	l.read += int64(n)
 	if int64(n) > l.left {
 		l.over = true
-		_, _ = io.Copy(io.Discard, io.LimitReader(l.rc, maxDrain))
-		return int(l.left), TooLarge()
+		drain(l.w, l.rc)
+		return int(l.left), TooLargeFor(l.max)
 	}
 	l.left -= int64(n)
 	return n, err

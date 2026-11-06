@@ -83,13 +83,13 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 
 func (s *Service) fail(w http.ResponseWriter, r *http.Request, err error) {
 	log.Printf("auth: %s %s: %v", r.Method, r.URL.Path, err)
-	httpx.Drain(r)
+	httpx.Drain(w, r)
 	httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 }
 
 // reject đọc bỏ thân request (như Tomcat max-swallow-size -1) để client nhận được 401/403 chứ không bị reset.
 func reject(w http.ResponseWriter, r *http.Request, status int, body string) {
-	httpx.Drain(r)
+	httpx.Drain(w, r)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(body))

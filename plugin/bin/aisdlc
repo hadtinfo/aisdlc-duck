@@ -8,15 +8,14 @@
 fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
   if [ "${1:-}" != "hook" ]; then echo "AISDLC: $MSG" >&2; exit 2; fi
   # LC_ALL=C trước mọi phép đo/duyệt: ${#in} đếm byte, không đếm ký tự UTF-8.
-  local LC_ALL=C in="" dir="" tool="" big=0
+  local LC_ALL=C in="" dir="" tool="" big=0 dirs=()
   # Đọc tối đa 16385 byte rồi bỏ phần còn lại (cat đọc khối lớn, nhanh) để không phải giữ cả payload lớn trong bash.
   in="$(head -c 16385; cat >/dev/null)"
   [ "${#in}" -gt 16384 ] && big=1
   # tool_name và cwd cấp ngoài (bất kể thứ tự khóa): một lượt qua từng byte, theo dõi độ sâu {[ và chuỗi (kể cả \" và ngoặc
   # trong chuỗi); chỉ nhận khóa ở độ sâu 1 với giá trị là chuỗi. Không tìm ra tool_name -> tool rỗng -> chặn.
   # Tool đọc có input rất nhỏ: payload > 16384 byte coi như không phải tool đọc, chặn ngay không phân tích (quá giờ hook 15 s
-  # thì hook không chặn nữa). Khi đó cwd chỉ tìm trong 4096 byte đầu (Claude Code đặt cwd trước tool_input); không thấy thì
-  # pre-tool-use chặn luôn, sự kiện khác dùng $PWD.
+  # thì hook không chặn nữa).
   if [ $big -eq 0 ]; then
     local c cur="" last="" key="" d=0 ins=0 esc=0 colon=0 i
     for ((i=0; i<${#in}; i++)); do
@@ -44,23 +43,29 @@ fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
       esac
     done
   else
-    local pre="${in:0:4096}"
-    [[ "$pre" =~ \"cwd\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && dir="${BASH_REMATCH[1]}"
-    if [ -z "$dir" ] && [ "${2:-}" = "pre-tool-use" ]; then echo "AISDLC: $MSG" >&2; exit 2; fi
+    # Payload lớn: xét MỌI "cwd" trong 4096 byte đầu (ở bất kỳ độ sâu) cùng $PWD; chỉ cần một cái thuộc repo AISDLC là
+    # xử lý như trong repo (cwd giả chỉ có thể thêm repo, không bớt). Không cái nào thuộc repo -> im lặng exit 0.
+    local pre="${in:0:4096}" re='"cwd"[[:space:]]*:[[:space:]]*"([^"]+)"'
+    while [[ "$pre" =~ $re ]]; do
+      dirs+=("${BASH_REMATCH[1]}"); pre="${pre#*"${BASH_REMATCH[0]}"}"
+    done
+    dirs+=("$PWD")
   fi
-  [ -z "$dir" ] && dir="$PWD"
-  while [ -n "$dir" ]; do
-    if [ -f "$dir/aisdlc/config.yaml" ]; then
-      if [ "${2:-}" = "pre-tool-use" ]; then
-        case "$tool" in Read|Grep|Glob|LS|NotebookRead) exit 0 ;; esac
+  [ $big -eq 0 ] && dirs=("${dir:-$PWD}")
+  for dir in "${dirs[@]}"; do
+    while [ -n "$dir" ]; do
+      if [ -f "$dir/aisdlc/config.yaml" ]; then
+        if [ "${2:-}" = "pre-tool-use" ]; then
+          case "$tool" in Read|Grep|Glob|LS|NotebookRead) exit 0 ;; esac
+          echo "AISDLC: $MSG" >&2
+          exit 2
+        fi
         echo "AISDLC: $MSG" >&2
-        exit 2
+        exit 1
       fi
-      echo "AISDLC: $MSG" >&2
-      exit 1
-    fi
-    [ "$dir" = "/" ] && break
-    dir="${dir%/*}"; [ -z "$dir" ] && dir="/"
+      [ "$dir" = "/" ] && break
+      dir="${dir%/*}"; [ -z "$dir" ] && dir="/"
+    done
   done
   exit 0
 }

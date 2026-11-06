@@ -1,4 +1,4 @@
-.PHONY: ci build test test-short vet fmt-check check plugin-dist ui ui-test build-web
+.PHONY: ci build-web-bin build test test-short vet fmt-check check plugin-dist ui ui-test build-web
 
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
@@ -34,8 +34,11 @@ ui:
 ui-test:
 	cd web/ui && npm ci && npm run test -- --run
 
-build-web: ui
+# Chỉ build binary, dùng khi dist UI đã có sẵn (artifact của job ui trong CI).
+build-web-bin:
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/aisdlc-web ./cmd/aisdlc-web
 
+build-web: ui build-web-bin
+
 # Chạy cục bộ những gì CI chạy ở các stage check và ui.
-ci: check ui-test
+ci: check ui ui-test

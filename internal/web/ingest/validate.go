@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"aisdlc/internal/web/httpx"
+	"aisdlc/internal/web/javaish"
 )
 
 // badRequest là BadRequestException: 400 {"error": msg}.
@@ -97,26 +98,6 @@ func isInt(n any) (int64, bool) {
 		return 0, false
 	}
 	return v, true
-}
-
-// javaWhitespace như Character.isWhitespace.
-func javaWhitespace(r rune) bool {
-	switch r {
-	case ' ', '\t', '\n', '\v', '\f', '\r', 0x1c, 0x1d, 0x1e, 0x1f, 0x1680, 0x2028, 0x2029, 0x205f, 0x3000:
-		return true
-	case 0xa0, 0x2007, 0x202f:
-		return false
-	}
-	return r >= 0x2000 && r <= 0x200a
-}
-
-func isBlank(s string) bool {
-	for _, r := range s {
-		if !javaWhitespace(r) {
-			return false
-		}
-	}
-	return true
 }
 
 // requireText: phải là chuỗi không rỗng/không chỉ khoảng trắng, nếu không 400 "Thiếu <name>".
@@ -242,3 +223,7 @@ func utf16Len(s string) int {
 
 // ParseInstant đọc thời điểm như Instant.parse/OffsetDateTime.parse của Java (BoardRules.doneAt dùng).
 func ParseInstant(s string) (time.Time, error) { return parseInstant(s) }
+
+func isBlank(s string) bool { return javaish.IsBlank(s) }
+
+func javaWhitespace(r rune) bool { return javaish.IsWhitespace(r) }

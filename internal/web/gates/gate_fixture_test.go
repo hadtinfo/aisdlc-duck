@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -278,4 +279,41 @@ func apprKeys(as []snapshot.Appr, fn func(snapshot.Appr) string) string {
 		out = append(out, fn(a))
 	}
 	return strings.Join(out, ",")
+}
+
+// httpResult là phản hồi đọc được trong goroutine (không gọi t.Fatal ngoài goroutine của test).
+type httpResult struct {
+	status int
+	body   string
+	err    error
+}
+
+func sessionHdr(id, csrf string) map[string]string {
+	return map[string]string{"Cookie": "AISDLC_SESSION=" + id, "X-CSRF-Token": csrf, "Content-Type": "application/json"}
+}
+
+func bearerHdr(token string) map[string]string {
+	return map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+}
+
+// postTo gửi POST tới base (an toàn trong goroutine: lỗi trả về, không gọi t.Fatal).
+func postTo(ctx context.Context, base, path, body string, hdr map[string]string) httpResult {
+	req, err := http.NewRequestWithContext(ctx, "POST", base+path, strings.NewReader(body))
+	if err != nil {
+		return httpResult{err: err}
+	}
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return httpResult{err: err}
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(res.Body)
+	return httpResult{status: res.StatusCode, body: string(b), err: err}
+}
+
+func (f *gfx) post(ctx context.Context, path, body string, hdr map[string]string) httpResult {
+	return postTo(ctx, f.e.Server.URL, path, body, hdr)
 }

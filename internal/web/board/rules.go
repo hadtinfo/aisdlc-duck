@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"aisdlc/internal/web/ingest"
+	"aisdlc/internal/web/javaish"
 )
 
 // Quy tắc bảng (§5b.2): hàm thuần trên cây JSON snapshot, không đụng DB (BoardRules.java).
@@ -233,18 +234,8 @@ func join(arr []any) string {
 	return strings.Join(items, ", ")
 }
 
-// javaWhitespace như Character.isWhitespace.
-func javaWhitespace(r rune) bool {
-	switch r {
-	case ' ', '\t', '\n', '\v', '\f', '\r', 0x1c, 0x1d, 0x1e, 0x1f, 0x1680, 0x2028, 0x2029, 0x205f, 0x3000:
-		return true
-	case 0xa0, 0x2007, 0x202f:
-		return false
-	}
-	return r >= 0x2000 && r <= 0x200a
-}
+func javaWhitespace(r rune) bool { return javaish.IsWhitespace(r) }
 
-func isBlank(s string) bool { return strings.TrimFunc(s, javaWhitespace) == "" }
+func isBlank(s string) bool { return javaish.IsBlank(s) }
 
-// javaTrim như String.trim(): bỏ ký tự <= U+0020 ở hai đầu.
-func javaTrim(s string) string { return strings.TrimFunc(s, func(r rune) bool { return r <= ' ' }) }
+func javaTrim(s string) string { return javaish.Trim(s) }

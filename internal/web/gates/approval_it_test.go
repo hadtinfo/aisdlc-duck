@@ -1,6 +1,12 @@
 package gates_test
 
 import (
+	"path/filepath"
+	"sync"
+
+	"aisdlc/internal/fsx"
+	"aisdlc/internal/gate"
+	"aisdlc/internal/model"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -495,5 +501,54 @@ func TestRejectCreatesInstruction(t *testing.T) {
 	all := fx.strs(t, "SELECT text FROM instructions WHERE repo_id = $1 ORDER BY id", f.repo)
 	if all[len(all)-1] != "Cổng BRD được mở lại bởi "+fx.owner+": làm lại" {
 		t.Fatal(all)
+	}
+}
+
+// Phía tiêu thụ: phong bì trạng thái cổng của server ghi ra file rồi đọc bằng gate.ReadWebGateState với khóa ghim.
+func TestGateStateEnvelopeConsumedByCli(t *testing.T) {
+	fx := newGfx(t, "gs")
+	f := fx.feat(t, "r/gs-1", "K-1", "FULL")
+	f.openGates("BRD")
+	raw := fx.envelopeRaw(t, f)
+	pk := fx.w.GetBearer("/api/cli/pubkey", fx.ingest)
+	pub, err := snapshot.PublicKeyFromBase64(pk.JSON(t)["publicKey"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "K-1.json")
+	if err := fsx.WriteAtomic(file, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, ok := gate.ReadWebGateState(file, pub, f.repo, model.FeatureKey("K-1"))
+	if !ok || st.Repo != f.repo || st.Feature != "K-1" || len(st.Approvals) != 1 {
+		t.Fatalf("%v %+v", ok, st)
+	}
+	if _, ok := gate.ReadWebGateState(file, pub, f.repo, model.FeatureKey("K-2")); ok {
+		t.Fatal("sai tính năng phải bị từ chối")
+	}
+	if _, ok := gate.ReadWebGateState(file, pub, "r/khac", model.FeatureKey("K-1")); ok {
+		t.Fatal("sai repo phải bị từ chối")
+	}
+}
+
+// Thao tác cổng (duyệt) cũng tới Deps.Changed, không chỉ hub SSE.
+func TestGateApproveReachesChangedObserver(t *testing.T) {
+	fx := newGfx(t, "ch")
+	f := fx.feat(t, "r/ch-1", "K-1", "FULL")
+	f.submitOk("BRD")
+	var mu sync.Mutex
+	var seen []string
+	fx.onChanged = func(r, k string) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, r+"|"+k)
+	}
+	if r := f.approve(fx.ownerS, "BRD"); r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) == 0 || seen[len(seen)-1] != "r/ch-1|K-1" {
+		t.Fatalf("Changed không thấy duyệt cổng: %v", seen)
 	}
 }

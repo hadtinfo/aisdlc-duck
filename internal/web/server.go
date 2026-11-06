@@ -97,15 +97,15 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 	reader := &board.Reader{Pool: d.Pool, Now: d.Now} // Control (Task 8) gắn sau
 	hub := board.NewHub(reader)
 	modes := &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a}
-	gs := &gates.Service{Pool: d.Pool, Keys: d.Keys, Modes: modes, Auth: a, Hub: hub, Now: d.Now}
-	gs.AfterSubmit = gs.AutoApprove // tự duyệt theo mức rủi ro, trong tx nộp
-	reader.Gates = gs
 	changed := func(repoID, feature string) {
 		hub.Publish(repoID, feature)
 		if d.Changed != nil {
 			d.Changed(repoID, feature)
 		}
 	}
+	gs := &gates.Service{Pool: d.Pool, Keys: d.Keys, Modes: modes, Auth: a, Hub: publishFunc(changed), Now: d.Now}
+	gs.AfterSubmit = gs.AutoApprove // tự duyệt theo mức rủi ro, trong tx nộp
+	reader.Gates = gs
 	ctl := &control.Service{Pool: d.Pool, Keys: d.Keys, Auth: a, Hub: publishFunc(changed), Now: d.Now}
 	reader.Control = ctl
 	s := services{auth: a, modes: modes, gates: gs, control: ctl,
@@ -202,9 +202,12 @@ func (t *trackingWriter) Write(b []byte) (int, error) {
 	return t.ResponseWriter.Write(b)
 }
 
-func (t *trackingWriter) Flush() {
+func (t *trackingWriter) Flush() { _ = t.FlushError() }
+
+// FlushError để http.ResponseController.Flush thấy lỗi flush/write-deadline của writer gốc (SSE dùng để phát hiện client chết).
+func (t *trackingWriter) FlushError() error {
 	t.started = true
-	_ = http.NewResponseController(t.ResponseWriter).Flush()
+	return http.NewResponseController(t.ResponseWriter).Flush()
 }
 
 func (t *trackingWriter) Unwrap() http.ResponseWriter { return t.ResponseWriter }

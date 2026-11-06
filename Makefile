@@ -1,4 +1,4 @@
-.PHONY: e2e e2e-web ci build-web-bin build test test-short vet fmt-check check plugin-dist ui ui-test build-web
+.PHONY: site e2e e2e-web ci build-web-bin build test test-short vet fmt-check check plugin-dist ui ui-test build-web
 
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
@@ -67,3 +67,8 @@ e2e:
 # Chỉ phần web: repo local/web-service (duyệt trên web, điều khiển agent) và flow-service ở chế độ web.
 e2e-web:
 	E2E_PARTS=web,flow WEB=1 bash e2e/run-e2e.sh
+
+# Trang GitHub Pages: ghép site/ với ảnh chụp trong docs/images/ vào _site/ (workflow pages.yml deploy thư mục này).
+# Xem thử: make site && python3 -m http.server -d _site 8000
+site:
+	rm -rf _site && mkdir -p _site/images && cp -r site/. _site/ && cp docs/images/*.png _site/images/ && touch _site/.nojekyll

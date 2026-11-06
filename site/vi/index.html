@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AISDLC — phát triển tính năng có cổng duyệt với Claude Code</title>
+  <meta name="description" content="AISDLC: agent Claude Code viết BRD, thiết kế, case và code; dev duyệt từng cổng. Hook chặn agent đi tắt, CI kiểm lại mọi MR.">
+  <link rel="alternate" hreflang="en" href="../">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="dot"></span>AISDLC</a>
+    <ul>
+      <li><a href="#how">Cách hoạt động</a></li>
+      <li><a href="#install">Cài đặt</a></li>
+      <li><a href="#walkthrough">Ví dụ</a></li>
+      <li><a href="#web">Web</a></li>
+      <li><a href="#risk">Rủi ro</a></li>
+      <li><a href="#safety">An toàn</a></li>
+    </ul>
+    <div class="right">
+      <a class="lang" href="../">English</a>
+      <a href="https://github.com/hadtinfo/aisdlc-duck">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="eyebrow">Plugin Claude Code · Go · PostgreSQL</div>
+    <h1>Agent viết code. Dev duyệt từng cổng.</h1>
+    <p class="lead">
+      AISDLC là quy trình phát triển tính năng có cổng chất lượng, dành cho đội làm service Go với agent Claude Code.
+      Agent soạn BRD, thiết kế, case và code; dev duyệt từng cổng. Hook của plugin chặn agent đi tắt, và CI kiểm lại
+      mọi merge request.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Bắt đầu</a>
+      <a class="btn" href="#walkthrough">Xem một tính năng từ đầu đến cuối</a>
+      <a class="btn" href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/huong-dan-su-dung.md">Hướng dẫn sử dụng</a>
+    </div>
+
+    <div class="flow" aria-label="Luồng cổng">
+      <div class="g"><b>BRD</b><span>quy tắc nghiệp vụ BR-n</span></div>
+      <div class="g"><b>Thiết kế</b><span>bước, scope, migration</span></div>
+      <div class="g"><b>Case</b><span>khóa trước khi code</span></div>
+      <div class="g"><b>S1…Sn</b><span>code từng bước</span></div>
+      <div class="g"><b>Review</b><span>eval phải ĐẠT</span></div>
+      <div class="g end"><b>MR</b><span>CI chạy lại eval</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="how">
+  <div class="wrap">
+    <h2>Cách hoạt động</h2>
+    <p class="sub">Một tính năng đi qua năm cổng. Cổng trước được duyệt thì cổng sau mới mở. Tài liệu đã duyệt bị khóa
+      theo hash; muốn sửa, dev phải mở lại cổng đó.</p>
+
+    <div class="split">
+      <figure class="shot">
+        <a href="../images/luong-cong.png"><img src="../images/luong-cong.png" alt="Sơ đồ luồng cổng: bên trái agent soạn BRD, thiết kế, case, code từng bước và chạy eval; bên phải dev duyệt từng cổng; ô cuối là mở MR, CI chạy aisdlc eval --ci" loading="lazy" width="1344" height="1038"></a>
+        <figcaption><b>Agent làm, dev duyệt.</b> Mỗi mũi tên sang phải là một lần nộp; bị trả lại thì agent sửa và nộp lại cùng cổng.</figcaption>
+      </figure>
+      <div class="grid">
+        <div class="card"><h4>Cổng duyệt</h4><p>Agent chỉ được ghi code sản phẩm khi BRD, Thiết kế và Case đã được duyệt. Tài liệu đã duyệt bị khóa theo hash.</p></div>
+        <div class="card"><h4>Code từng bước</h4><p>Mỗi bước S1…Sn khai báo phạm vi file (glob) và ngân sách (số file, số dòng). Ghi ngoài phạm vi bị chặn, trừ khi dev cho phép từng file.</p></div>
+        <div class="card"><h4>Case trước code</h4><p>Case HTTP, DB, message, stub được viết và khóa trước, và phải có case fail lúc nộp. Harness chạy case dạng black box trên service thật, Postgres (và Kafka) dựng bằng Docker.</p></div>
+        <div class="card"><h4>Eval và review</h4><p>Build, <code>go test</code>, bộ case, coverage dòng mới và review độc lập bằng subagent, ghi vào <code>eval/report.md</code>. CI chạy lại trên MR.</p></div>
+      </div>
+    </div>
+
+    <h3>Ai làm gì</h3>
+    <div class="tbl">
+      <table>
+        <tr><th></th><th>Agent (Claude Code)</th><th>Dev</th></tr>
+        <tr><td><b>Viết</b></td><td><code>brd.md</code>, <code>design.md</code>, <code>design.yaml</code>, migration, <code>cases.yaml</code>, code</td><td>Không bắt buộc viết gì: đọc thẻ review, diff, báo cáo</td></tr>
+        <tr><td><b>Lệnh</b></td><td><code>init</code>, <code>submit</code>, <code>step start</code>, <code>step finish</code>, <code>eval</code>, <code>review</code>, <code>status</code></td><td><code>approve</code>, <code>reject</code>, <code>reopen</code>, <code>step accept</code>, <code>scope allow</code>, <code>risk set</code></td></tr>
+        <tr><td><b>Không được</b></td><td>Duyệt, accept bước, cho phép file ngoài phạm vi, sửa file trạng thái hoặc tài liệu đã duyệt</td><td>Không giới hạn — lệnh của dev cần console thật (gõ lại feature key)</td></tr>
+      </table>
+    </div>
+    <p class="note"><b>Hai luồng.</b> FULL (mặc định) đi đủ năm cổng, dùng cho thay đổi chạm DB, API hay dòng tiền.
+      LITE (<code>aisdlc init KEY --lite</code>) cho bug fix nhỏ: bỏ BRD và Thiết kế, còn Case → S1 → Review.</p>
+  </div>
+</section>
+
+<section id="install" class="alt">
+  <div class="wrap">
+    <h2>Cài đặt và gắn vào service</h2>
+    <p class="sub">Cần Linux hoặc macOS, Go, Docker (harness dựng Postgres/Kafka), git và Claude Code.</p>
+
+    <ol class="steps">
+      <li>
+        <h3>Cài plugin trên máy dev</h3>
+        <p>Script build <code>aisdlc</code> và <code>aisdlc-harness</code> cho máy của bạn và tạo link <code>~/.local/bin/aisdlc</code> (thêm vào <code>PATH</code>).</p>
+<pre><code>git clone https://github.com/hadtinfo/aisdlc-duck.git ~/aisdlc
+~/aisdlc/plugin/install.sh</code></pre>
+        <p>Rồi trong Claude Code:</p>
+<pre><code>/plugin marketplace add ~/aisdlc
+/plugin install aisdlc@aisdlc</code></pre>
+        <p>Máy không có Go? Tải bundle plugin dựng sẵn ở <a href="https://github.com/hadtinfo/aisdlc-duck/releases">GitHub Releases</a>, giải nén rồi trỏ <code>/plugin marketplace add</code> vào thư mục đó.</p>
+      </li>
+      <li>
+        <h3>Gắn vào repo service (MR riêng)</h3>
+        <p>Ở gốc một service Go có <code>go.mod</code>, <code>cmd/&lt;tên&gt;/main.go</code> và migration goose:</p>
+<pre><code>aisdlc setup --preset generic     # hoặc --preset banking
+git status --short</code></pre>
+        <p>Lệnh tạo <code>aisdlc/config.yaml</code>, <code>aisdlc/risk-policy.yaml</code>, <code>aisdlc/gitlab-ci.aisdlc.yml</code>, thêm mục AISDLC vào <code>CLAUDE.md</code> và bỏ qua <code>.aisdlc/</code>. Kiểm tra mục <code>service</code> và <code>migrations</code> trong config.</p>
+      </li>
+      <li>
+        <h3>Kiểm tra service đáp ứng hợp đồng của harness</h3>
+        <ul class="check">
+          <li>Đọc cổng và URL DB (và Kafka brokers) từ các biến khai báo trong <code>service.env</code>.</li>
+          <li><code>service.healthPath</code> trả 2xx khi sẵn sàng.</li>
+          <li>Thoát gọn khi nhận <code>SIGTERM</code> (nếu không, coverage dòng mới là N/A).</li>
+          <li>Migration goose đặt tên <code>NNNNN_ten.sql</code>, có <code>-- +goose Up</code>.</li>
+        </ul>
+      </li>
+      <li>
+        <h3>Làm một tính năng</h3>
+<pre><code>/aisdlc:init PAY-123  →  /aisdlc:brd  →  /aisdlc:design  →  /aisdlc:cases
+/aisdlc:step S1  …  /aisdlc:step Sn  →  /aisdlc:review</code></pre>
+        <p>Sau mỗi chặng, dev duyệt <b>ở terminal riêng</b>: <code>aisdlc approve design</code>, <code>aisdlc step accept S1</code>… Merge MR setup trước, bật CI ở MR sau.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="walkthrough">
+  <div class="wrap">
+    <h2>Ví dụ: PAY-1 “Kiểm tra hạn mức ngày”</h2>
+    <p class="sub">Cùng kịch bản mà test E2E chạy trên service mẫu <code>e2e/fixture-service</code>. Chính sách rủi ro của repo xếp mọi
+      thứ có chữ “hạn mức” vào mức <span class="pill bad">high</span>, mức này yêu cầu case gửi trùng và một bất biến DB.</p>
+
+    <h3>1 · Khởi tạo và soạn BRD</h3>
+    <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc init PAY-1 --title "Kiểm tra hạn mức ngày"</span>
+Đã tạo tính năng PAY-1 (luồng FULL): Kiểm tra hạn mức ngày
+  aisdlc/features/PAY-1/brd.md
+  aisdlc/features/PAY-1/design.md
+  aisdlc/features/PAY-1/design.yaml
+  aisdlc/features/PAY-1/cases.yaml
+<span class="d">Tiếp theo: soạn brd.md rồi chạy `aisdlc submit brd`.</span>
+
+<span class="p">$</span> <span class="c">aisdlc submit brd</span>
+<span class="w">Rủi ro tạm (từ khóa): high</span>
+<span class="ok">Đã nộp cổng BRD, không có phát hiện.</span></pre></div>
+
+    <h3>2 · Dev duyệt — ở terminal của mình</h3>
+    <p>Agent thử duyệt thì bị từ chối (exit 3), và hook chặn ghi code khi cổng chưa mở. Dev đọc thẻ review rồi gõ lại feature key:</p>
+    <div class="term"><div class="bar"><i></i><i></i><i></i><span>terminal của dev</span></div><pre><span class="p">$</span> <span class="c">aisdlc approve brd</span>
+Review card — PAY-1 · cổng BRD
+Cờ đỏ (2)
+  <span class="w">[WARN] BRD_RULE_NO_ID</span>: 4 quy tắc nghiệp vụ không có ID BR-n …
+Gõ lại feature key (PAY-1) để xác nhận: <span class="c">PAY-1</span>
+<span class="ok">Đã duyệt cổng BRD bởi dev (hash …).</span></pre></div>
+    <p>Muốn trả lại: <code>aisdlc reject brd -m "Đánh ID BR-n cho từng quy tắc"</code> — góp ý ghi vào <code>feedback.md</code>.</p>
+
+    <h3>3 · Thiết kế: bước kèm phạm vi và ngân sách</h3>
+<pre><code>steps:
+  - id: S1
+    title: Kiểm tra request
+    scope: ["internal/limit/web/**", "cmd/server/routes.go"]
+    budget: { files: 2, lines: 60 }
+  - id: S2
+    title: Tính hạn mức theo bảng daily_limit
+    scope: ["internal/limit/**", "db/migrations/**"]
+    budget: { files: 3, lines: 80 }
+invariants:
+  - name: Số đã dùng không vượt hạn mức
+    sql: "SELECT account_id FROM daily_limit WHERE used_amount &lt; 0 OR used_amount &gt; limit_amount"
+impact: { level: medium, labels: [schema-change] }</code></pre>
+    <p><code>submit design</code> chạy thử migration nháp trên Postgres thật và tính mức rủi ro đầy đủ. Thẻ review báo
+      <span class="pill bad">SCOPE_OVERLAP</span> (S1 và S2 cùng chạm <code>internal/limit/web/**</code>) và
+      <span class="pill warn">SCOPE_MATCHES_OLD_MIGRATION</span> — xem <a href="#web">ảnh cổng Thiết kế</a> bên dưới.</p>
+
+    <h3>4 · Case được đối chiếu với mức rủi ro</h3>
+    <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc submit cases</span>
+<span class="e">RISK_REQ: Mức high yêu cầu Case gửi trùng: … POST /api/v1/limits/check</span>
+<span class="e">(exit 1)</span></pre></div>
+    <p>Agent thêm case C7 (<code>when.repeat: 2</code>, kiểm <code>used_amount</code> không đổi) rồi nộp lại. Chưa có code nên một số case fail — điều này là bắt buộc.
+      Sau khi duyệt, <code>cases.yaml</code> bị khóa; hook chặn cả <code>sed -i</code> trên file này.</p>
+
+    <h3>5 · Code từng bước, trong phạm vi</h3>
+    <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc step finish S1</span>
+<span class="ok">2/2 pass</span>                                        <span class="d"># S1 → AWAITING_DEV, agent dừng</span>
+
+<span class="p">$</span> <span class="c">aisdlc step finish S2</span>
+<span class="e">Ngoài phạm vi: README2.txt</span>                      <span class="d"># exit 1</span></pre></div>
+    <p>Dev quyết: xóa file, hoặc <code>aisdlc scope allow README2.txt</code>. Chạy lại, S2 báo <code>7/7 pass</code>, dev chạy <code>aisdlc step accept S2</code>.</p>
+
+    <h3>6 · Eval, review độc lập, MR</h3>
+    <p><code>/aisdlc:review</code> chạy <code>aisdlc eval</code> (dòng đầu <code>eval/report.md</code>: <code>Eval PAY-1: ĐẠT</code>),
+      gọi subagent <code>aisdlc-reviewer</code> chấm năm tiêu chí rồi nộp. Sau <code>aisdlc approve review</code>, mở MR:
+      job CI chạy <code>aisdlc eval --ci</code>. Ai sửa <code>cases.yaml</code> sau khi duyệt thì CI fail ở <code>CASES_LOCKED</code>.</p>
+  </div>
+</section>
+
+<section id="web" class="alt">
+  <div class="wrap">
+    <h2>Web (tùy chọn)</h2>
+    <p class="sub"><code>aisdlc-web</code> thêm bảng tính năng, theo dõi agent trực tiếp, duyệt cổng trên trình duyệt, tạm dừng agent,
+      gửi chỉ dẫn, accept bước và cho phép file.</p>
+
+    <div class="tour">
+      <figure class="shot wide short">
+        <a href="../images/web-bang.png"><img src="../images/web-bang.png" alt="Bảng tính năng với các cột BRD, Thiết kế, Case, Code, Review, Xong; thẻ PAY-1 mức high, eval đạt 7/7" loading="lazy" width="1440" height="900"></a>
+        <figcaption><b>Bảng.</b> Mỗi cổng một cột, kèm danh sách “Việc chờ tôi”; mỗi thẻ hiện mức rủi ro, kết quả eval gần nhất và lần đồng bộ cuối.</figcaption>
+      </figure>
+
+      <figure class="shot wide">
+        <a href="../images/web-cong-thiet-ke.png"><img src="../images/web-cong-thiet-ke.png" alt="Trang cổng Thiết kế của PAY-1: số liệu tóm tắt, bảng rủi ro, sơ đồ bước nào chạm vào đâu, thay đổi DB với bảng daily_limit mới, bảng API, cờ đỏ và giả định của agent" loading="lazy" width="1440" height="1668"></a>
+        <figcaption><b>Thẻ review cổng Thiết kế.</b> Bước nào chạm vào đâu (đỏ: hai bước cùng chạm <code>internal/limit/web/**</code>; vàng: glob khớp migration cũ), diff ER, bảng API, giả định của agent và hoạt động gần đây.</figcaption>
+      </figure>
+
+      <figure class="shot crop">
+        <a href="../images/web-xac-nhan-duyet.png"><img src="../images/web-xac-nhan-duyet.png" alt="Hộp xác nhận duyệt cổng Thiết kế: cờ HIGH/WARN, 2 giả định chưa xem, các file đã nộp" loading="lazy" width="1440" height="1400"></a>
+        <figcaption><b>Duyệt trên web.</b> Hộp xác nhận liệt kê cờ còn mở, giả định chưa xem và thay đổi so với lần nộp trước.</figcaption>
+      </figure>
+
+      <figure class="shot crop">
+        <a href="../images/web-accept-buoc.png"><img src="../images/web-accept-buoc.png" alt="Trang bước S1 chờ accept: phạm vi, ngân sách, case của bước, diff, nút Accept S1" loading="lazy" width="1440" height="1619"></a>
+        <figcaption><b>Accept bước.</b> Phạm vi, ngân sách đã dùng, case của bước và diff, cùng nút <i>Accept S1</i>.</figcaption>
+      </figure>
+
+      <figure class="shot crop">
+        <a href="../images/web-tam-dung.png"><img src="../images/web-tam-dung.png" alt="Màn theo dõi agent đang tạm dừng: nút Tiếp tục, ô gửi chỉ dẫn, chỉ dẫn đã giao" loading="lazy" width="1440" height="1400"></a>
+        <figcaption><b>Tạm dừng agent và gửi chỉ dẫn.</b> Khi tạm dừng, hook chặn mọi thao tác ghi; mỗi chỉ dẫn được giao đúng một lần.</figcaption>
+      </figure>
+
+      <figure class="shot crop">
+        <a href="../images/web-token.png"><img src="../images/web-token.png" alt="Trang Token của tôi: tạo token ingest/approve, danh sách token và nút thu hồi" loading="lazy" width="1440" height="1400"></a>
+        <figcaption><b>Token có loại.</b> <code>ingest</code> cho CLI và hook, <code>approve</code> để duyệt từ terminal, <code>ci</code> cho CI — token của CLI không duyệt được gì.</figcaption>
+      </figure>
+    </div>
+
+    <h3>Chạy thử trên máy</h3>
+<pre><code>docker build -f Dockerfile.web -t aisdlc-web .
+docker run -d --name aisdlc-db -e POSTGRES_USER=aisdlc -e POSTGRES_PASSWORD=doi-mat-khau \
+  -e POSTGRES_DB=aisdlc postgres:16-alpine
+docker run -d --name aisdlc-web -p 127.0.0.1:8080:8080 --link aisdlc-db \
+  -e AISDLC_DB_URL=postgres://aisdlc-db:5432/aisdlc -e AISDLC_DB_PASSWORD=doi-mat-khau \
+  -v aisdlc-data:/data aisdlc-web
+
+docker exec aisdlc-web /aisdlc-web user add dev "Tên Dev" --email dev@example.com
+# đăng nhập bằng token vừa in, tạo token ingest ở trang /me, rồi:
+aisdlc web login</code></pre>
+    <p>Đặt <code>approvals: web</code> trong <code>aisdlc/config.yaml</code> để bản ghi duyệt nằm trên server; CI khi đó hỏi web thay vì tin repo.
+      Triển khai thật: <a href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/van-hanh-web.md">vận hành web</a>.</p>
+  </div>
+</section>
+
+<section id="risk">
+  <div class="wrap">
+    <h2>Chính sách rủi ro</h2>
+    <p class="sub">Mỗi repo khai báo thang mức, rule nhận diện tính năng rủi ro (từ khóa, đường dẫn, bảng, endpoint, nhãn) và yêu cầu theo
+      mức. Agent chỉ được nâng mức, không được hạ. Mức thấp có thể tự duyệt lần nộp sạch — Review luôn do dev duyệt.</p>
+
+    <div class="split">
+      <div>
+<pre><code>flow:
+  low:    { brd: auto,   design: auto,   cases: auto,   step: auto }
+  medium: { brd: manual, design: manual, cases: manual, step: auto }
+  high:   { brd: manual, design: manual, cases: manual, step: manual }</code></pre>
+        <div class="tbl">
+          <table>
+            <tr><th>Yêu cầu</th><th>Ý nghĩa</th></tr>
+            <tr><td><code>rule-pos-neg</code></td><td>Mỗi quy tắc BR-n có case happy và case error/boundary</td></tr>
+            <tr><td><code>idempotent</code></td><td>Mỗi endpoint ghi có case <code>when.repeat ≥ 2</code></td></tr>
+            <tr><td><code>concurrent</code></td><td>Ít nhất một case <code>when.parallel ≥ threads</code></td></tr>
+            <tr><td><code>invariant</code></td><td>Thiết kế khai báo bất biến SQL phải trả 0 dòng</td></tr>
+            <tr><td><code>coverage</code></td><td>Coverage dòng mới ≥ <code>min</code>%</td></tr>
+            <tr><td><code>sql-zero</code></td><td>Truy vấn của dự án phải trả 0 dòng sau bước cuối</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="grid">
+        <figure class="shot crop">
+          <a href="../images/web-chinh-sach-rui-ro.png"><img src="../images/web-chinh-sach-rui-ro.png" alt="Trang chính sách rủi ro, tab Yêu cầu theo mức" loading="lazy" width="1440" height="1400"></a>
+          <figcaption><b>Sửa chính sách trên web</b> — bản nháp, xuất bản kèm lý do, lịch sử phiên bản và tab “Thử phân loại”.</figcaption>
+        </figure>
+        <figure class="shot crop">
+          <a href="../images/web-tu-duyet.png"><img src="../images/web-tu-duyet.png" alt="Trang cổng BRD của FEE-3: tự duyệt (mức low)" loading="lazy" width="1440" height="1400"></a>
+          <figcaption><b>Tự duyệt ở mức low.</b> FEE-3 chạy thẳng tới Review; chỉ cổng cuối chờ người duyệt.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="safety" class="alt">
+  <div class="wrap">
+    <h2>Mô hình an toàn</h2>
+    <p class="sub">AISDLC giả định agent có thể <b>nhầm</b>, không phải cố tình tấn công. Hook chặn lỗi vô ý trên máy dev; protected branch
+      cùng job eval trên CI mới là lớp thực thi thật.</p>
+    <div class="grid c3">
+      <div class="card"><h4>Hook PreToolUse</h4><p>Chặn ghi file trạng thái và tài liệu đã duyệt, ghi ngoài phạm vi bước, đụng tới <code>~/.config/aisdlc</code>, và lệnh in biến môi trường.</p></div>
+      <div class="card"><h4>Hook không gọi mạng</h4><p>Hook chỉ đọc cache ký Ed25519 bởi server; khóa công khai được ghim trên máy dev.</p></div>
+      <div class="card"><h4>CI kiểm lại</h4><p>CI fail khi cổng chưa duyệt, nội dung lệch hash đã duyệt, hoặc code đổi sau khi duyệt Review.</p></div>
+    </div>
+    <p class="note">Chặn ghi qua Bash chỉ là heuristic. Các cách vượt đã biết nằm ở mục 8.1 của
+      <a href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/huong-dan-su-dung.md">hướng dẫn sử dụng</a>. Báo lỗ hổng: xem
+      <a href="https://github.com/hadtinfo/aisdlc-duck/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+  </div>
+</section>
+
+<section id="docs">
+  <div class="wrap">
+    <h2>Tài liệu</h2>
+    <div class="grid c3">
+      <a class="card" href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/huong-dan-su-dung.md"><h4>Hướng dẫn sử dụng →</h4><p>Cài đặt, gắn repo, một tính năng từ đầu đến cuối, viết case, eval và CI, web, chính sách rủi ro, xử lý sự cố.</p></a>
+      <a class="card" href="https://github.com/hadtinfo/aisdlc-duck/blob/main/docs/van-hanh-web.md"><h4>Vận hành web →</h4><p>Triển khai <code>aisdlc-web</code>, biến môi trường, khóa ký, cơ sở dữ liệu, quản trị người dùng.</p></a>
+      <a class="card" href="https://github.com/hadtinfo/aisdlc-duck/blob/main/README.vi.md"><h4>README tiếng Việt →</h4><p>Thành phần, yêu cầu, lệnh phát triển dự án và mô hình an toàn.</p></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>AISDLC · Giấy phép MIT</span>
+    <span><a href="https://github.com/hadtinfo/aisdlc-duck">GitHub</a> · <a href="https://github.com/hadtinfo/aisdlc-duck/releases">Releases</a> · <a href="../">English</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

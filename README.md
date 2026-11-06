@@ -135,6 +135,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
+- [Project site](https://hadtinfo.github.io/aisdlc-duck/): a guided tour with screenshots.
 - [User guide](docs/user-guide.md): installation, attaching a repo, building a feature end to end, writing cases,
   eval and CI, the web, risk policy, troubleshooting.
 - [Web operations](docs/web-operations.md): deploying `aisdlc-web`, environment variables, signing keys, database,

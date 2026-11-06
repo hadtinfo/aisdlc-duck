@@ -66,6 +66,11 @@ func (c *Client) Do(method, path, body string, hdr map[string]string) Resp {
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}
+	return c.send(req)
+}
+
+func (c *Client) send(req *http.Request) Resp {
+	c.t.Helper()
 	res, err := c.HTTP.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
@@ -76,6 +81,21 @@ func (c *Client) Do(method, path, body string, hdr map[string]string) Resp {
 		c.t.Fatal(err)
 	}
 	return Resp{Status: res.StatusCode, Header: res.Header, Body: string(b)}
+}
+
+// DoHeader gửi request với header đầy đủ (cho header lặp).
+func (c *Client) DoHeader(method, path, body string, hdr http.Header) Resp {
+	c.t.Helper()
+	var rd io.Reader
+	if body != "" {
+		rd = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, c.Base+path, rd)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	req.Header = hdr
+	return c.send(req)
 }
 
 // Raw gửi request-target thô (không qua url.Parse của client), ví dụ `/api\cli\x` hay `//api/x`.

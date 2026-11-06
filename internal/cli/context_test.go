@@ -81,10 +81,9 @@ func TestUnknownFlagExit2(t *testing.T) {
 	contains(t, r.err, "--nope")
 }
 
-func TestDefaultRunnerNeedsHarness(t *testing.T) {
-	_, err := defaultRunner("/x").RunCases("PAY-1", nil, "cases")
-	var a *Abort
-	if !asAbort(err, &a) || a.Code != 2 || a.Msg != "Chạy case cần harness Go (giai đoạn 3)." {
-		t.Fatalf("got %v", err)
-	}
+func TestHandlesSignalsExceptHooks(t *testing.T) {
+	eq(t, handlesSignals([]string{"eval"}), true)
+	eq(t, handlesSignals([]string{"step", "finish", "S1"}), true)
+	eq(t, handlesSignals(nil), true)
+	eq(t, handlesSignals([]string{"hook", "pre-tool-use"}), false)
 }

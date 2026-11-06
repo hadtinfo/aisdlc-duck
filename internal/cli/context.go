@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"aisdlc/internal/eval"
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
 	"aisdlc/internal/lang"
@@ -61,12 +62,15 @@ type Context struct {
 	console DevConsole
 	cwd     string
 	std     context.Context
+	// interrupts: nguồn Ctrl-C/SIGTERM khi harness chạy (nil: không bắt tín hiệu, như test và hook)
+	interrupts *Interrupts
 
 	color           bool
 	now             func() time.Time
 	env             map[string]string
 	git             func(root string) *gitx.Repo
 	runner          func(root string, cfg model.RepoConfig) CaseRunner
+	verifier        func(root string, cfg model.RepoConfig) eval.Verifier
 	network         bool
 	loginWarned     bool
 	sessionID       string
@@ -77,22 +81,25 @@ type Context struct {
 	exit            int
 }
 
-// NewContext tạo Context với mặc định của tiến trình: env của OS, đồng hồ UTC, git thật, runner chờ harness.
+// NewContext tạo Context với mặc định của tiến trình: env của OS, đồng hồ UTC, git thật, runner và verifier là
+// harness Go (dùng ctx và đồng hồ hiện hành của Context lúc gọi).
 func NewContext(in io.Reader, out, errw io.Writer, console DevConsole, cwd string) *Context {
 	if abs, err := filepath.Abs(cwd); err == nil {
 		cwd = abs
 	}
 	env := osEnv()
-	return &Context{
+	c := &Context{
 		in: in, out: out, err: errw, console: console, cwd: filepath.Clean(cwd), std: context.Background(),
 		color:   colorDefault(isTerminal(out), env),
 		now:     func() time.Time { return time.Now().UTC() },
 		env:     env,
 		git:     gitx.New,
-		runner:  func(root string, _ model.RepoConfig) CaseRunner { return defaultRunner(root) },
 		network: true,
 		banner:  true,
 	}
+	c.runner = func(root string, cfg model.RepoConfig) CaseRunner { return newHarnessRunner(c.std, root, cfg, c.now) }
+	c.verifier = func(root string, cfg model.RepoConfig) eval.Verifier { return newHarnessVerifier(root, cfg, c.now) }
+	return c
 }
 
 func osEnv() map[string]string {
@@ -148,6 +155,18 @@ func (c *Context) WithRunner(f func(root string, cfg model.RepoConfig) CaseRunne
 	return c
 }
 
+// WithVerifier thay eval.Verifier của `aisdlc eval`.
+func (c *Context) WithVerifier(f func(root string, cfg model.RepoConfig) eval.Verifier) *Context {
+	c.verifier = f
+	return c
+}
+
+// WithStd thay context.Context của lệnh (Main: hủy khi Ctrl-C/SIGTERM); harness và git dùng nó.
+func (c *Context) WithStd(std context.Context) *Context { c.std = std; return c }
+
+// WithInterrupts đặt nguồn tín hiệu dùng khi harness/eval chạy (Main: OSInterrupts).
+func (c *Context) WithInterrupts(in *Interrupts) *Context { c.interrupts = in; return c }
+
 // WithColor bật/tắt màu ANSI khi in review card.
 func (c *Context) WithColor(b bool) *Context { c.color = b; return c }
 
@@ -199,7 +218,7 @@ func (c *Context) Console() DevConsole { return c.console }
 // Cwd là thư mục hiện tại (tuyệt đối).
 func (c *Context) Cwd() string { return c.cwd }
 
-// Std là context.Context cho các lệnh gọi git.
+// Std là context.Context của lệnh (git, harness, eval); bị hủy khi dev bấm Ctrl-C.
 func (c *Context) Std() context.Context { return c.std }
 
 // Now là thời điểm hiện tại theo đồng hồ của Context (UTC).
@@ -234,6 +253,11 @@ func (c *Context) Git(root string) *gitx.Repo { return c.git(root) }
 
 // Runner trả CaseRunner cho repo.
 func (c *Context) Runner(root string, cfg model.RepoConfig) CaseRunner { return c.runner(root, cfg) }
+
+// Verifier trả eval.Verifier cho repo.
+func (c *Context) Verifier(root string, cfg model.RepoConfig) eval.Verifier {
+	return c.verifier(root, cfg)
+}
 
 // Invocation là lệnh chỉ dev đang chạy, dựng từ đối số nguyên văn, nếu động từ đúng là verb.
 func (c *Context) Invocation(verb string) (policy.DevCommand, bool) {

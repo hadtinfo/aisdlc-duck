@@ -109,13 +109,9 @@ func TestScopeAllowOutsideRepoExit2(t *testing.T) {
 	eq(t, r.exists("aisdlc/features/PAY-1/scope-extra.json"), false)
 }
 
-func TestEvalAndWebStubsExit2(t *testing.T) {
+func TestWebStubsExit2(t *testing.T) {
 	r := newTestRepo(t)
 	r.setupInit()
-	for _, cmd := range [][]string{{"eval"}, {"eval", "--ci"}, {"eval", "--ci", "--base", "main"}} {
-		eq(t, r.run(cmd...), 2)
-		contains(t, r.err, "aisdlc eval cần harness Go (giai đoạn 3).")
-	}
 	for _, sub := range []string{"status", "push", "flush", "login", "approve-token", "migrate"} {
 		eq(t, r.run("web", sub), 2)
 		contains(t, r.err, "Lệnh web chưa có trong bản Go (giai đoạn 4).")

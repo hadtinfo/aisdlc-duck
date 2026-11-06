@@ -1,0 +1,9 @@
+reset_sql: ["DELETE FROM transfer"]
+cases:
+  - id: D1
+    step: S1
+    kind: error
+    title: given.sql dùng cột note của migration nháp
+    given: { sql: ["INSERT INTO transfer (from_account, to_account, amount, note) VALUES ('A', 'B', 1, 'nháp')"] }
+    when:  { method: GET, path: /khong-co }
+    then:  { status: 404 }

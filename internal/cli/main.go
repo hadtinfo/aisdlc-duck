@@ -27,7 +27,20 @@ func Main() {
 		fmt.Fprintln(os.Stderr, "Lỗi: "+err.Error())
 		os.Exit(ExitUsage)
 	}
-	os.Exit(Run(NewContext(os.Stdin, os.Stdout, os.Stderr, SystemConsole(), cwd), os.Args[1:]...))
+	args := os.Args[1:]
+	ctx := NewContext(os.Stdin, os.Stdout, os.Stderr, SystemConsole(), cwd)
+	if handlesSignals(args) {
+		// chỉ bắt Ctrl-C/SIGTERM trong lúc harness/eval chạy (interruptible); ngoài lúc đó giữ hành vi mặc định
+		ctx.WithInterrupts(OSInterrupts())
+	}
+	code := Run(ctx, args...)
+	os.Exit(code)
+}
+
+// handlesSignals: lệnh CLI được bắt Ctrl-C/SIGTERM lúc harness chạy để hủy ctx thay vì chết ngay; hook
+// (`aisdlc hook ...`) không bao giờ bắt, giữ hành vi mặc định để không bao giờ treo vì tín hiệu.
+func handlesSignals(args []string) bool {
+	return len(args) == 0 || args[0] != "hook"
 }
 
 // Run chạy một lệnh trong tiến trình và trả mã thoát.

@@ -1,0 +1,13 @@
+language: go
+service:
+  main: ./cmd/server
+  healthPath: /healthz
+  startTimeoutSeconds: 30
+  shutdownTimeoutSeconds: 10
+  env:
+    port: PORT
+    databaseUrl: DATABASE_URL
+migrations:
+  dir: db/migrations
+unitTest:
+  packages: ["./..."]

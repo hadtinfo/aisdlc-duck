@@ -32,7 +32,7 @@
 ## Global Constraints
 
 - Tài liệu và thông báo bằng tiếng Việt. Giữ văn phong tài liệu Java hiện có.
-- Không còn nhắc `mvn`, Maven, JUnit, JaCoCo, Flyway, `src/main/java`, `pom.xml` hay `AisdlcCasesTest`, trừ trong `docs/legacy-java/` và trong ghi chú adapter Java tương lai. Kiểm bằng `grep -rniE 'mvn|maven|junit|jacoco|flyway|src/main/java|pom\.xml' templates plugin docs/*.md README.md e2e` (bỏ `legacy-java`): không có kết quả.
+- Không còn nhắc `mvn`, Maven, JUnit, JaCoCo, Flyway, `src/main/java`, `pom.xml` hay `AisdlcCasesTest`, trừ trong `docs/legacy-java/` và trong ghi chú adapter Java tương lai. Kiểm bằng `grep -rniE --exclude-dir=node_modules --exclude-dir=out 'mvn|maven|junit|jacoco|flyway|src/main/java|pom\.xml' templates plugin docs/*.md README.md e2e` (bỏ `legacy-java`): không có kết quả.
 - Migration theo goose: tên `NNNNN_ten.sql`, có `-- +goose Up`. Bản nháp tính năng nằm trong `aisdlc/features/<KEY>/db/`.
 - So DB trong `then.db` theo spec §6.7:
   - số so theo giá trị;

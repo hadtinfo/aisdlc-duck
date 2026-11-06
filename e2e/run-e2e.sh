@@ -14,6 +14,8 @@
 # E2E_PARTS (mặc định local,web,flow,session): chọn nhóm bước. local = repo đầu (PAY-1 FULL, FIX-2 LITE, âm tính,
 # DOCKER_HOST sai, fixture bỏ qua SIGTERM); web = repo local/web-service; flow = quy trình theo mức (repo flow-service);
 # session = nhiều session song song. `make e2e-web` chạy E2E_PARTS=web,flow.
+# E2E_LATENCY_SLACK_MS (mặc định 0): nới ngưỡng p95 50 ms của hook cho máy CI chậm. E2E_PW_DIR: nơi cài Playwright
+# (mặc định ~/.cache/aisdlc-e2e/pw, ngoài repo).
 # Chính sách rủi ro: fixture có aisdlc/risk-policy.yaml (rule E1 "hạn mức" → high; high cần case gửi trùng và bất biến).
 # Quy trình theo mức (flow): repo flow-service có chính sách riêng (e2e/solutions/flow/risk-policy.yaml, flow.low
 # toàn auto, rule bảng daily_limit → high). FEE-3 mức thấp chạy một mạch tới Review; PAY-1 nâng mức ở `submit design`
@@ -33,10 +35,22 @@ E2E_PARTS="${E2E_PARTS:-local,web,flow,session}"
 WEB_PID=""
 PG_CTR=""
 LABEL="aisdlc-e2e"
+# Server web nền của lần chạy ("pid-server pid-script"), để lần chạy sau dọn khi lần này bị SIGKILL (trap không chạy).
+WEB_PIDFILE="${TMPDIR:-/tmp}/aisdlc-e2e-web.$(id -u).pids"
+LAT_SUMMARY=""
 
 rm -rf "$OUTDIR"
 mkdir -p "$OUTDIR"
 : >"$LOG"
+# aisdlc-web sót của lần chạy bị SIGKILL: script chủ đã chết thì giết server.
+if [ -f "$WEB_PIDFILE" ]; then
+  while read -r wpid owner; do
+    if [ -n "$wpid" ] && ! kill -0 "${owner:-0}" 2>/dev/null && grep -qa 'aisdlc-web' "/proc/$wpid/cmdline" 2>/dev/null; then
+      kill -9 "$wpid" 2>/dev/null && echo "dọn aisdlc-web sót pid $wpid (script $owner đã chết)" >>"$LOG"
+    fi
+  done <"$WEB_PIDFILE"
+  rm -f "$WEB_PIDFILE"
+fi
 
 part() { case ",$E2E_PARTS," in *",$1,"*) return 0 ;; esac; return 1; }
 
@@ -53,12 +67,25 @@ log_has_secret() {
   return 1
 }
 
-# web_stop: tắt server web (SIGTERM, chờ thoát).
+# web_stop: tắt server web (SIGTERM, chờ tối đa 15 giây rồi SIGKILL), xóa file pid.
 web_stop() {
   [ -n "$WEB_PID" ] || return 0
+  local i
   kill "$WEB_PID" 2>/dev/null || true
+  for i in $(seq 1 30); do kill -0 "$WEB_PID" 2>/dev/null || break; sleep 0.5; done
+  kill -9 "$WEB_PID" 2>/dev/null || true
   wait "$WEB_PID" 2>/dev/null || true
   WEB_PID=""
+  rm -f "$WEB_PIDFILE"
+}
+
+# svc_pids: dịch vụ mẫu do harness build (binary <repo>/.aisdlc/run/.../svc) còn chạy, thuộc lần chạy này ($WORK).
+svc_pids() {
+  local p
+  for p in $(pgrep -x svc 2>/dev/null || true); do
+    case "$(readlink "/proc/$p/exe" 2>/dev/null)" in "$WORK"/*) echo "$p" ;; esac
+  done
+  return 0
 }
 
 cleanup() {
@@ -81,8 +108,10 @@ cleanup() {
     echo "Giữ web (KEEP_WEB=1): $WEB_URL — dọn bằng: kill $WEB_PID; docker rm -f $PG_CTR" >&2
   else
     web_stop
-    [ -z "$PG_CTR" ] || docker rm -f -v "$PG_CTR" >/dev/null 2>&1 || true
+    # mọi container của lần chạy này (Postgres của web, container eval không Docker nếu bị ngắt giữa chừng)
+    for p in $(docker ps -aq --filter "label=$LABEL.pid=$$" 2>/dev/null); do docker rm -f -v "$p" >/dev/null 2>&1 || true; done
   fi
+  for p in $(svc_pids); do kill -9 "$p" 2>/dev/null || true; done
   if [ -n "${KEEP:-}" ]; then echo "Giữ thư mục (KEEP=1): $WORK" >&2; else chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"; fi
   exit $rc
 }
@@ -166,6 +195,15 @@ hook_ms() {
   echo $(( (t1 - t0) / 1000000 ))
 }
 
+# pipe_ms <lệnh...>: cùng khuôn đo như hook_ms (printf JSON | lệnh) cho một lệnh bất kỳ: nền đo ngoài sản phẩm.
+pipe_ms() {
+  local t0 t1
+  t0=$(date +%s%N)
+  printf '%s' '{"session_id":"e2e"}' | "$@" >/dev/null 2>&1
+  t1=$(date +%s%N)
+  echo $(( (t1 - t0) / 1000000 ))
+}
+
 # stats20 <lệnh hook_ms...>: chạy 20 lần, in "p95 trung-vị (các lần đo)" (p95 = lần thứ 19 sau khi sắp).
 stats20() {
   local all=() i sorted
@@ -192,14 +230,22 @@ wait_no_flush() {
   die "tiến trình web flush nền vẫn chạy sau $1 giây"
 }
 
-# Playwright (e2e/package.json, chromium) cài một lần mỗi máy: npm ci trong e2e/ rồi `playwright install chromium`.
-# Trình duyệt và cache npm dùng HOME thật (HOME của E2E là thư mục tạm). Thiếu mạng lần đầu thì fail rõ ràng.
+# Playwright (e2e/package.json + lock, chromium) cài ngoài repo ở $PW_DIR (mặc định ~/.cache/aisdlc-e2e/pw, giữ qua các
+# lần chạy): chép package.json, lock và các .mjs vào đó, `npm ci` khi lock đổi, rồi `playwright install chromium`; node
+# chạy .mjs từ $PW_DIR để import thấy node_modules. Trình duyệt và cache npm dùng HOME thật. Thiếu mạng lần đầu thì fail.
 pw_install() {
   [ -n "${PW_READY:-}" ] && return 0
   export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$REAL_HOME/.cache/ms-playwright}"
   export npm_config_cache="${npm_config_cache:-$REAL_HOME/.npm}"
-  (cd "$E2E" && npm ci --no-audit --no-fund >>"$LOG" 2>&1 && timeout 600 npx playwright install chromium >>"$LOG" 2>&1) \
-    || die "không cài được playwright/chromium (e2e/package.json; cần Node, mạng lần đầu)"
+  mkdir -p "$PW_DIR"
+  cp "$E2E"/*.mjs "$PW_DIR/"
+  if ! cmp -s "$E2E/package-lock.json" "$PW_DIR/package-lock.json" || [ ! -d "$PW_DIR/node_modules/playwright" ]; then
+    cp "$E2E/package.json" "$E2E/package-lock.json" "$PW_DIR/"
+    (cd "$PW_DIR" && npm ci --no-audit --no-fund >>"$LOG" 2>&1) \
+      || die "không cài được playwright (e2e/package.json vào $PW_DIR; cần Node, mạng lần đầu)"
+  fi
+  (cd "$PW_DIR" && timeout 600 npx playwright install chromium >>"$LOG" 2>&1) \
+    || die "không cài được chromium cho playwright (cần mạng lần đầu)"
   PW_READY=1
 }
 
@@ -208,7 +254,7 @@ screenshots() {
   step "Chụp ảnh web (Playwright)"
   pw_install
   WEB_URL="$WEB_URL" WEB_TOKEN="$WEB_TOKEN" SHOTS="$SHOTS" REPO_ID="local/fixture-service" KEY=PAY-1 \
-    node "$E2E/screenshots.mjs" >>"$LOG" 2>&1 || die "chụp ảnh thất bại (cần Node, playwright và chromium)"
+    node "$PW_DIR/screenshots.mjs" >>"$LOG" 2>&1 || die "chụp ảnh thất bại (cần Node, playwright và chromium)"
   for f in "$SHOTS"/*.png; do echo "Ảnh: $f"; done
 }
 
@@ -216,7 +262,7 @@ screenshots() {
 web_ui() {
   pw_install
   WEB_URL="$WEB_URL" WEB_TOKEN="$WEB_TOKEN" REPO_ID="$WREPO_ID" KEY="${4:-$KEY}" ACTION="$1" \
-    GATE="${2:-}" SHOT="${3:-}" PAGE="${PAGE:-}" node "$E2E/web-approve.mjs" >>"$LOG" 2>&1 \
+    GATE="${2:-}" SHOT="${3:-}" PAGE="${PAGE:-}" node "$PW_DIR/web-approve.mjs" >>"$LOG" 2>&1 \
     || die "Playwright: $1 ${2:-} thất bại (xem log)"
 }
 
@@ -225,7 +271,7 @@ web_ui() {
 web_risk() {
   pw_install
   WEB_URL="$WEB_URL" WEB_TOKEN="$WEB_TOKEN" REPO_ID="$WREPO_ID" KEY="$KEY" RULE=E1 MATCH="hạn mức" \
-    LEVEL=high GATE=CASES SHOTS="${SCREENSHOTS:+$SHOTS}" node "$E2E/web-risk.mjs" >>"$LOG" 2>&1 \
+    LEVEL=high GATE=CASES SHOTS="${SCREENSHOTS:+$SHOTS}" node "$PW_DIR/web-risk.mjs" >>"$LOG" 2>&1 \
     || die "Playwright: web-risk thất bại (xem log)"
 }
 
@@ -239,7 +285,7 @@ web_ctl() {
   shift
   pw_install
   env WEB_URL="$WEB_URL" WEB_TOKEN="$WEB_TOKEN" REPO_ID="$WREPO_ID" KEY="$KEY" ACTION="$action" \
-    "$@" node "$E2E/web-control.mjs" >>"$LOG" 2>&1 || die "Playwright: web-control $action $* thất bại (xem log)"
+    "$@" node "$PW_DIR/web-control.mjs" >>"$LOG" 2>&1 || die "Playwright: web-control $action $* thất bại (xem log)"
 }
 
 # Trạng thái bước <id> trong steps.json của tính năng $KEY ở $REPO.
@@ -283,6 +329,7 @@ web_start() {
   AISDLC_LISTEN="127.0.0.1:$AISDLC_WEB_PORT" AISDLC_DB_URL="$WEB_DB_URL" AISDLC_DB_USER=aisdlc AISDLC_DB_PASSWORD=aisdlc \
     AISDLC_SIGNING_KEY_FILE="$WORK/web-data/signing-key" "$ROOT/bin/aisdlc-web" >>"$OUTDIR/web.log" 2>&1 &
   WEB_PID=$!
+  echo "$WEB_PID $$" >"$WEB_PIDFILE"
   web_wait_ready
 }
 
@@ -332,8 +379,15 @@ GOCACHE="$(go env GOCACHE)"
 GOPATH="$(go env GOPATH)"
 export GOMODCACHE GOCACHE GOPATH
 export DOCKER_CONFIG="${DOCKER_CONFIG:-$REAL_HOME/.docker}"
+PW_DIR="${E2E_PW_DIR:-${XDG_CACHE_HOME:-$REAL_HOME/.cache}/aisdlc-e2e/pw}"
 export HOME="$WORK/home"
 mkdir -p "$HOME"
+# git cô lập: không đọc cấu hình hệ thống/toàn cục của máy (hook, alias, ký commit...), không thừa biến GIT_* của shell.
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_AUTHOR_DATE GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_COMMITTER_DATE \
+  GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES \
+  GIT_NAMESPACE GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT XDG_CONFIG_HOME
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$WORK/gitconfig"
+: >"$GIT_CONFIG_GLOBAL"
 SHOTS="$OUTDIR/screens"
 [ -z "${SCREENSHOTS:-}" ] || mkdir -p "$SHOTS"
 
@@ -525,25 +579,56 @@ git checkout -q -- aisdlc # CI ghi đè eval/report.*; bỏ, giữ bản đã co
 
 # Review Focus 2: CI của dịch vụ đích không có Docker socket → báo lỗi rõ, thoát khác 0, không treo (timeout 300 giây
 # chỉ để chắc không treo; hết giờ thì exit 124 và bước này fail). testcontainers bỏ qua DOCKER_HOST không với tới được
-# và thử tiếp socket mặc định, nên trên máy có /var/run/docker.sock eval chạy trong container golang không gắn socket
-# (đúng như job CI không có Docker); không có socket mặc định (CI dind) thì chỉ cần DOCKER_HOST sai.
+# và thử tiếp các socket cục bộ (/var/run/docker.sock, socket rootless trong $XDG_RUNTIME_DIR, ~/.docker/run...), nên
+# máy có socket cục bộ thì eval chạy trong container golang không gắn socket nào (đúng như job CI không có Docker; Docker
+# rootless thì chạy bằng root của container = user thật). Không có socket cục bộ (CI dind) thì chỉ cần DOCKER_HOST sai,
+# bỏ XDG_RUNTIME_DIR và cấu hình docker (context). Nếu testcontainers vẫn tìm được Docker (cấu hình lạ) thì báo BỎ QUA
+# rõ ràng, không fail oan.
 step "$KEY âm tính: eval --ci khi DOCKER_HOST sai, không có socket Docker → lỗi rõ, exit khác 0, không treo"
+local_sock=""
+for sk in /var/run/docker.sock "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/docker.sock" "/run/user/$(id -u)/docker.sock" \
+  "$REAL_HOME/.docker/run/docker.sock" "$REAL_HOME/.docker/desktop/docker.sock"; do
+  [ -S "$sk" ] && { local_sock="$sk"; break; }
+done
+case "${DOCKER_HOST:-}" in unix://*) local_sock="${DOCKER_HOST#unix://}" ;; esac
 T0=$(date +%s)
-if [ -S /var/run/docker.sock ] && [ "$(docker_host)" = 127.0.0.1 ]; then
+skip=""
+rc=0
+if [ -n "$local_sock" ] && [ "$(docker_host)" = 127.0.0.1 ]; then
   arch="$(uname -m)"; case "$arch" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
-  run 1 docker run --rm --label "$LABEL=1" --label "$LABEL.pid=$$" --user "$(id -u):$(id -g)" \
-    -e HOME=/tmp -e GOMODCACHE=/gomod -e GOCACHE=/gocache -e GOTOOLCHAIN=local \
-    -e DOCKER_HOST=tcp://127.0.0.1:1 -v "$GOMODCACHE:/gomod:ro" -v "$GOCACHE:/gocache" -v "$REPO:$REPO" -w "$REPO" \
-    -v "$ROOT/plugin/lib/aisdlc-linux-$arch:/usr/local/bin/aisdlc:ro" \
-    -v "$ROOT/plugin/lib/aisdlc-harness-linux-$arch:/usr/local/bin/aisdlc-harness:ro" golang:1.26-bookworm \
-    timeout 300 aisdlc eval --ci --base "$SETUP"
+  user="$(id -u):$(id -g)"
+  docker info -f '{{.SecurityOptions}}' 2>/dev/null | grep -q rootless && user=0:0
+  IMG=golang:1.26-bookworm
+  if docker image inspect "$IMG" >/dev/null 2>&1 || docker pull -q "$IMG" >>"$LOG" 2>&1; then
+    OUT="$(docker run --rm --label "$LABEL=1" --label "$LABEL.pid=$$" --user "$user" \
+      -e HOME=/tmp -e GOMODCACHE=/gomod -e GOCACHE=/gocache -e GOTOOLCHAIN=local \
+      -e DOCKER_HOST=tcp://127.0.0.1:1 -v "$GOMODCACHE:/gomod:ro" -v "$GOCACHE:/gocache" -v "$REPO:$REPO" -w "$REPO" \
+      -v "$ROOT/plugin/lib/aisdlc-linux-$arch:/usr/local/bin/aisdlc:ro" \
+      -v "$ROOT/plugin/lib/aisdlc-harness-linux-$arch:/usr/local/bin/aisdlc-harness:ro" "$IMG" \
+      timeout 300 aisdlc eval --ci --base "$SETUP" 2>&1)" || rc=$?
+  else
+    skip="không có ảnh $IMG (cần mạng lần đầu) để chạy eval ở nơi không có socket Docker"
+  fi
 else
-  run 1 env DOCKER_HOST=tcp://127.0.0.1:1 TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1 timeout 300 aisdlc eval --ci --base "$SETUP"
+  mkdir -p "$WORK/no-docker-config"
+  OUT="$(env -u XDG_RUNTIME_DIR -u TESTCONTAINERS_HOST_OVERRIDE -u DOCKER_CONTEXT DOCKER_CONFIG="$WORK/no-docker-config" \
+    DOCKER_HOST=tcp://127.0.0.1:1 timeout 300 aisdlc eval --ci --base "$SETUP" 2>&1)" || rc=$?
 fi
-has "Eval $KEY: KHÔNG ĐẠT"
-has "không khởi động được Postgres: "
-DOCKER_S=$(( $(date +%s) - T0 ))
-echo "eval không có Docker: exit 1 sau ${DOCKER_S} giây, $(grep -m1 -o 'không khởi động được Postgres: .\{0,80\}' <<<"$OUT")" | tee -a "$LOG"
+if [ -z "$skip" ]; then
+  redact
+  printf '$ aisdlc eval --ci --base %s (không có Docker)\n%s\n[exit %s]\n' "$SETUP" "$OUT" "$rc" >>"$LOG"
+  if [ "$rc" != 124 ] && grep -q 'Resolved Docker Host' <<<"$OUT"; then
+    skip="testcontainers vẫn tìm được Docker ($(grep -m1 -o 'Resolved Docker Host: .*' <<<"$OUT"))"
+  fi
+fi
+if [ -n "$skip" ]; then
+  echo "BỎ QUA bước eval không có Docker: $skip" | tee -a "$LOG"
+else
+  [ "$rc" = 1 ] || die "eval không có Docker: exit $rc, mong đợi 1 (124 = treo tới timeout)"
+  has "Eval $KEY: KHÔNG ĐẠT"
+  has "không khởi động được Postgres: "
+  echo "eval không có Docker: exit 1 sau $(( $(date +%s) - T0 )) giây, $(grep -m1 -o 'không khởi động được Postgres: .\{0,80\}' <<<"$OUT")" | tee -a "$LOG"
+fi
 git checkout -q -- aisdlc
 
 step "$KEY âm tính: sửa cases.yaml sau khi duyệt → eval fail CASES_LOCKED"
@@ -561,6 +646,8 @@ grep -E '^\| COVERAGE_CHANGED_LINES \|' "$P/eval/report.md" >"$WORK/cov-row" || 
 grep -qE '^\| COVERAGE_CHANGED_LINES \| NA \| dịch vụ không tắt êm khi nhận SIGTERM .*SIGKILL' "$WORK/cov-row" \
   || die "coverage phải N/A kèm lý do không tắt êm, được: $(cat "$WORK/cov-row")"
 echo "coverage khi fixture bỏ qua SIGTERM: $(cat "$WORK/cov-row")" | tee -a "$LOG"
+left="$(svc_pids)"
+[ -z "$left" ] || die "harness để sót dịch vụ mẫu (bỏ qua SIGTERM) đang chạy: pid $left"
 git checkout -q -- aisdlc
 
 # =============================================================================================
@@ -649,6 +736,7 @@ if [ "$WEB" = 1 ] && part web; then
 
   step "aisdlc web login (pty, token ingest) và web approve-token (pty) vào HOME riêng"
   run 3 aisdlc web login </dev/null
+  has "Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). Agent không được chạy lệnh này."
   dev_secret "$WEB_URL"$'\n'"$INGEST" web login
   has "Đã lưu $HOME/.config/aisdlc/web.json"
   dev_secret "$APPROVE" web approve-token
@@ -819,9 +907,10 @@ if [ "$WEB" = 1 ] && part web; then
   hook_stop
   has '"block"'
 
-  # spec §7: hook dưới 50 ms (p95). Đo bằng tiến trình thật (wrapper plugin/bin/aisdlc + binary Go, gồm cả fork/exec
-  # của shell đo), 20 lần mỗi loại. Như bản Java (mục tiêu 300 ms, FAIL > 600 ms): mục tiêu 50 ms chỉ cảnh báo, FAIL khi
-  # p95 > 100 ms; máy đang tải (nền > 50 ms) thì FAIL khi vượt nền + 50 ms.
+  # spec §7: hook dưới 50 ms (p95). Đo bằng tiến trình thật (wrapper plugin/bin/aisdlc + binary Go), 20 lần mỗi loại,
+  # cùng khuôn `printf JSON | lệnh` có đồng hồ quanh. Ngưỡng tuyệt đối: p95 > 50 ms là FAIL; E2E_LATENCY_SLACK_MS (mặc
+  # định 0) nới cho máy CI chậm. Nền ngoài sản phẩm (không dùng làm ngưỡng): /bin/true và một script bash rỗng cùng khuôn
+  # (chi phí fork/exec, khởi động bash), và chính hook với cwd ngoài repo AISDLC (khởi động wrapper + binary).
   step "web $KEY độ trễ hook (tiến trình thật): PreToolUse Edit có file điều khiển, PostToolUse Read không inbox"
   [ -f "$WREPO/.aisdlc/web/control/$KEY.json" ] || die "thiếu file điều khiển .aisdlc/web/control/$KEY.json"
   [ ! -e "$WREPO/.aisdlc/web/control/inbox" ] || die "đo PostToolUse Read cần không có cờ inbox"
@@ -830,22 +919,24 @@ if [ "$WEB" = 1 ] && part web; then
   wait_no_flush 30
   hook_ms pre-tool-use Edit "$E_IN" >/dev/null # làm ấm cache đĩa
   PRE_MS="$(stats20 hook_ms pre-tool-use Edit "$E_IN")"
-  # Nền: cùng JSON nhưng cwd ngoài mọi repo AISDLC (chỉ chi phí khởi động wrapper + binary, đọc JSON) để nhận ra máy
-  # đang tải nặng.
-  mkdir -p "$WORK/no-repo"
-  BASE_MS="$(HOOK_CWD="$WORK/no-repo" stats20 hook_ms pre-tool-use Edit "$E_IN")"
   POST_MS="$(stats20 hook_ms post-tool-use Read "{\"file_path\":\"$WREPO/go.mod\"}")"
-  LIMIT=100
-  if [ "${BASE_MS%% *}" -gt 50 ]; then
-    LIMIT=$(( ${BASE_MS%% *} + 50 ))
-    echo "WARN: máy chậm hoặc đang tải (nền p95 ${BASE_MS%% *} ms): FAIL khi > ${LIMIT} ms" | tee -a "$LOG"
-  fi
-  echo "Độ trễ PreToolUse Edit (có điều khiển): p95 trung-vị ${PRE_MS} ms — mục tiêu spec p95 < 50 ms, FAIL > ${LIMIT} ms" | tee -a "$LOG"
-  echo "Độ trễ nền (cùng hook, cwd ngoài repo): p95 trung-vị ${BASE_MS} ms" | tee -a "$LOG"
-  echo "Độ trễ PostToolUse Read (không inbox): p95 trung-vị ${POST_MS} ms — mục tiêu spec p95 < 50 ms, FAIL > ${LIMIT} ms" | tee -a "$LOG"
-  for m in "$PRE_MS" "$POST_MS"; do
-    [ "${m%% *}" -le 50 ] || echo "WARN: p95 ${m%% *} ms vượt mục tiêu spec 50 ms" | tee -a "$LOG"
-  done
+  printf '#!/usr/bin/env bash\ncat >/dev/null\n' >"$WORK/noop.sh"
+  TRUE_MS="$(stats20 pipe_ms /bin/true)"
+  BASH_MS="$(stats20 pipe_ms bash "$WORK/noop.sh")"
+  mkdir -p "$WORK/no-repo"
+  OUTSIDE_MS="$(HOOK_CWD="$WORK/no-repo" stats20 hook_ms pre-tool-use Edit "$E_IN")"
+  LIMIT=$(( 50 + ${E2E_LATENCY_SLACK_MS:-0} ))
+  VERDICT=ĐẠT
+  { [ "${PRE_MS%% *}" -le "$LIMIT" ] && [ "${POST_MS%% *}" -le "$LIMIT" ]; } || VERDICT="KHÔNG ĐẠT"
+  LAT_SUMMARY="$(printf '%s\n' \
+    "Độ trễ hook (p95 trung-vị, ms; 20 lần; load $(cut -d' ' -f1-3 /proc/loadavg)):" \
+    "  PreToolUse Edit (có điều khiển): ${PRE_MS}" \
+    "  PostToolUse Read (không inbox):  ${POST_MS}" \
+    "  nền /bin/true cùng khuôn:        ${TRUE_MS}" \
+    "  nền script bash rỗng:            ${BASH_MS}" \
+    "  hook, cwd ngoài repo AISDLC:     ${OUTSIDE_MS}" \
+    "  ngưỡng p95 ≤ ${LIMIT} ms (spec 50 + E2E_LATENCY_SLACK_MS ${E2E_LATENCY_SLACK_MS:-0}): ${VERDICT}")"$'\n'
+  printf '%s' "$LAT_SUMMARY" | tee -a "$LOG"
   [ "${PRE_MS%% *}" -le "$LIMIT" ] || die "PreToolUse Edit chậm: p95 ${PRE_MS%% *} ms > ${LIMIT} ms"
   [ "${POST_MS%% *}" -le "$LIMIT" ] || die "PostToolUse Read chậm: p95 ${POST_MS%% *} ms > ${LIMIT} ms"
 
@@ -1182,6 +1273,7 @@ fi # part flow
 # Nhiều session song song và duyệt trong Claude Code (sessionApprove). Repo riêng, không cần Docker/web.
 if part session; then
 SREPO="$WORK/session-service"
+unset AISDLC_WEB_URL AISDLC_WEB_TOKEN # repo duyệt local, không gửi web (phần local có thể đã đặt)
 # sess_hook <session_id> <permission_mode> <lệnh bash>: PreToolUse Bash của Claude Code (đúng JSON hook gửi).
 sess_hook() {
   local json
@@ -1241,6 +1333,9 @@ has "[SES-1]"
 
 step "Session: phiếu của sa không dùng được cho session khác; sa dùng phiếu → duyệt SES-1, phiếu dùng một lần"
 AISDLC_SESSION=sb run 3 aisdlc approve brd </dev/null
+has "[SES-2]"
+has "Không có xác nhận trong Claude Code (hoặc đã hết hạn)."
+hasnt "Đã duyệt cổng"
 AISDLC_SESSION=sa run 0 aisdlc approve brd </dev/null
 has "Đã duyệt cổng BRD"
 AISDLC_SESSION=sa run 0 aisdlc status
@@ -1248,9 +1343,11 @@ gate_line BRD "APPROVED +duyệt trong Claude Code"
 AISDLC_SESSION=sb run 0 aisdlc status
 gate_line BRD AWAITING_APPROVAL
 AISDLC_SESSION=sa run 2 aisdlc approve brd </dev/null # cổng đã duyệt, phiếu đã dùng
+has "Cổng BRD đang ở trạng thái APPROVED"
 cd "$E2E"
 fi # part session
 
+[ -z "$LAT_SUMMARY" ] || printf '%s' "$LAT_SUMMARY" | tee -a "$LOG"
 step "xong"
 if log_has_secret; then die "token đã lọt vào $LOG"; fi
 echo "E2E PASS"

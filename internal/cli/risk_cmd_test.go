@@ -32,7 +32,7 @@ func TestLowerWithoutReasonExit2(t *testing.T) {
 	}
 }
 
-// Bản Java kiểm thêm event RISK_CLASSIFIED/RISK_OVERRIDDEN gửi web qua FakeWeb: phần đó để giai đoạn 4.
+// Phần event RISK_CLASSIFIED/RISK_OVERRIDDEN gửi web: TestLowerWithReasonSendsRiskEvents (hook_web_test.go).
 func TestLowerWithReasonWritesOverrideAndEvent(t *testing.T) {
 	r := highDesignApproved(t)
 	if c := r.runC(typed("PAY-1"), "risk", "set", "medium", "--reason", "Chỉ đọc sổ cái"); c != 0 {

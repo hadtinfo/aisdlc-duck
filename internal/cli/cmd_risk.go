@@ -56,10 +56,6 @@ func newRiskCmd(ctx *Context) *cobra.Command {
 }
 
 func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
-	// chế độ web: server cần event RISK_OVERRIDDEN để thay thế bản tự duyệt (giai đoạn 4)
-	if err := ctx.WebNetwork(f); err != nil {
-		return 0, err
-	}
 	cur, ok, err := readRisk(f)
 	if err != nil {
 		return 0, err
@@ -124,25 +120,26 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 	if err := next.Write(f.Paths.Risk()); err != nil {
 		return 0, err
 	}
+	riskOverridden(ctx, f, cur.Level, level, why)
 	ctx.Println("Đã đổi mức rủi ro thành " + level + ". Yêu cầu: " + requirementIDs(next.Requirements))
 	if _, err := supersede(ctx, f, &p, cur.Level, next); err != nil {
 		return 0, err
 	}
 	if cases == gate.AwaitingApproval || cases == gate.SubmittedWithFindings {
 		// risk.yaml nằm trong hash cổng Case: bản nộp cũ không còn khớp; local thì xóa hẳn bản nộp như reopen
-		if err := f.Gates.Reopen(gate.CASES, by); err != nil {
-			return 0, err
+		if f.Mode != gate.ModeWeb {
+			if err := f.Gates.Reopen(gate.CASES, by); err != nil {
+				return 0, err
+			}
 		}
 		ctx.Println("Cổng Case cần nộp lại: `aisdlc submit cases`.")
 	}
+	ctx.AfterCommand(f, "risk set "+level)
 	return ExitOK, nil
 }
 
 func riskReclassify(ctx *Context, f *Feature) (int, error) {
-	// chế độ web: mở lại cổng Case và báo mức mới đều qua web (giai đoạn 4)
-	if err := ctx.WebNetwork(f); err != nil {
-		return 0, err
-	}
+	f.Web.PolicyPullQuietly()
 	l, err := LoadPolicy(ctx, f.Root, false)
 	if err != nil {
 		return 0, err
@@ -155,6 +152,12 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 	reopen, err := f.Gates.HasApproval(gate.CASES)
 	if err != nil {
 		return 0, err
+	}
+	web := f.Mode == gate.ModeWeb
+	if reopen && web {
+		if err := f.Web.RequireApproveToken(f, gate.CASES); err != nil {
+			return 0, err
+		}
 	}
 	fresh, err := classifyRisk(p, f)
 	if err != nil {
@@ -176,7 +179,11 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 	if err := confirmRisk(ctx, f, policy.DevCommand{}); err != nil { // reclassify: chỉ console thật (không có phiếu)
 		return 0, err
 	}
-	if reopen {
+	if reopen && web {
+		if err := f.Web.Act("reopen", f, gate.CASES, nil, nil, ""); err != nil {
+			return 0, err
+		}
+	} else if reopen {
 		by, err := ctx.Approver(f.Root)
 		if err != nil {
 			return 0, err
@@ -188,6 +195,7 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 	if err := fresh.Write(f.Paths.Risk()); err != nil {
 		return 0, err
 	}
+	riskClassified(ctx, f, fresh)
 	tail := ""
 	if reopen {
 		tail = " Cổng Case đã mở lại; nộp lại `aisdlc submit cases`."
@@ -200,6 +208,7 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 	if _, err := supersede(ctx, f, &p, before, fresh); err != nil {
 		return 0, err
 	}
+	ctx.AfterCommand(f, "risk reclassify")
 	return ExitOK, nil
 }
 

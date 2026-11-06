@@ -112,13 +112,8 @@ func TestAssigningSessionVarDenied(t *testing.T) {
 	eq(t, r.out, "")
 }
 
-// ---- HookControlTest, phần chỉ đọc cache điều khiển đã ký (không outbox, không sổ lệnh chờ, không web flush).
-// Để giai đoạn 4: pausedDenySpawnsFlushThrottled, instructionDeliveredOnce, pendingAcceptAppliedByHook,
-// scopeDeniedEvent, sessionIdOnEvents, userPromptSubmitDeliversOnceAndSpawnsFlush,
-// userPromptSubmitSilentOutsideRepoAndWithoutControlDir, pausedDenyWaitsForInFlightFlushThatLiftsPause,
-// pausedDenyStillDeniedWhenInFlightFlushKeepsPause, subagentToolCallDoesNotClaimInstructions,
-// heldControlLockDeniesWriteAndSkipsOtherHooks; phần event/giao một lần của
-// sessionStartAppendsUndeliveredInstructions.
+// ---- HookControlTest, phần chỉ đọc cache điều khiển đã ký. Phần cần outbox, sổ điều khiển và web flush ở
+// hook_control_test.go (scopeDeniedEvent, sessionIdOnEvents, userPromptSubmitSilent… ở hook_web_test.go).
 
 type controlFx struct {
 	*testRepo
@@ -164,7 +159,7 @@ func TestPausedDenies(t *testing.T) {
 	eq(t, str(o, "permissionDecision"), "deny")
 	eq(t, str(o, "permissionDecisionReason"),
 		"Dev đã tạm dừng tại web: an. Dừng lại và chờ. Khi dev báo tiếp tục thì thử lại.")
-	// 2b không mở web flush khi bị chặn vì tạm dừng
+	// web tắt: không mở web flush khi bị chặn vì tạm dừng
 	eq(t, c.exists(".aisdlc/web/control/spawned"), false)
 }
 
@@ -192,8 +187,8 @@ func TestStopAllowedWhenPaused(t *testing.T) {
 	notContains(t, c.out, "block")
 }
 
-// Ở 2b chỉ đọc: chỉ dẫn chưa có trong sổ cục bộ được nối vào ngữ cảnh SessionStart (không ghi sổ, không event;
-// giao một lần là việc của giai đoạn 4). Subagent không nhận chỉ dẫn.
+// Chỉ dẫn chưa có trong sổ cục bộ được nối vào ngữ cảnh SessionStart rồi ghi sổ (giao một lần; event: xem
+// TestSessionStartDeliversInstructionsOnce).
 func TestSessionStartAppendsUndeliveredInstructions(t *testing.T) {
 	c := newHookControl(t)
 	c.writeControl(snapshot.FeatureControl{Feature: "PAY-1", IssuedAt: testNow, Instructions: []snapshot.Instruction{
@@ -207,12 +202,22 @@ func TestSessionStartAppendsUndeliveredInstructions(t *testing.T) {
 	}
 	contains(t, ctx, "\n\nChỉ dẫn của dev (")
 	notContains(t, ctx, "đã giao")
-	eq(t, c.read(".aisdlc/web/control/PAY-1.local.json"), `{"delivered":[43]}`)
-
-	c.hook("session-start", hookJSON(map[string]any{"session_id": "abc", "cwd": c.root, "agent_id": "sub-1"}, "", "", ""))
-	ctx = str(hookSpecific(t, c.out), "additionalContext")
-	contains(t, ctx, "Quy tắc AISDLC")
-	notContains(t, ctx, "đọc lại BRD")
+	// giao một lần: ghi sổ (carry-over 2b: không hiện lại ở mỗi phiên); web tắt nên không có event
+	eq(t, c.read(".aisdlc/web/control/PAY-1.local.json"), `{"delivered":[43,42],"results":{}}`)
 	_, err := os.Stat(filepath.Join(c.root, ".aisdlc/web/outbox"))
 	eq(t, os.IsNotExist(err), true)
+}
+
+// Subagent không nhận chỉ dẫn (để dành cho agent chính).
+func TestSessionStartOfSubagentDoesNotClaimInstructions(t *testing.T) {
+	c := newHookControl(t)
+	c.writeControl(snapshot.FeatureControl{Feature: "PAY-1", IssuedAt: testNow, Instructions: []snapshot.Instruction{
+		{ID: 42, By: "an", At: testNow, Text: "đọc lại BRD"}}}, c.priv)
+	c.hook("session-start", hookJSON(map[string]any{"session_id": "abc", "cwd": c.root, "agent_id": "sub-1"}, "", "", ""))
+	ctx := str(hookSpecific(t, c.out), "additionalContext")
+	contains(t, ctx, "Quy tắc AISDLC")
+	notContains(t, ctx, "đọc lại BRD")
+	eq(t, c.exists(".aisdlc/web/control/PAY-1.local.json"), false)
+	c.hook("session-start", hookIn("SessionStart", c.root, "", "", ""))
+	contains(t, str(hookSpecific(t, c.out), "additionalContext"), "đọc lại BRD")
 }

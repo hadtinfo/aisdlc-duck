@@ -74,6 +74,7 @@ func stepStart(ctx *Context, f *Feature, id string) (int, error) {
 		}
 	}
 	ctx.Println("Chỉ sửa file trong phạm vi. Xong thì chạy `aisdlc step finish " + id + "`.")
+	ctx.AfterCommand(f, "step start "+id)
 	return ExitOK, nil
 }
 
@@ -128,6 +129,7 @@ func stepFinish(ctx *Context, f *Feature, id string) (int, error) {
 	} else {
 		ctx.Println("Dừng lại. Dev xem rồi chạy `aisdlc step accept " + id + "` ở terminal của mình.")
 	}
+	ctx.AfterCommand(f, "step finish "+id)
 	if passed {
 		return ExitOK, nil
 	}
@@ -202,6 +204,7 @@ func stepAccept(ctx *Context, f *Feature, id string) (int, error) {
 	}
 	ctx.Println("Đã chấp nhận bước " + id + " (" + approver + ").")
 	nextStep(ctx, f, id)
+	ctx.AfterCommand(f, "step accept "+id)
 	return ExitOK, nil
 }
 

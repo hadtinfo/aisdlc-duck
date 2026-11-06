@@ -14,6 +14,7 @@ import (
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
+	"aisdlc/internal/webclient/fakeweb"
 )
 
 // fakeVerifier thay harness của `aisdlc eval` (FakeMaven.verify của Java): xóa out, ghi results.json theo
@@ -241,18 +242,103 @@ func TestEvalCiReportWarnsAboutUnapprovedOrChangedGates(t *testing.T) {
 	}
 }
 
-// Giai đoạn này CI chưa có nguồn approval web: config approvals: web thì fail closed (GATE:WEB), không nhắc
-// `aisdlc web login` (CI không bao giờ đăng nhập web).
-func TestEvalCiWebModeFailsClosedWithoutLoginWarning(t *testing.T) {
-	r := evalCmdFx(t)
+func (r *testRepo) webModeConfig() {
 	r.write("aisdlc/config.yaml", r.read("aisdlc/config.yaml")+"approvals: web\n")
 	r.gitCmd("add", "aisdlc/config.yaml")
 	r.gitCmd("commit", "-q", "-m", "web mode")
 	r.allCasesPass()
+}
+
+// CI không có AISDLC_WEB_URL/AISDLC_CI_TOKEN mà config approvals: web thì fail closed (GATE:WEB, nêu tên hai biến),
+// không nhắc `aisdlc web login` (CI không bao giờ đăng nhập web).
+func TestEvalCiWebModeWithoutEnvFailsNamingVariables(t *testing.T) {
+	r := evalCmdFx(t)
+	r.webModeConfig()
 
 	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
-	contains(t, r.out, "GATE:WEB", "Eval PAY-1: KHÔNG ĐẠT")
+	contains(t, r.out, "GATE:WEB", "Eval PAY-1: KHÔNG ĐẠT", "AISDLC_WEB_URL", "AISDLC_CI_TOKEN")
 	notContains(t, r.err, "Chưa `aisdlc web login`")
+}
+
+// ciWeb dựng web giả trả body cho GET /api/ci/approvals và đặt hai biến môi trường của CI.
+func (r *testRepo) ciWeb(body string) *fakeweb.Server {
+	web := fakeweb.New(r.t)
+	web.Update(func(s *fakeweb.Server) { s.Override["GET /api/ci/approvals"] = fakeweb.JSONResp(200, body) })
+	r.env["AISDLC_WEB_URL"] = web.URL()
+	r.env["AISDLC_CI_TOKEN"] = "ci-tok"
+	return web
+}
+
+func TestEvalCiConfigWebButServerPinnedLocalUsesLocalGates(t *testing.T) {
+	r := evalCmdFx(t)
+	r.webModeConfig()
+	web := r.ciWeb(`{"mode":"local","pinned":true,"approvals":[]}`)
+
+	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 0)
+	contains(t, r.out, "Eval PAY-1: ĐẠT")
+	notContains(t, r.out, "GATE:WEB")
+	notContains(t, r.err, "Chưa `aisdlc web login`")
+	reqs := web.RequestsFor("GET", "/api/ci/approvals")
+	eq(t, len(reqs), 1)
+	eq(t, reqs[0].Auth, "Bearer ci-tok")
+	contains(t, reqs[0].Query, "feature=PAY-1", "repo=local%2F")
+}
+
+func TestEvalCiConfigWebServerNotPinnedFailsClosed(t *testing.T) {
+	r := evalCmdFx(t)
+	r.webModeConfig()
+	r.ciWeb(`{"mode":"local","pinned":false,"approvals":[]}`)
+
+	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
+	contains(t, r.out, "chưa duyệt CASES trên web")
+}
+
+func TestEvalCiWebModeUnreachableWebFailsAndNeverPrintsToken(t *testing.T) {
+	r := evalCmdFx(t)
+	r.webModeConfig()
+	r.env["AISDLC_WEB_URL"] = "http://127.0.0.1:1"
+	r.env["AISDLC_CI_TOKEN"] = "sekret-token"
+
+	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
+	contains(t, r.out, "Không hỏi được web", "chạy lại job")
+	notContains(t, r.out+r.err, "sekret-token")
+}
+
+// Mọi đường lỗi (401, 403, 500, nội dung hỏng, mạng) không in token ra stdout hay stderr, kể cả khi server phản chiếu
+// token vào thân lỗi.
+func TestCiWebModeUnreachableNeverPrintsToken(t *testing.T) {
+	const tok = "sekret-token-9f3a"
+	for _, c := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"401", 401, `{"error":"bad Bearer ` + tok + `"}`},
+		{"403", 403, `{"error":"` + tok + `"}`},
+		{"500", 500, "Authorization: Bearer " + tok},
+		{"hỏng", 200, "không phải json " + tok},
+		{"mạng", 0, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := evalCmdFx(t)
+			r.webModeConfig()
+			if c.status == 0 {
+				r.env["AISDLC_WEB_URL"] = "http://user:" + tok + "@127.0.0.1:1"
+			} else {
+				web := fakeweb.New(t)
+				web.Update(func(s *fakeweb.Server) {
+					s.Override["GET /api/ci/approvals"] = fakeweb.JSONResp(c.status, c.body)
+				})
+				r.env["AISDLC_WEB_URL"] = web.URL()
+			}
+			r.env["AISDLC_CI_TOKEN"] = tok
+
+			eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
+			contains(t, r.out, "GATE:WEB", "Không hỏi được web")
+			notContains(t, r.out+r.err, tok)
+			notContains(t, r.read("aisdlc/features/PAY-1/eval/report.json")+r.read("aisdlc/features/PAY-1/eval/report.md"), tok)
+		})
+	}
 }
 
 func TestEvalVerifierErrorIsReportedNotPanicked(t *testing.T) {

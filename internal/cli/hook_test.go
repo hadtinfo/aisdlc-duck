@@ -19,10 +19,7 @@ import (
 	"aisdlc/internal/snapshot"
 )
 
-// HookCommandTest. Để giai đoạn 4 (cần outbox, WebPublisher hoặc web flush): postToolUseEmitsFileEditWithScope,
-// postToolUseBashOnlyWhenStepRunning, postToolUseFastWhenWebDown, postToolUseSpawnsBackgroundFlushUnlessBackoff,
-// postToolUseWithoutActiveFeatureEmitsUntaggedEditButNoBash; phần event của sessionStartStillOutputsContextAndEmitsEvent,
-// stopBlockedEmitsNoSessionStopButAllowedDoes và postToolUseOutsideAisdlcRepoSilent.
+// HookCommandTest. Phần event web (outbox, flush nền) ở hook_web_test.go.
 
 // codePath là file trong phạm vi S1 của design.yaml mẫu.
 const codePath = "internal/limit/handler/a.go"
@@ -226,8 +223,6 @@ func TestErrorNotJustRuntimeExceptionIsHandledOnEveryHook(t *testing.T) {
 	contains(t, r.out, `"permissionDecision":"deny"`, "aisdlc lỗi: aisdlc/internal/gitx: không nạp được")
 }
 
-// Phần không cần outbox của postToolUseDisabledWebWritesNothing và postToolUseOutsideAisdlcRepoSilent: ở 2b
-// post-tool-use và user-prompt-submit im lặng, không ghi gì.
 func TestPostToolUseDisabledWebWritesNothing(t *testing.T) {
 	r := newTestRepo(t)
 	r.casesApproved()
@@ -238,39 +233,50 @@ func TestPostToolUseDisabledWebWritesNothing(t *testing.T) {
 	r.hook("user-prompt-submit", hookJSON(map[string]any{"session_id": "abc", "cwd": r.root, "prompt": "x"}, "", "", ""))
 	eq(t, r.out, "")
 	eq(t, r.exists(".aisdlc/web"), false)
+	eq(t, len(r.spawned), 0)
 }
 
 func TestPostToolUseOutsideAisdlcRepoSilent(t *testing.T) {
 	plain := newTestRepo(t)
-	plain.env["AISDLC_WEB_URL"] = "http://127.0.0.1:1"
-	plain.env["AISDLC_WEB_TOKEN"] = "t0k"
+	plain.webDown()
 	plain.hook("post-tool-use", hookIn("PostToolUse", plain.root, "Write", "file_path", filepath.Join(plain.root, "a.go")))
 	eq(t, plain.out, "")
 	eq(t, plain.err, "")
 	eq(t, plain.exists(".aisdlc"), false)
+	// trong repo nhưng file ngoài repo: bỏ qua
+	r := newTestRepo(t)
+	r.casesApproved()
+	r.webDown()
+	r.hook("post-tool-use", hookIn("PostToolUse", r.root, "Write", "file_path", filepath.Join(plain.root, "a.go")))
+	eq(t, len(r.outboxEvents()), 0)
 }
 
-// Phần ngữ cảnh của sessionStartStillOutputsContextAndEmitsEvent (event SESSION_START: giai đoạn 4).
 func TestSessionStartStillOutputsContextAndEmitsEvent(t *testing.T) {
 	r := newTestRepo(t)
 	r.setupInit()
-	r.env["AISDLC_WEB_URL"] = "http://127.0.0.1:1"
-	r.env["AISDLC_WEB_TOKEN"] = "t0k"
+	r.webDown()
 	r.hook("session-start", hookIn("SessionStart", r.root, "", "", ""))
 	contains(t, str(hookSpecific(t, r.out), "additionalContext"), "Quy tắc AISDLC", "PAY-1")
-	eq(t, r.exists(".aisdlc/web/outbox"), false)
+	ev := r.outboxEvents()
+	eq(t, len(ev), 1)
+	eq(t, ev[0]["type"], any("SESSION_START"))
+	eq(t, ev[0]["feature"], any("PAY-1"))
+	eq(t, isNull(ev[0], "step"), true)
 }
 
-// Phần chặn của stopBlockedEmitsNoSessionStopButAllowedDoes (event SESSION_STOP: giai đoạn 4).
 func TestStopBlockedEmitsNoSessionStopButAllowedDoes(t *testing.T) {
 	r := newTestRepo(t)
 	r.casesApproved()
 	r.ok(noConsole(), "step", "start", "S1")
+	r.webDown()
 	r.hook("stop", hookIn("Stop", r.root, "", "", ""))
 	contains(t, r.out, `"decision":"block"`)
+	eq(t, len(r.outboxEvents()), 0)
 	r.hook("stop", hookJSON(map[string]any{"session_id": "abc", "cwd": r.root, "stop_hook_active": true}, "", "", ""))
 	eq(t, r.out, "")
-	eq(t, r.exists(".aisdlc/web/outbox"), false)
+	ev := r.outboxEvents()
+	eq(t, len(ev), 1)
+	eq(t, ev[0]["type"], any("SESSION_STOP"))
 }
 
 // ---- ~/.config/aisdlc và chế độ duyệt trên web ----

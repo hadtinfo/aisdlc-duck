@@ -1,4 +1,4 @@
-package harness
+package harnessapi
 
 import (
 	"encoding/json"

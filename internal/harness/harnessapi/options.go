@@ -1,5 +1,6 @@
-// Package harness là lõi chạy case black-box: đọc cases.yaml, gọi dịch vụ qua HTTP, so kết quả, ghi results.json.
-package harness
+// Package harnessapi là phần nhẹ của harness (tham số, kết quả, results.json) dùng chung giữa CLI aisdlc, eval và
+// binary aisdlc-harness; không phụ thuộc testcontainers để hook của aisdlc khởi động nhanh.
+package harnessapi
 
 import (
 	"fmt"

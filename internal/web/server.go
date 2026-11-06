@@ -15,7 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"aisdlc/internal/web/auth"
+	"aisdlc/internal/web/gates"
 	"aisdlc/internal/web/httpx"
+	"aisdlc/internal/web/signing"
 	"aisdlc/internal/web/store"
 )
 
@@ -46,16 +48,19 @@ func ConfigFromEnv() Config {
 type Deps struct {
 	Pool *pgxpool.Pool
 	Now  func() time.Time
+	Keys *signing.Keys // khóa ký; Run nạp trước khi listen
 }
 
 // services là các service dựng từ Deps, dùng chung giữa các route.
 type services struct {
-	auth *auth.Service
+	auth  *auth.Service
+	modes *gates.ModeService
 }
 
 // registerRoutes là điểm các task sau thêm route.
 func registerRoutes(r chi.Router, d Deps, s services) {
 	auth.Routes(r, s.auth)
+	gates.Routes(r, &gates.Handlers{Modes: s.modes, Keys: d.Keys})
 }
 
 // NewHandler dựng router chi: recover, xác thực (bọc mọi request, trước định tuyến), 404/405 JSON cho /api/*, rồi các route.
@@ -63,7 +68,8 @@ func NewHandler(d Deps) http.Handler {
 	if d.Now == nil {
 		d.Now = func() time.Time { return time.Now().UTC() }
 	}
-	s := services{auth: &auth.Service{Pool: d.Pool, Now: d.Now}}
+	a := &auth.Service{Pool: d.Pool, Now: d.Now}
+	s := services{auth: a, modes: &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a}}
 	r := chi.NewRouter()
 	r.Use(Recoverer)
 	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody
@@ -127,6 +133,11 @@ func Recoverer(next http.Handler) http.Handler {
 
 // Run mở DB, migrate, phục vụ HTTP cho đến khi ctx hủy rồi Shutdown (tối đa 10s).
 func Run(ctx context.Context, cfg Config) error {
+	// Nạp khóa ký trước mọi thứ khác: file hỏng/không đọc được thì từ chối khởi động, không ghi đè.
+	keys, err := signing.Load(cfg.KeyFile, cfg.PrevKeyFile)
+	if err != nil {
+		return err
+	}
 	pool, err := store.Open(ctx, cfg.DBURL, cfg.DBUser, cfg.DBPassword)
 	if err != nil {
 		return err
@@ -135,7 +146,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := store.Migrate(ctx, pool); err != nil {
 		return err
 	}
-	srv := &http.Server{Addr: cfg.Listen, Handler: NewHandler(Deps{Pool: pool}), ReadHeaderTimeout: 10 * time.Second,
+	srv := &http.Server{Addr: cfg.Listen, Handler: NewHandler(Deps{Pool: pool, Keys: keys}), ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout: 120 * time.Second} // không đặt WriteTimeout: SSE
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()

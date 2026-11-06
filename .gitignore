@@ -7,3 +7,5 @@
 # bản build UI thật (make ui); chỉ giữ .gitkeep để //go:embed có thư mục
 /internal/web/spa/dist/*
 !/internal/web/spa/dist/.gitkeep
+/e2e/node_modules/
+/e2e/out/

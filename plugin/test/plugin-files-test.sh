@@ -105,6 +105,20 @@ if [ "${#patho}" -lt 16000 ] && [ "$rc" -eq 0 ] && [ "$ms" -lt 1000 ]; then ok "
 patho="$(for i in $(seq 1 1100); do printf '"k%d":"v",' $i; done)"
 t0=$(date +%s%N); run "$T/repo" '{"tool_input":{'"${patho%,}"'},"tool_name":"Write","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
 if [ "${#patho}" -lt 16000 ] && [ "$rc" -eq 2 ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 15 KB nhiều chuỗi nhỏ xử lý nhanh (${ms} ms)"; else ko "payload nhiều chuỗi: rc=$rc ${ms} ms len=${#patho}"; fi
+# Đo theo byte, không theo ký tự, kể cả dưới locale UTF-8
+U8=C.UTF-8; locale -a 2>/dev/null | grep -qix 'en_US.utf-\?8' && U8=en_US.UTF-8
+mb="$(for i in $(seq 1 6000); do printf 'ệ'; done)"
+t0=$(date +%s%N); LC_ALL=$U8 run "$T/repo" '{"tool_name":"Read","tool_input":{"file_path":"'"$mb"'"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$(LC_ALL=$U8; echo ${#mb})" -lt 16384 ] && [ "$(printf %s "$mb" | wc -c)" -gt 16384 ] && [ "$rc" -eq 2 ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary, $U8: payload > 16384 byte (< 16384 ký tự) chặn nhanh (${ms} ms)"; else ko "payload đa byte lớn: rc=$rc ${ms} ms"; fi
+mb="$(for i in $(seq 1 4000); do printf 'ệ'; done)"
+t0=$(date +%s%N); LC_ALL=$U8 run "$T/repo" '{"tool_name":"Read","tool_input":{"file_path":"'"$mb"'"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$(printf %s "$mb" | wc -c)" -lt 16384 ] && [ "$rc" -eq 0 ] && [ -z "$err" ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary, $U8: Read đa byte < 16384 byte rc 0 nhanh (${ms} ms)"; else ko "Read đa byte nhỏ: rc=$rc ${ms} ms err=$err"; fi
+huge="$(head -c 2000000 /dev/zero | tr '\0' a)"
+t0=$(date +%s%N); run "$T/plain" '{"cwd":"'"$T/plain"'","tool_name":"Write","tool_input":{"content":"'"$huge"'"}}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$rc" -eq 0 ] && [ -z "$err" ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 2 MB ngoài repo (cwd ở đầu) rc 0 nhanh (${ms} ms)"; else ko "payload 2 MB ngoài repo: rc=$rc ${ms} ms"; fi
+t0=$(date +%s%N); run "$T/plain" '{"tool_name":"Write","tool_input":{"content":"'"$huge"'"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$rc" -eq 2 ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 2 MB, cwd sau 4 KB đầu -> pre-tool-use chặn nhanh (${ms} ms)"; else ko "payload 2 MB cwd cuối: rc=$rc ${ms} ms"; fi
+run "$T/repo" '{"tool_name":"Read","tool_input":{"cwd":"'"$T/plain"'"},"cwd":"'"$T/repo"'"}' "$W" hook stop; expect "thiếu binary: cwd lồng trong tool_input bị bỏ qua" 1 'plugin/install.sh'
 run "$T/repo" '{"tool_name":"Read"}' "$W" hook stop; expect "thiếu binary: stop dù tool_name Read vẫn rc 1" 1 'plugin/install.sh'
 run "$T/plain" '{"tool_name":"Edit"}' "$W" hook pre-tool-use; expect "thiếu binary, ngoài repo AISDLC: Edit rc 0 im lặng" 0
 rm -rf "$T"

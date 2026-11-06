@@ -1,6 +1,6 @@
 # Test Java chưa port sang Go
 
-Danh sách này liệt kê mọi test Java của `aisdlc-cli` và `aisdlc-core` chưa có bản Go sau giai đoạn 1–2b (mục giai đoạn 3 đã port xong), kèm giai đoạn sẽ port và lý do.
+Danh sách này liệt kê mọi test Java của `aisdlc-cli` và `aisdlc-core` chưa có bản Go sau giai đoạn 1–2b, kèm giai đoạn port và lý do. Giai đoạn 3 và giai đoạn 4 đã port xong; mỗi mục ghi tên test Go tương ứng.
 
 Cách đối chiếu (2026-11-06, nhánh `go-phase2b`):
 - Mỗi phương thức `@Test` Java được so với tên `TestXxx` của Go: tên Java viết PascalCase, bỏ `_`, thêm `Test`.
@@ -13,11 +13,13 @@ Cách đối chiếu (2026-11-06, nhánh `go-phase2b`):
 |---|---|
 | `GateServiceTest.suiteLookupSkipsExcludedDirsAndIsSorted` | Bản Go không đưa file suite case vào artifact của cổng CASES. `TestCasesDoNotDependOnSuiteFiles` kiểm điều này. |
 
-## Port một phần, phần còn lại để sau
+## Port một phần, phần còn lại port ở giai đoạn 4
 
-- `RiskCommandTest.lowerWithReason_writesOverrideAndEvent`: phần override đã có ở `TestLowerWithReasonWritesOverrideAndEvent`. Phần event qua FakeWeb để giai đoạn 4.
-- `HookCommandTest`: phần không cần outbox đã port. Còn lại phần event của `sessionStartStillOutputsContextAndEmitsEvent`, `stopBlockedEmitsNoSessionStopButAllowedDoes` và `postToolUseOutsideAisdlcRepoSilent`, để giai đoạn 4.
-- `WebGatesTest`: bốn test chỉ đọc cache đã port, xem `internal/cli/webcache_test.go`. Trong đó `validModeCacheBeatsConfigLocal` và `gateEnvelopeSignedByOtherKeyDoesNotSwitchMode` mới có phần cache; phần hỏi web và refresh để giai đoạn 4.
+Các test dưới đây port làm hai lần. Phần cần web đã port ở giai đoạn 4 (2026-11-06, nhánh `go-phase4b`).
+
+- `RiskCommandTest.lowerWithReason_writesOverrideAndEvent`: phần override ở `TestLowerWithReasonWritesOverrideAndEvent`, phần event qua web giả ở `TestLowerWithReasonSendsRiskEvents`.
+- `HookCommandTest`: phần event của `sessionStartStillOutputsContextAndEmitsEvent`, `stopBlockedEmitsNoSessionStopButAllowedDoes` và `postToolUseOutsideAisdlcRepoSilent` đã bổ sung vào `TestSessionStartStillOutputsContextAndEmitsEvent`, `TestStopBlockedEmitsNoSessionStopButAllowedDoes` và `TestPostToolUseOutsideAisdlcRepoSilent`.
+- `WebGatesTest`: bốn test chỉ đọc cache ở `internal/cli/webcache_test.go`. Phần hỏi web của `validModeCacheBeatsConfigLocal` ở `TestValidModeCacheBeatsConfigLocalAsksWebOnce`; phần refresh của `gateEnvelopeSignedByOtherKeyDoesNotSwitchMode` ở `TestGateEnvelopeSignedByOtherKeyIsRefusedByRefresh`.
 - `EvalCommandTest`: sáu test cổng REVIEW đã port, thay `aisdlc eval` bằng báo cáo eval viết tay. Xem `internal/cli/review_gate_test.go`.
 
 ## Giai đoạn 3 (harness Go, `aisdlc eval`): 65 test, đã port
@@ -28,7 +30,7 @@ Giai đoạn 3 xong (2026-11-06, nhánh `go-phase3`). Mỗi test Java dưới đ
 
 Dịch vụ mẫu e2e (`e2e/fixture-service`, Go) có `TestFixtureServiceFeeCases` trong `internal/harness/fixture_test.go`.
 
-Các test cần `web != nil` (duyệt qua web) không nằm trong 65 test này; chúng ở giai đoạn 4 bên dưới.
+Các test cần `web != nil` (duyệt qua web) không nằm trong 65 test này; chúng ở mục giai đoạn 4 bên dưới.
 
 ### EvalCommandTest (aisdlc-cli, 10)
 
@@ -125,244 +127,247 @@ Các test cần `web != nil` (duyệt qua web) không nằm trong 65 test này; 
 | `staleReportsFromAnEarlierBuildAreIgnored` | không có tương đương: `go test -json` chạy mới mỗi lần nên không có báo cáo cũ để bỏ qua. |
 | `casesSuiteClassMatchesSimpleOrQualifiedName` | không có tương đương: bản Go không có lớp suite case chạy qua JUnit; harness tự chạy case nên không cần khớp tên lớp. |
 
-## Giai đoạn 4 (web client có mạng): 139 test
+## Giai đoạn 4 (web client có mạng): 139 test, đã port
+
+Giai đoạn 4 xong (2026-11-06, nhánh `go-phase4b`). Mỗi test Java dưới đây được ghép với test Go tương ứng. Test Go nằm ở `internal/cli/*_test.go`, `internal/webclient/*_test.go`, `internal/snapshot/*_test.go` và `internal/eval/*_test.go`.
+
+Ngoài các test đơn vị (web giả `internal/webclient/fakeweb`), `TestCliAgainstGoServer` (`internal/cli/webe2e_test.go`, cần Docker) chạy CLI trên server web Go thật: `web login`, nộp BRD, lead duyệt trên web, CLI thấy approval, `web push` lên bảng, web tạm dừng chặn hook `pre-tool-use`, `eval --ci` lấy approval bằng token CI.
 
 ### CliControlTest (aisdlc-cli, 4)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `webFlushLiftsPauseInLocalMode` | cần web flush, refresh và lệnh chờ từ web |
-| `statusAppliesPendingActionsFromWeb` | cần web flush, refresh và lệnh chờ từ web |
-| `terminalAcceptAfterWebAcceptSucceeds` | cần web flush, refresh và lệnh chờ từ web |
-| `refreshRejectedByWebIsNotReportedAsOffline` | cần web flush, refresh và lệnh chờ từ web |
+| `webFlushLiftsPauseInLocalMode` | `TestWebFlushLiftsPauseInLocalMode` |
+| `statusAppliesPendingActionsFromWeb` | `TestStatusAppliesPendingActionsFromWeb` |
+| `terminalAcceptAfterWebAcceptSucceeds` | `TestTerminalAcceptAfterWebAcceptSucceeds` |
+| `refreshRejectedByWebIsNotReportedAsOffline` | `TestRefreshRejectedByWebIsNotReportedAsOffline` |
 
 ### CliFlowTest (aisdlc-cli, 1)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `webStatusShowsStateAndPending` | cần `web status` và outbox |
+| `webStatusShowsStateAndPending` | `TestWebStatusShowsStateAndPending` |
 
 ### ControlLedgerTest (aisdlc-cli, 4)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `claimOnce` | sổ điều khiển ghi được (claim, khóa) chỉ có ở giai đoạn 4 |
-| `budgetedLockGivesUpWhenAnotherProcessHoldsIt` | sổ điều khiển ghi được (claim, khóa) chỉ có ở giai đoạn 4 |
-| `budgetedLockGivesUpWhenThisJvmHoldsIt` | sổ điều khiển ghi được (claim, khóa) chỉ có ở giai đoạn 4 |
-| `resultsBecomeDone` | sổ điều khiển ghi được (claim, khóa) chỉ có ở giai đoạn 4 |
+| `claimOnce` | `TestClaimOnce` |
+| `budgetedLockGivesUpWhenAnotherProcessHoldsIt` | `TestBudgetedLockGivesUpWhenAnotherProcessHoldsIt` |
+| `budgetedLockGivesUpWhenThisJvmHoldsIt` | `TestBudgetedLockGivesUpWhenThisProcessHoldsIt` |
+| `resultsBecomeDone` | `TestResultsBecomeDone` |
 
 ### EvalCommandTest (aisdlc-cli, 4)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `ciWebModeWithoutEnvFailsNamingVariables` | eval --ci hỏi web (chế độ, approval) qua HTTP; cần cả harness giai đoạn 3 |
-| `ciConfigWebButServerPinnedLocalUsesLocalGates` | eval --ci hỏi web (chế độ, approval) qua HTTP; cần cả harness giai đoạn 3 |
-| `ciConfigWebServerNotPinnedFailsClosed` | eval --ci hỏi web (chế độ, approval) qua HTTP; cần cả harness giai đoạn 3 |
-| `ciWebModeUnreachableWebFailsAndNeverPrintsToken` | eval --ci hỏi web (chế độ, approval) qua HTTP; cần cả harness giai đoạn 3 |
+| `ciWebModeWithoutEnvFailsNamingVariables` | `TestEvalCiWebModeWithoutEnvFailsNamingVariables` |
+| `ciConfigWebButServerPinnedLocalUsesLocalGates` | `TestEvalCiConfigWebButServerPinnedLocalUsesLocalGates` |
+| `ciConfigWebServerNotPinnedFailsClosed` | `TestEvalCiConfigWebServerNotPinnedFailsClosed` |
+| `ciWebModeUnreachableWebFailsAndNeverPrintsToken` | `TestEvalCiWebModeUnreachableWebFailsAndNeverPrintsToken` |
 
 ### FlowLocalTest (aisdlc-cli, 8)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `webMode_cliDoesNotAutoApprove` | chế độ web: nộp/duyệt và event rủi ro qua FakeWeb |
-| `webMode_submitSendsRiskLevel_andShowsServerAutoApproval` | chế độ web: nộp/duyệt và event rủi ro qua FakeWeb |
-| `webMode_submitPrintsServerAutoApproval_insteadOfAskingDev` | chế độ web: nộp/duyệt và event rủi ro qua FakeWeb |
-| `webMode_submitDesignRaise_submitsBeforeRiskEvent` | chế độ web: nộp/duyệt và event rủi ro qua FakeWeb |
-| `webMode_resubmitBrdAfterRaise_sendsRiskLevel` | chế độ web: nộp/duyệt và event rủi ro qua FakeWeb |
-| `webMode_casesRaiseThenMavenThrows_stillSendsRiskEvent` | chế độ web: nộp/duyệt và event rủi ro qua FakeWeb |
-| `webMode_statusShowsSupersededGate` | chế độ web: nộp/duyệt và event rủi ro qua FakeWeb |
-| `webMode_failedSubmitStillReportsRiskLevel` | chế độ web: nộp/duyệt và event rủi ro qua FakeWeb |
+| `webMode_cliDoesNotAutoApprove` | `TestWebModeCliDoesNotAutoApprove` |
+| `webMode_submitSendsRiskLevel_andShowsServerAutoApproval` | `TestWebModeSubmitSendsRiskLevelAndShowsServerAutoApproval` |
+| `webMode_submitPrintsServerAutoApproval_insteadOfAskingDev` | `TestWebModeSubmitPrintsServerAutoApprovalInsteadOfAskingDev` |
+| `webMode_submitDesignRaise_submitsBeforeRiskEvent` | `TestWebModeSubmitDesignRaiseSubmitsBeforeRiskEvent` |
+| `webMode_resubmitBrdAfterRaise_sendsRiskLevel` | `TestWebModeResubmitBrdAfterRaiseSendsRiskLevel` |
+| `webMode_casesRaiseThenMavenThrows_stillSendsRiskEvent` | `TestWebModeCasesRaiseThenHarnessFailsStillSendsRiskEvent` |
+| `webMode_statusShowsSupersededGate` | `TestWebModeStatusShowsSupersededGate` |
+| `webMode_failedSubmitStillReportsRiskLevel` | `TestWebModeFailedSubmitStillReportsRiskLevel` |
 
 ### HookCommandTest (aisdlc-cli, 5)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `postToolUseEmitsFileEditWithScope` | post-tool-use ghi outbox, WebPublisher, flush nền |
-| `postToolUseBashOnlyWhenStepRunning` | post-tool-use ghi outbox, WebPublisher, flush nền |
-| `postToolUseFastWhenWebDown` | post-tool-use ghi outbox, WebPublisher, flush nền |
-| `postToolUseSpawnsBackgroundFlushUnlessBackoff` | post-tool-use ghi outbox, WebPublisher, flush nền |
-| `postToolUseWithoutActiveFeatureEmitsUntaggedEditButNoBash` | post-tool-use ghi outbox, WebPublisher, flush nền |
+| `postToolUseEmitsFileEditWithScope` | `TestPostToolUseEmitsFileEditWithScope` |
+| `postToolUseBashOnlyWhenStepRunning` | `TestPostToolUseBashOnlyWhenStepRunning` |
+| `postToolUseFastWhenWebDown` | `TestPostToolUseFastWhenWebDown` |
+| `postToolUseSpawnsBackgroundFlushUnlessBackoff` | `TestPostToolUseSpawnsBackgroundFlushUnlessBackoff` |
+| `postToolUseWithoutActiveFeatureEmitsUntaggedEditButNoBash` | `TestPostToolUseWithoutActiveFeatureEmitsUntaggedEditButNoBash` |
 
 ### HookControlTest (aisdlc-cli, 11)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `pausedDenySpawnsFlushThrottled` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `instructionDeliveredOnce` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `pendingAcceptAppliedByHook` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `scopeDeniedEvent` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `sessionIdOnEvents` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `userPromptSubmitDeliversOnceAndSpawnsFlush` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `userPromptSubmitSilentOutsideRepoAndWithoutControlDir` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `pausedDenyWaitsForInFlightFlushThatLiftsPause` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `pausedDenyStillDeniedWhenInFlightFlushKeepsPause` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `subagentToolCallDoesNotClaimInstructions` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
-| `heldControlLockDeniesWriteAndSkipsOtherHooks` | hook nhận lệnh điều khiển, ghi sổ, event và flush nền |
+| `pausedDenySpawnsFlushThrottled` | `TestPausedDenySpawnsFlushThrottled` |
+| `instructionDeliveredOnce` | `TestInstructionDeliveredOnce` |
+| `pendingAcceptAppliedByHook` | `TestPendingAcceptAppliedByHook` |
+| `scopeDeniedEvent` | `TestScopeDeniedEvent` |
+| `sessionIdOnEvents` | `TestSessionIdOnEvents` |
+| `userPromptSubmitDeliversOnceAndSpawnsFlush` | `TestUserPromptSubmitDeliversOnceAndSpawnsFlush` |
+| `userPromptSubmitSilentOutsideRepoAndWithoutControlDir` | `TestUserPromptSubmitSilentOutsideRepoAndWithoutControlDir` |
+| `pausedDenyWaitsForInFlightFlushThatLiftsPause` | `TestPausedDenyWaitsForInFlightFlushThatLiftsPause` |
+| `pausedDenyStillDeniedWhenInFlightFlushKeepsPause` | `TestPausedDenyStillDeniedWhenInFlightFlushKeepsPause` |
+| `subagentToolCallDoesNotClaimInstructions` | `TestSubagentToolCallDoesNotClaimInstructions` |
+| `heldControlLockDeniesWriteAndSkipsOtherHooks` | `TestHeldControlLockDeniesWriteAndSkipsOtherHooks` |
 
 ### HttpCiApprovalSourceTest (aisdlc-cli, 5)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `parsesApprovalsAndSendsBearer` | nguồn approval CI qua HTTP |
-| `parsesAutoChannelAndRule` | nguồn approval CI qua HTTP |
-| `parsesPinned` | nguồn approval CI qua HTTP |
-| `non200IsIoExceptionWithoutToken` | nguồn approval CI qua HTTP |
-| `unreachableIsIoException` | nguồn approval CI qua HTTP |
+| `parsesApprovalsAndSendsBearer` | `TestCiParsesApprovalsAndSendsBearer` |
+| `parsesAutoChannelAndRule` | `TestCiParsesAutoChannelAndRule` |
+| `parsesPinned` | `TestCiParsesPinned` |
+| `non200IsIoExceptionWithoutToken` | `TestCiNon200IsErrorWithoutToken` |
+| `unreachableIsIoException` | `TestCiUnreachableIsErrorWithoutToken` |
 
 ### OutboxTest (aisdlc-cli, 4)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `capsAt2000DroppingOldestEvents` | outbox sự kiện web |
-| `snapshotReplacesPrevious` | outbox sự kiện web |
-| `listsSnapshotsBeforeEventsAndHonoursMax` | outbox sự kiện web |
-| `sizeOfMissingOutboxIsZeroAndCreatesNothing` | outbox sự kiện web |
+| `capsAt2000DroppingOldestEvents` | `TestOutboxCapsAt2000DroppingOldestEvents` |
+| `snapshotReplacesPrevious` | `TestOutboxSnapshotReplacesPrevious` |
+| `listsSnapshotsBeforeEventsAndHonoursMax` | `TestOutboxListsSnapshotsBeforeEventsAndHonoursMax` |
+| `sizeOfMissingOutboxIsZeroAndCreatesNothing` | `TestOutboxSizeOfMissingOutboxIsZeroAndCreatesNothing` |
 
 ### PolicyCommandTest (aisdlc-cli, 2)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `pull_importsWhen404ThenCaches` | `policy pull` cần web client |
-| `pull_noRepoFile_importsFallbackWithoutFlow` | `policy pull` cần web client |
+| `pull_importsWhen404ThenCaches` | `TestPullImportsWhen404ThenCaches` |
+| `pull_noRepoFile_importsFallbackWithoutFlow` | `TestPullNoRepoFileImportsFallbackWithoutFlow` |
 
 ### StatusControlTest (aisdlc-cli, 1)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `pausedOfflineMessage` | cần refresh qua web và áp lệnh chờ qua ControlLedger |
+| `pausedOfflineMessage` | `TestPausedOfflineMessage` |
 
 ### WebControlTest (aisdlc-cli, 5)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `validEnvelopeWritesCache` | cần web sống (FakeWeb): làm mới cache điều khiển qua HTTP |
-| `badSignatureKeepsOldCache` | cần web sống (FakeWeb): làm mới cache điều khiển qua HTTP |
-| `olderIssuedAtDoesNotOverwrite` | cần web sống (FakeWeb): làm mới cache điều khiển qua HTTP |
-| `inboxFlagFollowsUndeliveredInstructions` | cần web sống (FakeWeb): làm mới cache điều khiển qua HTTP |
-| `networkErrorReturnsFalseAndStartsBackoff` | cần web sống (FakeWeb): làm mới cache điều khiển qua HTTP |
+| `validEnvelopeWritesCache` | `TestValidEnvelopeWritesCache` |
+| `badSignatureKeepsOldCache` | `TestControlBadSignatureKeepsOldCache` |
+| `olderIssuedAtDoesNotOverwrite` | `TestOlderIssuedAtDoesNotOverwrite` |
+| `inboxFlagFollowsUndeliveredInstructions` | `TestInboxFlagFollowsUndeliveredInstructions` |
+| `networkErrorReturnsFalseAndStartsBackoff` | `TestControlNetworkErrorReturnsFalseAndStartsBackoff` |
 
 ### WebGatesTest (aisdlc-cli, 27)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `refreshWritesVerifiedCache` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `badSignatureKeepsOldCacheAndReturnsFalse` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `envelopeOfOtherFeatureIsNotCached` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `newFeedbackAppendedOnceAcrossTwoRefreshes` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `concurrentRefreshesAppendFeedbackOnce` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `olderEnvelopeArrivingLaterDoesNotOverwriteCache` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `afterOneNetworkFailureNoMoreRequestsInProcessAndBackoffStarts` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `migrateSendsOnlyMatchingLocalApprovalsAndSkipsReview` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `migrateFullFeatureSendsBrdDesignCasesSkipsReview` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `submitNetworkErrorAbortsAndWritesNothing` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `submitSendsSnapshotThenArtifactsAndUpdatesCache` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `webJsonTokenUsedForCliEvenWhenEnvTokenSetAndSubmitWarns` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `modeIssuedAtMonotonic` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `switchingConfigToWebReasksServerDespiteLocalCache` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `approveWithoutApproveTokenPrintsWebLink` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `approveConflictExitsOneWithServerMessage` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `approveWithClaudeCodeGrantSendsClaudeCodeChannel` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `approveSendsTerminalChannelAndCardFlags` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `rejectInWebModeGoesToWebAndFeedbackComesBack` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `approveNotWebModeConflictExitsTwo` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `unauthorizedAndWrongKindAreExplainedInVietnamese` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `forbiddenWithServerReasonKeepsReason` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `gateEnvelopeSayingLocalSwitchesCachedModeToLocal` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `refreshRepinsKeyEndorsedByPinnedKeyAndRetries` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `refreshRefusesKeyNotEndorsedByPinnedKey` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `pinFirstTimeWith600` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
-| `otherKeyNeedsEndorsementByPinnedKey` | cần web sống (FakeWeb): mode/refresh/nộp/duyệt/ghim khóa qua HTTP |
+| `refreshWritesVerifiedCache` | `TestRefreshWritesVerifiedCache` |
+| `badSignatureKeepsOldCacheAndReturnsFalse` | `TestBadSignatureKeepsOldCacheAndReturnsFalse` |
+| `envelopeOfOtherFeatureIsNotCached` | `TestEnvelopeOfOtherFeatureIsNotCached` |
+| `newFeedbackAppendedOnceAcrossTwoRefreshes` | `TestNewFeedbackAppendedOnceAcrossTwoRefreshes` |
+| `concurrentRefreshesAppendFeedbackOnce` | `TestConcurrentRefreshesAppendFeedbackOnce` |
+| `olderEnvelopeArrivingLaterDoesNotOverwriteCache` | `TestOlderEnvelopeArrivingLaterDoesNotOverwriteCache` |
+| `afterOneNetworkFailureNoMoreRequestsInProcessAndBackoffStarts` | `TestAfterOneNetworkFailureNoMoreRequestsInProcessAndBackoffStarts` |
+| `migrateSendsOnlyMatchingLocalApprovalsAndSkipsReview` | `TestMigrateSendsOnlyMatchingLocalApprovalsAndSkipsReview` |
+| `migrateFullFeatureSendsBrdDesignCasesSkipsReview` | `TestMigrateFullFeatureSendsBrdDesignCasesSkipsReview` |
+| `submitNetworkErrorAbortsAndWritesNothing` | `TestSubmitNetworkErrorAbortsAndWritesNothing` |
+| `submitSendsSnapshotThenArtifactsAndUpdatesCache` | `TestSubmitSendsSnapshotThenArtifactsAndUpdatesCache` |
+| `webJsonTokenUsedForCliEvenWhenEnvTokenSetAndSubmitWarns` | `TestWebJsonTokenUsedForCliEvenWhenEnvTokenSetAndSubmitWarns` |
+| `modeIssuedAtMonotonic` | `TestModeIssuedAtMonotonic` |
+| `switchingConfigToWebReasksServerDespiteLocalCache` | `TestSwitchingConfigToWebReasksServerDespiteLocalCache` |
+| `approveWithoutApproveTokenPrintsWebLink` | `TestApproveWithoutApproveTokenPrintsWebLink` |
+| `approveConflictExitsOneWithServerMessage` | `TestApproveConflictExitsOneWithServerMessage` |
+| `approveWithClaudeCodeGrantSendsClaudeCodeChannel` | `TestApproveWithClaudeCodeGrantSendsClaudeCodeChannel` |
+| `approveSendsTerminalChannelAndCardFlags` | `TestApproveSendsTerminalChannelAndCardFlags` |
+| `rejectInWebModeGoesToWebAndFeedbackComesBack` | `TestRejectInWebModeGoesToWebAndFeedbackComesBack` |
+| `approveNotWebModeConflictExitsTwo` | `TestApproveNotWebModeConflictExitsTwo` |
+| `unauthorizedAndWrongKindAreExplainedInVietnamese` | `TestUnauthorizedAndWrongKindAreExplainedInVietnamese` |
+| `forbiddenWithServerReasonKeepsReason` | `TestForbiddenWithServerReasonKeepsReason` |
+| `gateEnvelopeSayingLocalSwitchesCachedModeToLocal` | `TestGateEnvelopeSayingLocalSwitchesCachedModeToLocal` |
+| `refreshRepinsKeyEndorsedByPinnedKeyAndRetries` | `TestRefreshRepinsKeyEndorsedByPinnedKeyAndRetries` |
+| `refreshRefusesKeyNotEndorsedByPinnedKey` | `TestRefreshRefusesKeyNotEndorsedByPinnedKey` |
+| `pinFirstTimeWith600` | `TestPinFirstTimeWith600` |
+| `otherKeyNeedsEndorsementByPinnedKey` | `TestOtherKeyNeedsEndorsementByPinnedKey` |
 
 ### WebLoginTest (aisdlc-cli, 8)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `withoutTtyExitsThree` | `web login`/`web status` cần web client |
-| `forbiddenTokenSaysIngestTokenNeeded` | `web login`/`web status` cần web client |
-| `successWritesWebJson600AndPinsKey` | `web login`/`web status` cần web client |
-| `rotatedKeyWithoutEndorsementIsRefused` | `web login`/`web status` cần web client |
-| `approveTokenStored600` | `web login`/`web status` cần web client |
-| `webJsonBeatsEnvToken` | `web login`/`web status` cần web client |
-| `envTokenOnlyStillUsedButWarned` | `web login`/`web status` cần web client |
-| `noWarningWithoutEnvToken` | `web login`/`web status` cần web client |
+| `withoutTtyExitsThree` | `TestWithoutTtyExitsThree` |
+| `forbiddenTokenSaysIngestTokenNeeded` | `TestForbiddenTokenSaysIngestTokenNeeded` |
+| `successWritesWebJson600AndPinsKey` | `TestSuccessWritesWebJson600AndPinsKey` |
+| `rotatedKeyWithoutEndorsementIsRefused` | `TestRotatedKeyWithoutEndorsementIsRefused` |
+| `approveTokenStored600` | `TestApproveTokenStored600` |
+| `webJsonBeatsEnvToken` | `TestWebJsonBeatsEnvToken` |
+| `envTokenOnlyStillUsedButWarned` | `TestEnvTokenOnlyStillUsedButWarned` |
+| `noWarningWithoutEnvToken` | `TestNoWarningWithoutEnvToken` |
 
 ### WebPublisherTest (aisdlc-cli, 16)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `batchIsVersion2AndSessionIdOnlyWhenPresent` | WebPublisher, outbox, flush, backoff |
-| `disabledWritesNothing` | WebPublisher, outbox, flush, backoff |
-| `serverDownKeepsQueueAndExitCodeUnchanged` | WebPublisher, outbox, flush, backoff |
-| `flushSendsBacklogMax20` | WebPublisher, outbox, flush, backoff |
-| `sendsBearerAndContract` | WebPublisher, outbox, flush, backoff |
-| `rejected400MovesToRejected` | WebPublisher, outbox, flush, backoff |
-| `serverErrorKeepsFiles` | WebPublisher, outbox, flush, backoff |
-| `eventGoesToOutboxAndStdoutStaysClean` | WebPublisher, outbox, flush, backoff |
-| `publisherErrorsGoToStderrOnly` | WebPublisher, outbox, flush, backoff |
-| `eventOnlyQueuesThenSpawnsBackgroundFlush` | WebPublisher, outbox, flush, backoff |
-| `eventDoesNotSpawnWhileFlushRunning` | WebPublisher, outbox, flush, backoff |
-| `connectionFailureStartsBackoffThatCommandsAndHooksHonour` | WebPublisher, outbox, flush, backoff |
-| `backoffExpires` | WebPublisher, outbox, flush, backoff |
-| `drainSendsWholeOutboxInBatches` | WebPublisher, outbox, flush, backoff |
-| `inlineFlushStopsAtOverallDeadlineOnSlowServer` | WebPublisher, outbox, flush, backoff |
-| `webFlushCommandDrainsSilently` | WebPublisher, outbox, flush, backoff |
+| `batchIsVersion2AndSessionIdOnlyWhenPresent` | `TestBatchIsVersion2AndSessionIDOnlyWhenPresent` |
+| `disabledWritesNothing` | `TestDisabledWritesNothing` |
+| `serverDownKeepsQueueAndExitCodeUnchanged` | `TestServerDownKeepsQueueAndExitCodeUnchanged` |
+| `flushSendsBacklogMax20` | `TestFlushSendsBacklogMax20` |
+| `sendsBearerAndContract` | `TestSendsBearerAndContract` |
+| `rejected400MovesToRejected` | `TestRejected400MovesToRejected` |
+| `serverErrorKeepsFiles` | `TestServerErrorKeepsFiles` |
+| `eventGoesToOutboxAndStdoutStaysClean` | `TestEventGoesToOutboxAndStdoutStaysClean` |
+| `publisherErrorsGoToStderrOnly` | `TestPublisherErrorsGoToStderrOnly` |
+| `eventOnlyQueuesThenSpawnsBackgroundFlush` | `TestEventOnlyQueuesThenSpawnsBackgroundFlush` |
+| `eventDoesNotSpawnWhileFlushRunning` | `TestEventDoesNotSpawnWhileFlushRunning` |
+| `connectionFailureStartsBackoffThatCommandsAndHooksHonour` | `TestConnectionFailureStartsBackoffThatCommandsAndHooksHonour` |
+| `backoffExpires` | `TestBackoffExpires` |
+| `drainSendsWholeOutboxInBatches` | `TestDrainSendsWholeOutboxInBatches` |
+| `inlineFlushStopsAtOverallDeadlineOnSlowServer` | `TestInlineFlushStopsAtOverallDeadlineOnSlowServer` |
+| `webFlushCommandDrainsSilently` | `TestWebFlushCommandDrainsSilently` |
 
 ### CiAutoApprovalTest (aisdlc-core, 3)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `webCi_autoApprovalMatchingFlow_pass` | eval --ci ở chế độ web (approval qua HTTP) |
-| `webCi_autoApprovalNotMatching_fail` | eval --ci ở chế độ web (approval qua HTTP) |
-| `webCi_manualApproval_noAutoCheck` | eval --ci ở chế độ web (approval qua HTTP) |
+| `webCi_autoApprovalMatchingFlow_pass` | `TestCiAutoApprovalWebMatchingFlowPass` |
+| `webCi_autoApprovalNotMatching_fail` | `TestCiAutoApprovalWebNotMatchingFail` |
+| `webCi_manualApproval_noAutoCheck` | `TestCiAutoApprovalWebManualApprovalNoAutoCheck` |
 
 ### EvalServiceTest (aisdlc-core, 15)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `ciWarnsOnMissingOrDriftedApprovalOfOtherGates` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `serverPinnedLocalWinsOverConfigWeb` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `serverNotPinnedAndConfigWebFailsClosed` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `serverNotPinnedAndConfigLocalStaysLocal` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webModeMissingGateIsHardFail` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webModeHashMismatchIsHardFail` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webModeReviewTreeMismatchIsHardFail` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webModeAllApprovedAndMatchingPasses` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webModeIgnoresLocalGatesJson` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webModeUnreachableIsHardFail` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webModeWithoutSourceNamesVariables` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webReportedModeWebOverridesLocalConfig` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `sourceFailureIsHardFailEvenWhenConfigSaysLocal` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `sourceRuntimeFailureIsHardFail` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
-| `webModeFullFlowMissingDesignIsHardFail` | eval với nguồn approval web (HttpCiApprovalSource); cần cả harness giai đoạn 3 |
+| `ciWarnsOnMissingOrDriftedApprovalOfOtherGates` | `TestEvalCiWarnsOnMissingOrDriftedApprovalOfOtherGates` |
+| `serverPinnedLocalWinsOverConfigWeb` | `TestEvalServerPinnedLocalWinsOverConfigWeb` |
+| `serverNotPinnedAndConfigWebFailsClosed` | `TestEvalServerNotPinnedAndConfigWebFailsClosed` |
+| `serverNotPinnedAndConfigLocalStaysLocal` | `TestEvalServerNotPinnedAndConfigLocalStaysLocal` |
+| `webModeMissingGateIsHardFail` | `TestEvalWebModeMissingGateIsHardFail` |
+| `webModeHashMismatchIsHardFail` | `TestEvalWebModeHashMismatchIsHardFail` |
+| `webModeReviewTreeMismatchIsHardFail` | `TestEvalWebModeReviewTreeMismatchIsHardFail` |
+| `webModeAllApprovedAndMatchingPasses` | `TestEvalWebModeAllApprovedAndMatchingPasses` |
+| `webModeIgnoresLocalGatesJson` | `TestEvalWebModeIgnoresLocalGatesJson` |
+| `webModeUnreachableIsHardFail` | `TestEvalWebModeUnreachableIsHardFail` |
+| `webModeWithoutSourceNamesVariables` | `TestEvalWebModeWithoutSourceNamesVariables` |
+| `webReportedModeWebOverridesLocalConfig` | `TestEvalWebReportedModeWebOverridesLocalConfig` |
+| `sourceFailureIsHardFailEvenWhenConfigSaysLocal` | `TestEvalSourceFailureIsHardFailEvenWhenConfigSaysLocal` |
+| `sourceRuntimeFailureIsHardFail` | `TestEvalSourceRuntimeFailureIsHardFail` |
+| `webModeFullFlowMissingDesignIsHardFail` | `TestEvalWebModeFullFlowMissingDesignIsHardFail` |
 
 ### FeedbackLogTest (aisdlc-core, 3)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `lastEntryPerGate` | phản hồi từ web ghép vào feedback.md khi refresh |
-| `rejectedKeepsComment` | phản hồi từ web ghép vào feedback.md khi refresh |
-| `webIdMarkerIsNotPartOfComment` | phản hồi từ web ghép vào feedback.md khi refresh |
+| `lastEntryPerGate` | `TestFeedbackLastEntryPerGate` |
+| `rejectedKeepsComment` | `TestFeedbackRejectedKeepsComment` |
+| `webIdMarkerIsNotPartOfComment` | `TestFeedbackWebIDMarkerIsNotPartOfComment` |
 
 ### RepoIdentityTest (aisdlc-core, 1)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `localWhenNoRemoteAndOriginWhenPresent` | định danh repo cho web; phần chuẩn hóa remote đã có TestNormalizeRemote |
+| `localWhenNoRemoteAndOriginWhenPresent` | `TestRepoIDLocalWhenNoRemoteAndOriginWhenPresent` |
 
 ### SnapshotBuilderTest (aisdlc-core, 12)
 
-| Test Java | Lý do |
+| Test Java | Test Go |
 |---|---|
-| `gatesStepsCasesAndFeature` | snapshot tính năng gửi lên web |
-| `autoApprovalCarriesRule` | snapshot tính năng gửi lên web |
-| `stepDiffExcludesFeatureStateAndUnmanagedFiles` | snapshot tính năng gửi lên web |
-| `stepDiffEmptyWhenOnlyStateFilesChanged` | snapshot tính năng gửi lên web |
-| `openQuestionsFromBrd` | snapshot tính năng gửi lên web |
-| `bigArtifactIsTruncatedByUtf8Bytes` | snapshot tính năng gửi lên web |
-| `hugeDiffsAreCappedAndSnapshotFitsLimit` | snapshot tính năng gửi lên web |
-| `dropsOldestDiffsWhenOverTotalLimit` | snapshot tính năng gửi lên web |
-| `includesReviewCards` | snapshot tính năng gửi lên web |
-| `treeOnlyWhenReviewOpen` | snapshot tính năng gửi lên web |
-| `noTreeInLocalModeEvenWhenReviewOpen` | snapshot tính năng gửi lên web |
-| `oversizedReviewCardsAreDroppedLast` | snapshot tính năng gửi lên web |
-
+| `gatesStepsCasesAndFeature` | `TestSnapshotGatesStepsCasesAndFeature` |
+| `autoApprovalCarriesRule` | `TestSnapshotAutoApprovalCarriesRule` |
+| `stepDiffExcludesFeatureStateAndUnmanagedFiles` | `TestSnapshotStepDiffExcludesFeatureStateAndUnmanagedFiles` |
+| `stepDiffEmptyWhenOnlyStateFilesChanged` | `TestSnapshotStepDiffEmptyWhenOnlyStateFilesChanged` |
+| `openQuestionsFromBrd` | `TestSnapshotOpenQuestionsFromBrd` |
+| `bigArtifactIsTruncatedByUtf8Bytes` | `TestSnapshotBigArtifactIsTruncatedByUtf8Bytes` |
+| `hugeDiffsAreCappedAndSnapshotFitsLimit` | `TestSnapshotHugeDiffsAreCappedAndSnapshotFitsLimit` |
+| `dropsOldestDiffsWhenOverTotalLimit` | `TestSnapshotDropsOldestDiffsWhenOverTotalLimit` |
+| `includesReviewCards` | `TestSnapshotIncludesReviewCards` |
+| `treeOnlyWhenReviewOpen` | `TestSnapshotTreeOnlyWhenReviewOpen` |
+| `noTreeInLocalModeEvenWhenReviewOpen` | `TestSnapshotNoTreeInLocalModeEvenWhenReviewOpen` |
+| `oversizedReviewCardsAreDroppedLast` | `TestSnapshotOversizedReviewCardsAreDroppedLast` |

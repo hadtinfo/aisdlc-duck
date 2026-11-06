@@ -26,7 +26,7 @@ type Verifier interface {
 	Verify(ctx context.Context, key model.FeatureKey, out string) (harness.VerifyResult, error)
 }
 
-// CIApprovalSource: approval lấy từ web khi chạy CI (giai đoạn 4 cài). nil → không có web.
+// CIApprovalSource: approval lấy từ web khi chạy CI (webclient.HTTPCIApprovals). nil → không có web.
 // Lỗi mạng/401/403 trả error nêu lý do.
 type CIApprovalSource interface {
 	Approvals(ctx context.Context, key model.FeatureKey, tree string) (CIApprovals, error)

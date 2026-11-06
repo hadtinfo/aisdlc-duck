@@ -262,7 +262,7 @@ func TestStatusShowsRiskLevel(t *testing.T) {
 	contains(t, r.out, "Rủi ro: không đọc được aisdlc/features/PAY-1/risk.yaml")
 }
 
-// StatusControlTest (phần đọc cache; pausedOfflineMessage cần web và sổ lệnh chờ: giai đoạn 4).
+// StatusControlTest (phần đọc cache; pausedOfflineMessage ở cli_control_test.go).
 
 func newControlFx(t *testing.T) (*testRepo, func(c snapshot.FeatureControl)) {
 	r := newTestRepo(t)

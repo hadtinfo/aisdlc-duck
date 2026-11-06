@@ -111,6 +111,7 @@ func Wrap(ctx *Context, fn func(cmd *cobra.Command, args []string) (int, error))
 
 func execute(ctx *Context, root *cobra.Command, args []string) int {
 	localizeHelp(root)
+	localizeErrors(root)
 	root.SetArgs(args)
 	root.SetIn(ctx.in)
 	root.SetOut(ctx.out)
@@ -125,7 +126,7 @@ func execute(ctx *Context, root *cobra.Command, args []string) int {
 		return ctx.report(re.err)
 	}
 	// lỗi dùng lệnh (picocli: in lỗi kèm cách dùng ra stderr, exit 2)
-	fmt.Fprintln(ctx.err, err.Error())
+	fmt.Fprintln(ctx.err, viErr(err).Error())
 	if cmd != nil {
 		fmt.Fprint(ctx.err, cmd.UsageString())
 	}

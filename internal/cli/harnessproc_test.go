@@ -23,13 +23,12 @@ func exeFile(t *testing.T, dir, name string) string {
 }
 
 type locEnv struct {
-	env  map[string]string
 	exe  string
 	path map[string]string // tên → đường dẫn trên PATH giả
 }
 
 func (l locEnv) locate() (string, error) {
-	return locateHarness(func(k string) string { return l.env[k] }, func() (string, error) { return l.exe, nil },
+	return locateHarness(func() (string, error) { return l.exe, nil },
 		func(n string) (string, error) {
 			if p, ok := l.path[n]; ok {
 				return p, nil
@@ -39,7 +38,7 @@ func (l locEnv) locate() (string, error) {
 }
 
 // Tìm binary: cạnh aisdlc (tên trần, tên theo nền tảng của plugin/lib, cả thư mục đích của symlink); PATH chỉ khi
-// không có cạnh aisdlc; AISDLC_HARNESS chỉ là núm test/dev và bị bỏ qua khi chạy trong Claude Code (CLAUDECODE).
+// không có cạnh aisdlc.
 func TestLocateHarness(t *testing.T) {
 	plat := harnessBin + "-" + runtime.GOOS + "-" + runtime.GOARCH
 	onPath := exeFile(t, t.TempDir(), harnessBin)
@@ -82,34 +81,9 @@ func TestLocateHarness(t *testing.T) {
 		must(t, err)
 		eq(t, p, onPath)
 	})
-	t.Run("AISDLC_HARNESS ngoài Claude Code", func(t *testing.T) {
-		d := t.TempDir()
-		exeFile(t, d, harnessBin)
-		fake := exeFile(t, t.TempDir(), "gia")
-		p, err := locEnv{env: map[string]string{HarnessEnv: fake}, exe: filepath.Join(d, "aisdlc")}.locate()
-		must(t, err)
-		eq(t, p, fake)
-		_, err = locEnv{env: map[string]string{HarnessEnv: fake + "-khong-co"}, exe: filepath.Join(d, "aisdlc")}.locate()
-		if err == nil || !strings.Contains(err.Error(), HarnessEnv) {
-			t.Errorf("err = %v", err)
-		}
-	})
-	t.Run("AISDLC_HARNESS bị bỏ qua trong Claude Code", func(t *testing.T) {
-		d := t.TempDir()
-		want := exeFile(t, d, harnessBin)
-		fake := exeFile(t, t.TempDir(), "gia")
-		p, err := locEnv{env: map[string]string{HarnessEnv: fake, "CLAUDECODE": "1"}, exe: filepath.Join(d, "aisdlc")}.locate()
-		must(t, err)
-		eq(t, p, want)
-		// không có cạnh aisdlc, không có trên PATH: vẫn không dùng biến
-		_, err = locEnv{env: map[string]string{HarnessEnv: fake, "CLAUDECODE": "1"}, exe: filepath.Join(t.TempDir(), "aisdlc")}.locate()
-		if err == nil || !strings.Contains(err.Error(), "không tìm thấy aisdlc-harness: ") {
-			t.Errorf("err = %v", err)
-		}
-	})
 	t.Run("thiếu hết: lỗi không gợi ý biến môi trường", func(t *testing.T) {
 		_, err := locEnv{exe: filepath.Join(t.TempDir(), "aisdlc")}.locate()
-		if err == nil || !strings.Contains(err.Error(), "không tìm thấy aisdlc-harness: ") || strings.Contains(err.Error(), HarnessEnv) {
+		if err == nil || !strings.Contains(err.Error(), "không tìm thấy aisdlc-harness: ") || strings.Contains(err.Error(), "AISDLC_HARNESS") {
 			t.Errorf("err = %v", err)
 		}
 	})

@@ -369,7 +369,7 @@ mkdir -p "$WORK/bin"
 ln -s "$ROOT/plugin/bin/aisdlc" "$WORK/bin/aisdlc" # như install.sh, nhưng không đụng ~/.local/bin
 export PATH="$WORK/bin:$PATH"
 # Như terminal của dev hay job CI: không trong Claude Code, không session (phần session tự đặt AISDLC_SESSION).
-unset JIRA_URL JIRA_TOKEN AISDLC_SESSION CLAUDECODE CLAUDE_CODE_ENTRYPOINT AISDLC_HARNESS
+unset JIRA_URL JIRA_TOKEN AISDLC_SESSION CLAUDECODE CLAUDE_CODE_ENTRYPOINT
 unset AISDLC_WEB_URL AISDLC_WEB_TOKEN AISDLC_CI_TOKEN
 # HOME riêng: `aisdlc web login` ghi ~/.config/aisdlc; không bao giờ đụng HOME thật. Cache Go (module, build) và cấu
 # hình docker giữ của HOME thật để harness không tải lại module, không build lại từ đầu.
@@ -942,7 +942,8 @@ if [ "$WEB" = 1 ] && part web; then
       "  ngưỡng p95 ≤ ${LIMIT} ms (spec 50 + E2E_LATENCY_SLACK_MS ${E2E_LATENCY_SLACK_MS:-0}): ${VERDICT}")"$'\n'
     [ "$VERDICT" = ĐẠT ] && break
   done
-  printf '%s' "$LAT_SUMMARY" | tee -a "$LOG"
+  # Bảng độ trễ in một lần ở tổng kết cuối; chỉ in ngay ở đây khi FAIL (die thoát trước tổng kết).
+  [ "$VERDICT" = ĐẠT ] || printf '%s' "$LAT_SUMMARY" | tee -a "$LOG"
   [ "${PRE_MS%% *}" -le "$LIMIT" ] || die "PreToolUse Edit chậm: p95 ${PRE_MS%% *} ms > ${LIMIT} ms"
   [ "${POST_MS%% *}" -le "$LIMIT" ] || die "PostToolUse Read chậm: p95 ${POST_MS%% *} ms > ${LIMIT} ms"
 

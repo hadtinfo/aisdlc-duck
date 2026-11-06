@@ -3,11 +3,11 @@
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
 # Hai binary: aisdlc (CLI và hook, khởi động nhanh) và aisdlc-harness (harness black-box, testcontainers) mà aisdlc
-# gọi như tiến trình con; aisdlc tìm aisdlc-harness cạnh nó (không có thì PATH; $$AISDLC_HARNESS chỉ để test/dev, bị bỏ qua trong Claude Code).
+# gọi như tiến trình con; aisdlc tìm aisdlc-harness cạnh nó (không có thì PATH; không biến môi trường nào đổi được).
 # Phiên bản build (commit, "+dirty" khi có thay đổi chưa commit) nhúng vào cả hai binary; aisdlc từ chối kết quả của
-# aisdlc-harness khác bản. Không có git thì rỗng: binary tự lấy vcs.revision, không có nữa là "dev" (không kiểm).
-VERSION ?= $(shell r=$$(git rev-parse HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null && echo $$r || echo $$r+dirty; })
-LDVER = $(if $(strip $(VERSION)),-X aisdlc/internal/buildinfo.version=$(VERSION))
+# aisdlc-harness khác bản. Đặt tay bằng `make build AISDLC_VERSION=...`. Không có git thì rỗng: binary tự lấy vcs.revision, không có nữa là "dev" (không kiểm).
+AISDLC_VERSION ?= $(shell r=$$(git rev-parse HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null && echo $$r || echo $$r+dirty; })
+LDVER = $(if $(strip $(AISDLC_VERSION)),-X aisdlc/internal/buildinfo.version=$(AISDLC_VERSION))
 
 build:
 	go build -ldflags="$(LDVER)" -o bin/aisdlc ./cmd/aisdlc && go build -ldflags="$(LDVER)" -o bin/aisdlc-harness ./cmd/aisdlc-harness

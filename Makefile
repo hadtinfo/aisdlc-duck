@@ -1,4 +1,4 @@
-.PHONY: ci build-web-bin build test test-short vet fmt-check check plugin-dist ui ui-test build-web
+.PHONY: e2e e2e-web ci build-web-bin build test test-short vet fmt-check check plugin-dist ui ui-test build-web
 
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
@@ -38,7 +38,16 @@ ui-test:
 build-web-bin:
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/aisdlc-web ./cmd/aisdlc-web
 
-build-web: ui build-web-bin
+build-web:
+	$(MAKE) ui && $(MAKE) build-web-bin
 
 # Chạy cục bộ những gì CI chạy ở các stage check và ui.
-ci: check ui ui-test
+ci:
+	$(MAKE) check && $(MAKE) ui && $(MAKE) ui-test
+
+# Placeholder: Task 4 thay bằng e2e/run-e2e.sh. Cố ý fail để job CI không xanh giả.
+e2e:
+	@echo "e2e chưa có: Task 4 sẽ thêm e2e/run-e2e.sh" >&2; exit 1
+
+e2e-web:
+	@echo "e2e-web chưa có: Task 4 sẽ thêm e2e/run-e2e.sh" >&2; exit 1

@@ -48,6 +48,7 @@ build:
   stage: build
   needs: [ui]
   script:
+    - test -f internal/web/spa/dist/index.html
     - make plugin-dist
     - make build-web-bin
   artifacts:

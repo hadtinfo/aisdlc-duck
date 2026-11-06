@@ -144,8 +144,8 @@ func TestHighFlagNoAuto(t *testing.T) {
 	r.assertAuto(gate.BRD, "low")
 	// S2 chồng phạm vi với S1: review card có cờ SCOPE_OVERLAP mức HIGH
 	d := r.read(designFile)
-	r.write(designFile, regexp.MustCompile(regexp.QuoteMeta(`scope: ["src/main/java/**/limit/service/**"`)).
-		ReplaceAllLiteralString(d, `scope: ["src/main/java/**/limit/web/**", "src/main/java/**/limit/service/**"`))
+	r.write(designFile, regexp.MustCompile(regexp.QuoteMeta(`scope: ["internal/limit/service/**"`)).
+		ReplaceAllLiteralString(d, `scope: ["internal/limit/handler/**", "internal/limit/service/**"`))
 	r.ok(noConsole(), "review", "design", "--json")
 	contains(t, r.out, `"SCOPE_OVERLAP"`, `"HIGH"`)
 
@@ -295,7 +295,7 @@ func TestLowFeatureStepsAutoAcceptedReviewManual(t *testing.T) {
 		r.ok(noConsole(), "step", "start", id)
 		file := s1File
 		if id == "S2" {
-			file = "src/main/java/com/example/limit/service/LimitService.java"
+			file = "internal/limit/service/LimitService.java"
 		}
 		r.write(file, "class X"+id+" {}\n")
 		r.runner.cases = passing("C1", "C2")

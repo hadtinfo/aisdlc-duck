@@ -21,6 +21,7 @@ import (
 	"aisdlc/internal/web/gates"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/ingest"
+	"aisdlc/internal/web/policy"
 	"aisdlc/internal/web/signing"
 	"aisdlc/internal/web/store"
 )
@@ -65,6 +66,7 @@ type services struct {
 	ingest *ingest.Service
 	reader *board.Reader
 	hub    *board.Hub
+	policy *policy.Service
 }
 
 // registerRoutes là điểm các task sau thêm route.
@@ -73,6 +75,7 @@ func registerRoutes(r chi.Router, d Deps, s services) {
 	gates.Routes(r, &gates.Handlers{Modes: s.modes, Keys: d.Keys, Gates: s.gates})
 	ingest.Routes(r, s.ingest)
 	board.Routes(r, s.reader, s.hub)
+	policy.Routes(r, s.policy)
 }
 
 // NewHandler dựng router chi: recover, xác thực (bọc mọi request, trước định tuyến), 404/405 JSON cho /api/*, rồi các route.
@@ -99,7 +102,8 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 		}
 	}
 	s := services{auth: a, modes: modes, gates: gs,
-		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed}, reader: reader, hub: hub}
+		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed}, reader: reader, hub: hub,
+		policy: &policy.Service{Pool: d.Pool, Keys: d.Keys, Auth: a, Now: d.Now}}
 	r := chi.NewRouter()
 	r.Use(Recoverer)
 	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody

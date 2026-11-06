@@ -31,7 +31,10 @@ Examples of unacceptable behavior:
 This Code of Conduct applies in all project spaces (issues, PRs, discussions) and when someone officially represents
 the project elsewhere.
 
-Report unacceptable behavior to the maintainers at **TODO-conduct-contact@example.com**. All reports are reviewed
-promptly and fairly, and the reporter's privacy is respected. Maintainers may remove, edit or reject contributions
+Report unacceptable behavior privately to a maintainer (listed in [`.github/CODEOWNERS`](.github/CODEOWNERS)) through
+the contact on their GitHub profile. If you cannot find a private contact, open an issue that only asks a maintainer
+to get in touch, without details. You can also use GitHub's
+[report abuse](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam)
+feature for content on GitHub. All reports are reviewed promptly and fairly, and the reporter's privacy is respected. Maintainers may remove, edit or reject contributions
 and may temporarily or permanently ban contributors whose behavior violates this Code of Conduct, following the
 enforcement guidelines of the Contributor Covenant 2.1.

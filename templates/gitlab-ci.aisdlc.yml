@@ -1,5 +1,7 @@
 # Job eval AISDLC. Thêm vào .gitlab-ci.yml:  include: { local: aisdlc/gitlab-ci.aisdlc.yml }
-# Cần biến CI/CD AISDLC_BIN: URL tải binary aisdlc cho linux/amd64 (artifact nội bộ, ví dụ package registry).
+# Cần biến CI/CD AISDLC_BIN và AISDLC_HARNESS_BIN: URL tải binary aisdlc và aisdlc-harness cho linux/amd64 (artifact
+# nội bộ, ví dụ package registry; `make plugin-dist` ra plugin/lib/aisdlc-linux-amd64 và aisdlc-harness-linux-amd64).
+# aisdlc tìm aisdlc-harness cùng thư mục với nó.
 # Chế độ web (approvals: web trong config.yaml): thêm biến CI/CD AISDLC_WEB_URL (URL web) và AISDLC_CI_TOKEN (token CI,
 # đặt Masked); thiếu biến hoặc web không trả lời thì job FAIL. Chế độ local không cần hai biến này.
 # Harness chạy Postgres/Kafka bằng testcontainers qua Docker-in-Docker: DOCKER_HOST trỏ tới service docker:dind (không TLS,
@@ -30,7 +32,9 @@ aisdlc-eval:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
     - test -n "$AISDLC_BIN" || { echo "Thiếu biến AISDLC_BIN (URL binary aisdlc)"; exit 1; }
+    - test -n "$AISDLC_HARNESS_BIN" || { echo "Thiếu biến AISDLC_HARNESS_BIN (URL binary aisdlc-harness)"; exit 1; }
     - curl -fsSL -o /usr/local/bin/aisdlc "$AISDLC_BIN" && chmod +x /usr/local/bin/aisdlc
+    - curl -fsSL -o /usr/local/bin/aisdlc-harness "$AISDLC_HARNESS_BIN" && chmod +x /usr/local/bin/aisdlc-harness
     - git fetch origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
     - aisdlc eval --ci --base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME
   artifacts:

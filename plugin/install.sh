@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Cài plugin AISDLC: build binary Go cho máy hiện tại vào plugin/lib, symlink lệnh `aisdlc` cho dev.
+# Cài plugin AISDLC: build hai binary Go cho máy hiện tại vào plugin/lib (aisdlc: CLI và hook; aisdlc-harness: harness
+# mà aisdlc gọi khi chạy case/eval, tìm cạnh binary aisdlc), symlink lệnh `aisdlc` cho dev.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 cd "$ROOT"
@@ -7,7 +8,8 @@ if command -v go >/dev/null 2>&1; then
   OS="$(go env GOOS)"; ARCH="$(go env GOARCH)"
   mkdir -p plugin/lib
   CGO_ENABLED=0 go build -o "plugin/lib/aisdlc-$OS-$ARCH" ./cmd/aisdlc
-elif ! ls plugin/lib/aisdlc-* >/dev/null 2>&1; then
+  CGO_ENABLED=0 go build -o "plugin/lib/aisdlc-harness-$OS-$ARCH" ./cmd/aisdlc-harness
+elif ! ls plugin/lib/aisdlc-harness-* >/dev/null 2>&1; then
   echo "AISDLC: không có Go và chưa có binary trong plugin/lib. Chạy 'make plugin-dist' trên máy có Go." >&2
   exit 1
 fi

@@ -307,7 +307,7 @@ for c in $(docker ps -aq --filter "label=$LABEL" 2>/dev/null); do
   fi
 done
 
-step "Build aisdlc (plugin dist), aisdlc-web (UI nhúng), symlink plugin/bin/aisdlc vào PATH tạm"
+step "Build aisdlc và aisdlc-harness (plugin dist), aisdlc-web (UI nhúng), symlink plugin/bin/aisdlc vào PATH tạm"
 (cd "$ROOT" && run 0 make -s plugin-dist)
 if [ "$WEB" = 1 ]; then
   # UI build (npm) nhúng vào binary; E2E_SKIP_UI=1 dùng lại dist đã có (chạy lại nhanh khi không sửa UI).
@@ -322,7 +322,7 @@ mkdir -p "$WORK/bin"
 ln -s "$ROOT/plugin/bin/aisdlc" "$WORK/bin/aisdlc" # như install.sh, nhưng không đụng ~/.local/bin
 export PATH="$WORK/bin:$PATH"
 # Như terminal của dev hay job CI: không trong Claude Code, không session (phần session tự đặt AISDLC_SESSION).
-unset JIRA_URL JIRA_TOKEN AISDLC_SESSION CLAUDECODE CLAUDE_CODE_ENTRYPOINT
+unset JIRA_URL JIRA_TOKEN AISDLC_SESSION CLAUDECODE CLAUDE_CODE_ENTRYPOINT AISDLC_HARNESS
 unset AISDLC_WEB_URL AISDLC_WEB_TOKEN AISDLC_CI_TOKEN
 # HOME riêng: `aisdlc web login` ghi ~/.config/aisdlc; không bao giờ đụng HOME thật. Cache Go (module, build) và cấu
 # hình docker giữ của HOME thật để harness không tải lại module, không build lại từ đầu.
@@ -534,7 +534,8 @@ if [ -S /var/run/docker.sock ] && [ "$(docker_host)" = 127.0.0.1 ]; then
   run 1 docker run --rm --label "$LABEL=1" --label "$LABEL.pid=$$" --user "$(id -u):$(id -g)" \
     -e HOME=/tmp -e GOMODCACHE=/gomod -e GOCACHE=/gocache -e GOTOOLCHAIN=local \
     -e DOCKER_HOST=tcp://127.0.0.1:1 -v "$GOMODCACHE:/gomod:ro" -v "$GOCACHE:/gocache" -v "$REPO:$REPO" -w "$REPO" \
-    -v "$ROOT/plugin/lib/aisdlc-linux-$arch:/usr/local/bin/aisdlc:ro" golang:1.26-bookworm \
+    -v "$ROOT/plugin/lib/aisdlc-linux-$arch:/usr/local/bin/aisdlc:ro" \
+    -v "$ROOT/plugin/lib/aisdlc-harness-linux-$arch:/usr/local/bin/aisdlc-harness:ro" golang:1.26-bookworm \
     timeout 300 aisdlc eval --ci --base "$SETUP"
 else
   run 1 env DOCKER_HOST=tcp://127.0.0.1:1 TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1 timeout 300 aisdlc eval --ci --base "$SETUP"

@@ -60,6 +60,12 @@ func TestCITemplateUsesGoAndDind(t *testing.T) {
 	if strings.Contains(s, "mvn") {
 		t.Error("CI còn mvn")
 	}
+	// aisdlc chạy harness bằng binary riêng aisdlc-harness, tìm cạnh nó: job phải tải cả hai vào cùng thư mục.
+	for _, w := range []string{"AISDLC_HARNESS_BIN", "-o /usr/local/bin/aisdlc-harness \"$AISDLC_HARNESS_BIN\""} {
+		if !strings.Contains(s, w) {
+			t.Errorf("CI thiếu %q", w)
+		}
+	}
 }
 
 func TestClaudeTemplateDescribesGoFlow(t *testing.T) {

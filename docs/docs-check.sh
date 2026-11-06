@@ -9,7 +9,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$TMP/bin" "$TMP/home" "$TMP/blocks"
-(cd "$ROOT" && go build -o "$TMP/bin/aisdlc" ./cmd/aisdlc)
+(cd "$ROOT" && go build -o "$TMP/bin/aisdlc" ./cmd/aisdlc && go build -o "$TMP/bin/aisdlc-harness" ./cmd/aisdlc-harness)
 
 # Trích các khối bash có đánh dấu.
 awk -v dir="$TMP/blocks" '

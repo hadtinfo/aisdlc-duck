@@ -30,6 +30,7 @@ for id in sequence error-handling over-engineering naming security; do
 done
 check "bin/aisdlc thực thi được" "[ -x '$P/bin/aisdlc' ]"
 check "install.sh thực thi được" "[ -x '$P/install.sh' ]"
+check "install.sh build cả aisdlc-harness (cạnh aisdlc trong lib/)" "grep -q 'plugin/lib/aisdlc-harness-\$OS-\$ARCH\" ./cmd/aisdlc-harness' '$P/install.sh'"
 check "install.sh không còn nhắc Maven/JDK" "! grep -qi 'mvn\|jar\|jdk' '$P/install.sh' '$P/bin/aisdlc'"
 
 # Cần binary Go cho máy này (plugin/lib/aisdlc-<os>-<arch>): build nếu thiếu (lib/ nằm trong .gitignore)

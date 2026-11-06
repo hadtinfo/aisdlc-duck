@@ -96,6 +96,15 @@ run "$T/repo" '{"tool_input":{"tool_name":"Read"},"cwd":"'"$T/repo"'"}' "$W" hoo
 run "$T/repo" '{"tool_input":{},"tool_name":"Write","x":{"tool_name":"Read"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: tool_name Read trong đối tượng khác -> Write rc 2" 2 'plugin/install.sh'
 run "$T/repo" '{"tool_input":{"content":"} {\"tool_name\": \"Read\" {"},"tool_name":"Write","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: dấu ngoặc trong chuỗi không lừa được" 2 'plugin/install.sh'
 run "$T/repo" '{"tool_input":{"content":"}{ x"},"tool_name":"Read","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; expect "thiếu binary: Read với dấu ngoặc trong chuỗi vẫn rc 0" 0
+big="$(head -c 40000 /dev/zero | tr '\0' a)"
+t0=$(date +%s%N); run "$T/repo" '{"tool_name":"Read","tool_input":{"file_path":"'"$big"'"},"cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$rc" -eq 2 ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload > 16 KB chặn nhanh (${ms} ms)"; else ko "payload lớn: rc=$rc ${ms} ms"; fi
+patho="$(for i in $(seq 1 1500); do printf '{"a":"b"},'; done)"
+t0=$(date +%s%N); run "$T/repo" '{"tool_input":{"e":['"${patho%,}"']},"tool_name":"Read","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "${#patho}" -lt 16000 ] && [ "$rc" -eq 0 ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 15 KB nhiều đối tượng nhỏ xử lý nhanh (${ms} ms)"; else ko "payload nhiều đối tượng: rc=$rc ${ms} ms len=${#patho}"; fi
+patho="$(for i in $(seq 1 1100); do printf '"k%d":"v",' $i; done)"
+t0=$(date +%s%N); run "$T/repo" '{"tool_input":{'"${patho%,}"'},"tool_name":"Write","cwd":"'"$T/repo"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "${#patho}" -lt 16000 ] && [ "$rc" -eq 2 ] && [ "$ms" -lt 1000 ]; then ok "thiếu binary: payload 15 KB nhiều chuỗi nhỏ xử lý nhanh (${ms} ms)"; else ko "payload nhiều chuỗi: rc=$rc ${ms} ms len=${#patho}"; fi
 run "$T/repo" '{"tool_name":"Read"}' "$W" hook stop; expect "thiếu binary: stop dù tool_name Read vẫn rc 1" 1 'plugin/install.sh'
 run "$T/plain" '{"tool_name":"Edit"}' "$W" hook pre-tool-use; expect "thiếu binary, ngoài repo AISDLC: Edit rc 0 im lặng" 0
 rm -rf "$T"

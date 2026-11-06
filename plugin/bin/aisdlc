@@ -10,20 +10,34 @@ fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
   local in="" dir="$PWD"
   IFS= read -r -d '' in || true
   local tool=""
-  # tool_name cấp ngoài (bất kể thứ tự khóa): thay mỗi chuỗi JSON bằng token "sN" (nội dung cất ở mảng), bỏ mọi đối tượng
-  # lồng nhau, rồi tìm khóa tool_name ở đối tượng ngoài cùng. Không tìm ra hoặc không rõ -> tool rỗng -> chặn.
-  local -a strs=(); local t="" rest="$in" n=0 q='"'
-  while [[ "$rest" =~ ^([^\"]*)\"((\\.|[^\"\\])*)\"(.*)$ ]]; do
-    strs[n]="${BASH_REMATCH[2]}"; t+="${BASH_REMATCH[1]}\"s$n\""; rest="${BASH_REMATCH[4]}"; n=$((n+1))
-  done
-  t+="$rest"
-  t="${t#*\{}" # bỏ dấu { mở của đối tượng ngoài
-  while [[ "$t" =~ ^(.*)\{[^{}]*\}(.*)$ ]]; do t="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"; done
-  rest="$t"
-  while [[ "$rest" =~ \"s([0-9]+)\"[[:space:]]*:[[:space:]]*\"s([0-9]+)\"(.*)$ ]]; do
-    if [ "${strs[${BASH_REMATCH[1]}]}" = "tool_name" ]; then tool="${strs[${BASH_REMATCH[2]}]}"; break; fi
-    rest="${BASH_REMATCH[3]}"
-  done
+  # tool_name cấp ngoài (bất kể thứ tự khóa): một lượt qua từng ký tự, theo dõi độ sâu {[ và chuỗi (kể cả \" và ngoặc trong
+  # chuỗi); chỉ nhận khóa tool_name ở độ sâu 1 với giá trị là chuỗi. Không tìm ra -> tool rỗng -> chặn.
+  # Tool đọc có input rất nhỏ: payload > 16 KB coi như không phải tool đọc, chặn ngay không phân tích (quá giờ hook 15 s
+  # thì hook không chặn nữa).
+  if [ "${#in}" -le 16384 ]; then
+    local LC_ALL=C c cur="" last="" key="" d=0 ins=0 esc=0 colon=0 i
+    for ((i=0; i<${#in}; i++)); do
+      c="${in:i:1}"
+      if [ $ins -eq 1 ]; then
+        if [ $esc -eq 1 ]; then esc=0; cur+="$c"
+        elif [ "$c" = "\\" ]; then esc=1; cur+="$c"
+        elif [ "$c" = '"' ]; then
+          ins=0
+          if [ $d -eq 1 ]; then
+            if [ $colon -eq 1 ]; then [ "$key" = "tool_name" ] && tool="$cur"; colon=0; else last="$cur"; fi
+          fi
+        elif [ $d -eq 1 ]; then cur+="$c"; fi
+        continue
+      fi
+      case "$c" in
+        '"') ins=1; cur="" ;;
+        "{"|"[") d=$((d+1)) ;;
+        "}"|"]") d=$((d-1)) ;;
+        ":") [ $d -eq 1 ] && { colon=1; key="$last"; } ;;
+        ",") [ $d -eq 1 ] && colon=0 ;;
+      esac
+    done
+  fi
   [[ "$in" =~ \"cwd\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && dir="${BASH_REMATCH[1]}"
   while [ -n "$dir" ]; do
     if [ -f "$dir/aisdlc/config.yaml" ]; then

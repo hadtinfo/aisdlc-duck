@@ -1,0 +1,14 @@
+{
+  "summary": "Code bám sequence S1 (kiểm request) và S2 (đọc daily_limit); không có vấn đề nghiêm trọng.",
+  "criteria": [
+    {"id": "sequence", "label": "DAT", "reason": "Handler kiểm request trước (S1), rồi limit.Service đọc daily_limit (S2) đúng sơ đồ."},
+    {"id": "error-handling", "label": "DAT", "reason": "400 VALIDATION_ERROR và 404 LIMIT_NOT_FOUND đúng BRD; không nuốt lỗi DB."},
+    {"id": "over-engineering", "label": "DAT", "reason": "Một service, một truy vấn; không thêm lớp hay cấu hình thừa."},
+    {"id": "naming", "label": "CAN_SUA", "reason": "Biến left trong limit.Service.Check nên đặt remainingBefore cho rõ."},
+    {"id": "security", "label": "DAT", "reason": "Truy vấn dùng tham số bind, không ghép chuỗi SQL."}
+  ],
+  "issues": [
+    {"step": "S2", "file": "internal/limit/service.go", "line": 26,
+     "severity": "low", "category": "naming", "message": "Đổi tên left thành remainingBefore."}
+  ]
+}

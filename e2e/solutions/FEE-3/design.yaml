@@ -1,0 +1,10 @@
+steps:
+  - id: S1
+    title: Làm tròn phí trong fee.Fee
+    scope: ["internal/fee/**"]
+    budget: { files: 1, lines: 10 }
+invariants: []
+impact:
+  level: low
+  labels: []
+  reason: "Chỉ đổi cách làm tròn phí trong fee.Fee; không đổi API, DB."

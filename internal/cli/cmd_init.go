@@ -107,7 +107,7 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 	}
 
 	ctx.Println("Đã tạo tính năng " + k.String() + " (luồng " + string(flow) + "): " + t)
-	// Java gửi event/snapshot lên web ở đây (WebPublisher.afterCommand): giai đoạn 4.
+	ctx.AfterCommandKey(root, k, "init")
 	for _, f := range files {
 		ctx.Println("  " + paths.Rel(f.path))
 	}
@@ -156,6 +156,8 @@ func jiraSummary(ctx *Context, k model.FeatureKey) (string, error) {
 	client := &http.Client{
 		Timeout:   10 * time.Second,
 		Transport: &http.Transport{DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext},
+		// không theo redirect: theo sẽ gửi lại Bearer sang địa chỉ khác; 3xx thành cảnh báo "Jira trả HTTP 3xx"
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	resp, err := client.Do(req)
 	if err != nil {

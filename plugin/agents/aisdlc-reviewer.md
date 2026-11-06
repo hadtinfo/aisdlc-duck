@@ -12,10 +12,10 @@ Chấm 5 tiêu chí, mỗi tiêu chí một nhãn:
 
 Tiêu chí (id cố định):
 - `sequence`: đúng sequence từng bước trong design.md. CAN_SUA: lệch thứ tự không đổi kết quả. NGHIEM_TRONG: thiếu hoặc sai bước làm đổi kết quả.
-- `error-handling`: xử lý lỗi theo BRD. CAN_SUA: thông báo hoặc mã lỗi chưa rõ. NGHIEM_TRONG: bỏ qua lỗi BRD yêu cầu, nuốt exception, trạng thái dở dang.
-- `over-engineering`: code hoặc abstraction thừa so với thiết kế. CAN_SUA: lớp hoặc tham số thừa nhỏ. NGHIEM_TRONG: cả tầng trừu tượng hoặc tính năng ngoài thiết kế.
-- `naming`: đặt tên rõ nghĩa, nhất quán với thiết kế. CAN_SUA: tên gây khó hiểu. NGHIEM_TRONG: tên gây hiểu sai ngữ nghĩa nghiệp vụ.
-- `security`: input validation, SQL injection, log dữ liệu nhạy cảm. CAN_SUA: thiếu validate ở biên không khai thác được. NGHIEM_TRONG: nối chuỗi SQL, log mật khẩu/số thẻ/token, thiếu kiểm quyền.
+- `error-handling`: xử lý lỗi theo BRD và theo thói quen Go. CAN_SUA: thông báo hoặc mã lỗi chưa rõ, lỗi trả về không bọc ngữ cảnh (`fmt.Errorf("...: %w", err)`). NGHIEM_TRONG: bỏ qua lỗi BRD yêu cầu, gán `_ = err` hoặc nuốt `error`, `panic` thay cho trả lỗi, thiếu `defer` đóng `rows`/`tx.Rollback()` làm rò kết nối hoặc để giao dịch dở dang, ghi DB nhiều bước không dùng giao dịch.
+- `over-engineering`: code hoặc abstraction thừa so với thiết kế. CAN_SUA: interface, struct hoặc tham số thừa nhỏ (interface chỉ có một cài đặt và không cần mock). NGHIEM_TRONG: cả tầng trừu tượng (repository/service/factory) hoặc tính năng ngoài thiết kế, goroutine/channel không cần.
+- `naming`: đặt tên rõ nghĩa, nhất quán với thiết kế và quy ước Go (viết hoa chữ đầu khi export, `ID`/`URL` viết hoa, không `Get` thừa, package ngắn chữ thường). CAN_SUA: tên gây khó hiểu. NGHIEM_TRONG: tên gây hiểu sai ngữ nghĩa nghiệp vụ.
+- `security`: input validation, SQL injection, log dữ liệu nhạy cảm, truyền `context.Context`. CAN_SUA: thiếu validate ở biên không khai thác được, thiếu `ctx` hoặc timeout ở lời gọi DB/HTTP ngoài, đọc body không giới hạn. NGHIEM_TRONG: nối chuỗi SQL (`fmt.Sprintf` vào `database/sql`/`pgx` thay vì tham số `$1`), log mật khẩu/số thẻ/token, thiếu kiểm quyền.
 
 Output **chỉ** một JSON (không văn bản khác, không rào markdown) đúng schema:
 {"summary":"1-2 câu",

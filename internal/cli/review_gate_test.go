@@ -42,7 +42,7 @@ func (r *testRepo) allStepsAccepted() {
 	r.t.Helper()
 	r.ok(typed("PAY-1"), "step", "accept", "S1")
 	r.ok(noConsole(), "step", "start", "S2")
-	r.write("src/main/java/com/example/limit/service/LimitService.java", "class LimitService {}\n")
+	r.write("internal/limit/service/limit_service.go", "package service\n")
 	r.allCasesPass()
 	r.ok(noConsole(), "step", "finish", "S2")
 	r.ok(typed("PAY-1"), "step", "accept", "S2")
@@ -97,7 +97,7 @@ func TestSubmitReviewAfterCodeChangeIsStale(t *testing.T) {
 	r.allCasesPass()
 	r.write("aisdlc/features/PAY-1/review-agent.json", evalValidReview)
 	r.handEval(true)
-	r.write(s1File, "class LimitController { int x; }\n")
+	r.write(s1File, "package handler\n\nvar x int\n")
 
 	eq(t, r.run("submit", "review"), 1)
 	contains(t, r.out, "REVIEW_EVAL_STALE", "code đã đổi sau lần eval — chạy lại aisdlc eval")
@@ -112,7 +112,7 @@ func TestApproveReviewRefusesWhenCodeChangedAfterSubmit(t *testing.T) {
 	r.ok(noConsole(), "submit", "review")
 	gatesBefore := r.read("aisdlc/features/PAY-1/gates.json")
 
-	r.write(s1File, "class LimitController { int changedAfterSubmit; }\n")
+	r.write(s1File, "package handler\n\nvar changedAfterSubmit int\n")
 	eq(t, r.runC(typed("PAY-1"), "approve", "review"), 1)
 	contains(t, r.out+r.err, "REVIEW_EVAL_STALE", "code đã đổi sau lần eval — chạy lại aisdlc eval")
 	eq(t, r.read("aisdlc/features/PAY-1/gates.json"), gatesBefore)
@@ -165,7 +165,7 @@ func TestSubmitReviewPutsAgentReviewIntoReportAndApproveShowsIt(t *testing.T) {
 	r.handEval(true)
 	contains(t, r.read("aisdlc/features/PAY-1/eval/report.md"), "| AGENT_REVIEW | NA |")
 	calls := len(r.runner.calls)
-	issue := `{"step":"S2","file":"src/main/java/com/example/limit/service/LimitService.java",` +
+	issue := `{"step":"S2","file":"internal/limit/service/limit_service.go",` +
 		`"line":1,"severity":"high","category":"security","message":"lộ số tài khoản"}`
 	r.write("aisdlc/features/PAY-1/review-agent.json",
 		strings.Replace(evalValidReview, `"issues":[]`, `"issues":[`+issue+`]`, 1))
@@ -178,5 +178,5 @@ func TestSubmitReviewPutsAgentReviewIntoReportAndApproveShowsIt(t *testing.T) {
 
 	r.ok(typed("PAY-1"), "approve", "review")
 	contains(t, r.out, "Agent review: 4/5 ĐẠT, 1 CẦN_SỬA (security); 1 high, 0 medium",
-		"high S2 src/main/java/com/example/limit/service/LimitService.java:1: lộ số tài khoản")
+		"high S2 internal/limit/service/limit_service.go:1: lộ số tài khoản")
 }

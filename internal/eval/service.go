@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
-	"aisdlc/internal/harness"
+	"aisdlc/internal/harness/harnessapi"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/risk"
@@ -20,12 +21,12 @@ import (
 )
 
 // Verifier build, chạy unit test và bộ case đầy đủ của tính năng, ghi results.json/schema.json vào out
-// (harness.Harness trong bản thật). error chỉ khi không ghi được out.
+// (binary aisdlc-harness qua CLI trong bản thật). error chỉ khi không ghi được out.
 type Verifier interface {
-	Verify(ctx context.Context, key model.FeatureKey, out string) (harness.VerifyResult, error)
+	Verify(ctx context.Context, key model.FeatureKey, out string) (harnessapi.VerifyResult, error)
 }
 
-// CIApprovalSource: approval lấy từ web khi chạy CI (giai đoạn 4 cài). nil → không có web.
+// CIApprovalSource: approval lấy từ web khi chạy CI (webclient.HTTPCIApprovals). nil → không có web.
 // Lỗi mạng/401/403 trả error nêu lý do.
 type CIApprovalSource interface {
 	Approvals(ctx context.Context, key model.FeatureKey, tree string) (CIApprovals, error)
@@ -111,7 +112,7 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 	if cs, err := spec.ReadCases(s.Paths.Cases()); err == nil {
 		selected = cs.Cases
 	}
-	results := harness.ReadResults(out, selected)
+	results := harnessapi.ReadResults(out, selected)
 
 	hard := []HardCheck{}
 	soft := []SoftCheck{}
@@ -215,6 +216,10 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 	if ci {
 		mode = "ci"
 	}
+	// bị hủy (Ctrl-C) giữa lúc chạy checks/coverage: không ghi report từ kết quả dở dang
+	if err := ctx.Err(); err != nil {
+		return EvalReport{}, err
+	}
 	report := NewEvalReport(s.Meta.Key.String(), s.Now().UTC(), mode, hard, soft, to, section)
 	if err := s.write(report, results); err != nil {
 		return EvalReport{}, err
@@ -233,7 +238,7 @@ func (s *Service) webApprovals(ctx context.Context, web CIApprovalSource, evalua
 		return true, []HardCheck{{"GATE:WEB", false,
 			"Thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN để hỏi web (chế độ web)"}}, nil
 	}
-	got, err := web.Approvals(ctx, s.Meta.Key, evaluatedTree)
+	got, err := askWeb(ctx, web, s.Meta.Key, evaluatedTree)
 	if err != nil {
 		// có nguồn thì không có chế độ bỏ qua: config.yaml của đầu MR không được tắt kiểm tra
 		return true, []HardCheck{{"GATE:WEB", false, "Không hỏi được web (" + err.Error() + "), chạy lại job"}}, nil
@@ -364,4 +369,14 @@ func (s *Service) write(report EvalReport, results []run.CaseResult) error {
 		return errors.New("Không ghi được " + dir + ": " + err.Error())
 	}
 	return nil
+}
+
+// askWeb gọi nguồn web; panic của nguồn là lỗi (fail closed, như RuntimeException của Java), không làm sập eval.
+func askWeb(ctx context.Context, web CIApprovalSource, key model.FeatureKey, tree string) (got CIApprovals, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("lỗi nội bộ: %v", r)
+		}
+	}()
+	return web.Approvals(ctx, key, tree)
 }

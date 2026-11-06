@@ -13,4 +13,9 @@ Tài liệu của tính năng nằm ở `aisdlc/features/<JIRA-KEY>/`; mỗi c�
 - Rủi ro: ở bước thiết kế chạy `aisdlc policy show` rồi điền `impact` trong `design.yaml` (lite: `cases.yaml`). `risk.yaml` và `aisdlc/risk-policy.yaml` chỉ đọc; viết đủ case theo `requirements` trong `risk.yaml`.
 - Chỉ dev chạy (trong terminal của mình): `approve`, `reject`, `reopen`, `scope allow`, `step accept`, `risk set`, `risk reclassify`.
 
+- Dịch vụ Go: mã nằm ở `cmd/` (main) và `internal/`; migration theo goose, tên `NNNNN_ten.sql`, có `-- +goose Up`, thư mục chính `db/migrations/`. Bản nháp của tính năng đặt ở `aisdlc/features/<KEY>/db/`.
+- Tự kiểm tra mỗi bước bằng `go test ./...` (và `go vet ./...` nếu repo bật). `aisdlc step finish Sx` build dịch vụ và chạy case của bước qua harness (cần Docker); test đơn vị chạy trong `aisdlc eval`.
+- Quy tắc so DB trong `then.db` (cases.yaml): số so theo giá trị; bool là `true`/`false`; NULL khớp `null`; timestamp và date dạng RFC 3339 UTC; json/jsonb so theo cấu trúc; còn lại so dạng text.
+- Chạy `aisdlc eval` cần Docker (harness dùng testcontainers cho Postgres/Kafka).
+
 Slash command: `/aisdlc:init`, `/aisdlc:brd`, `/aisdlc:design`, `/aisdlc:cases`, `/aisdlc:step`, `/aisdlc:eval`, `/aisdlc:review`, `/aisdlc:status`.

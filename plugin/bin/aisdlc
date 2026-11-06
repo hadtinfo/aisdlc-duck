@@ -1,31 +1,105 @@
 #!/usr/bin/env bash
 # Chọn binary Go theo nền tảng (plugin/lib/aisdlc-<os>-<arch>) rồi exec.
 # Thiếu binary: lệnh thường -> lỗi, exit 2. Hook -> chỉ chặn (fail closed) khi đang ở repo AISDLC.
+# tool_name lấy ở cấp ngoài (trước hoặc sau khối tool_input, không lấy từ bên trong tool_input).
+# Riêng pre-tool-use: tool chỉ đọc (Read, Grep, Glob, LS, NotebookRead) vẫn được qua (exit 0) để dev còn đọc mà sửa;
+# tool ghi, Bash, tool lạ hoặc không đọc được tool_name -> chặn (exit 2). WebFetch/WebSearch không thuộc danh sách
+# (hook không đăng ký cho chúng; nếu có gọi thì coi như không phải tool đọc repo và vẫn chặn).
 fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
   if [ "${1:-}" != "hook" ]; then echo "AISDLC: $MSG" >&2; exit 2; fi
-  local in="" dir="$PWD"
-  IFS= read -r -d '' in || true
-  [[ "$in" =~ \"cwd\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]] && dir="${BASH_REMATCH[1]}"
-  while [ -n "$dir" ]; do
-    if [ -f "$dir/aisdlc/config.yaml" ]; then
-      echo "AISDLC: $MSG" >&2
-      [ "${2:-}" = "pre-tool-use" ] && exit 2
-      exit 1
-    fi
-    [ "$dir" = "/" ] && break
-    dir="${dir%/*}"; [ -z "$dir" ] && dir="/"
+  # LC_ALL=C trước mọi phép đo/duyệt: ${#in} đếm byte, không đếm ký tự UTF-8.
+  local LC_ALL=C in="" dir="" tool="" big=0 dirs=()
+  # Đọc tối đa 16385 byte rồi bỏ phần còn lại (cat đọc khối lớn, nhanh) để không phải giữ cả payload lớn trong bash.
+  in="$(head -c 16385; cat >/dev/null)"
+  [ "${#in}" -gt 16384 ] && big=1
+  # tool_name và cwd cấp ngoài (bất kể thứ tự khóa): một lượt qua từng byte, theo dõi độ sâu {[ và chuỗi (kể cả \" và ngoặc
+  # trong chuỗi); chỉ nhận khóa ở độ sâu 1 với giá trị là chuỗi. Không tìm ra tool_name -> tool rỗng -> chặn.
+  # Tool đọc có input rất nhỏ: payload > 16384 byte coi như không phải tool đọc, chặn ngay không phân tích (quá giờ hook 15 s
+  # thì hook không chặn nữa).
+  if [ $big -eq 0 ]; then
+    local c cur="" last="" key="" d=0 ins=0 esc=0 colon=0 i
+    for ((i=0; i<${#in}; i++)); do
+      c="${in:i:1}"
+      if [ $ins -eq 1 ]; then
+        if [ $esc -eq 1 ]; then esc=0; cur+="$c"
+        elif [ "$c" = "\\" ]; then esc=1; cur+="$c"
+        elif [ "$c" = '"' ]; then
+          ins=0
+          if [ $d -eq 1 ]; then
+            if [ $colon -eq 1 ]; then
+              case "$key" in tool_name) tool="$cur" ;; cwd) dir="$cur" ;; esac
+              colon=0
+            else last="$cur"; fi
+          fi
+        elif [ $d -eq 1 ]; then cur+="$c"; fi
+        continue
+      fi
+      case "$c" in
+        '"') ins=1; cur="" ;;
+        "{"|"[") d=$((d+1)) ;;
+        "}"|"]") d=$((d-1)) ;;
+        ":") [ $d -eq 1 ] && { colon=1; key="$last"; } ;;
+        ",") [ $d -eq 1 ] && colon=0 ;;
+      esac
+    done
+  else
+    # Payload lớn: xét MỌI "cwd" trong 4096 byte đầu (ở bất kỳ độ sâu) cùng $PWD; chỉ cần một cái thuộc repo AISDLC là
+    # xử lý như trong repo (cwd giả chỉ có thể thêm repo, không bớt). Không cái nào thuộc repo -> im lặng exit 0.
+    local pre="${in:0:4096}" re='"cwd"[[:space:]]*:[[:space:]]*"([^"]+)"'
+    while [[ "$pre" =~ $re ]]; do
+      dirs+=("${BASH_REMATCH[1]}"); pre="${pre#*"${BASH_REMATCH[0]}"}"
+    done
+    dirs+=("$PWD")
+  fi
+  # Luôn xét cả $PWD (cwd giả chỉ thêm repo, không bớt). cwd không tuyệt đối (vd "x") bị bỏ qua: leo thư mục cha bằng
+  # ${dir%/*} trên đường tương đối không bao giờ tới "/" -> lặp vô hạn -> quá giờ hook = không chặn.
+  [ $big -eq 0 ] && dirs=("$dir" "$PWD")
+  local prev
+  for dir in "${dirs[@]}"; do
+    case "$dir" in /*) ;; *) continue ;; esac
+    while [ -n "$dir" ]; do
+      if [ -f "$dir/aisdlc/config.yaml" ]; then
+        if [ "${2:-}" = "pre-tool-use" ]; then
+          case "$tool" in Read|Grep|Glob|LS|NotebookRead) exit 0 ;; esac
+          echo "AISDLC: $MSG" >&2
+          exit 2
+        fi
+        echo "AISDLC: $MSG" >&2
+        exit 1
+      fi
+      [ "$dir" = "/" ] && break
+      prev="$dir"; dir="${dir%/*}"; [ -z "$dir" ] && dir="/"
+      [ "$dir" = "$prev" ] && break
+    done
   done
   exit 0
 }
-OS="$(uname -s | tr 'A-Z' 'a-z')"
-case "$(uname -m)" in
+# Không fork tiến trình nào trước exec (hook chạy ở mỗi tool call, spec §7 p95 < 50 ms): nền tảng lấy từ biến có sẵn
+# của bash, thư mục từ BASH_SOURCE; chỉ gọi readlink khi chính script là symlink (lệnh aisdlc do install.sh cài).
+case "$OSTYPE" in
+  linux*) OS=linux ;;
+  darwin*) OS=darwin ;;
+  *) OS="$(uname -s | tr 'A-Z' 'a-z')" ;;
+esac
+case "$HOSTTYPE" in
   x86_64|amd64) ARCH=amd64 ;;
   aarch64|arm64) ARCH=arm64 ;;
-  *) ARCH="$(uname -m)" ;;
+  *) case "$(uname -m)" in
+       x86_64|amd64) ARCH=amd64 ;;
+       aarch64|arm64) ARCH=arm64 ;;
+       *) ARCH="$(uname -m)" ;;
+     esac ;;
 esac
-BIN="$(dirname "$(readlink -f "$0")")/../lib/aisdlc-$OS-$ARCH"
+SRC="${BASH_SOURCE[0]}"
+[ -L "$SRC" ] && SRC="$(readlink -f "$SRC")"
+case "$SRC" in */*) DIR="${SRC%/*}" ;; *) DIR=. ;; esac
+BIN="$DIR/../lib/aisdlc-$OS-$ARCH"
 if [ ! -x "$BIN" ]; then
   MSG="không tìm thấy binary aisdlc cho $OS/$ARCH. Chạy plugin/install.sh."
   fail "$@"
 fi
+# exec thất bại (binary hỏng, sai nền tảng): không thoát ngay mà xử lý như thiếu binary (hook ở repo AISDLC thì chặn ghi).
+shopt -s execfail
 exec "$BIN" "$@"
+MSG="binary aisdlc cho $OS/$ARCH không chạy được ($BIN). Chạy plugin/install.sh."
+fail "$@"

@@ -9,7 +9,7 @@ import (
 )
 
 // CI chế độ local: bản tự duyệt trong gates.json phải khớp flow chụp trong risk.yaml (spec risk-flow §5.1).
-// Ba test chế độ web của CiAutoApprovalTest (webCi_*) để giai đoạn 4, khi có nguồn approval từ web.
+// Ba test chế độ web của CiAutoApprovalTest (webCi_*) ở webci_test.go (TestCiAutoApprovalWeb*).
 
 // autoCases ghi risk.yaml rồi nộp lại cổng Case (risk.yaml nằm trong hash) và tự duyệt nó.
 func (e *evalEnv) autoCases(level string, flow map[string]string) {

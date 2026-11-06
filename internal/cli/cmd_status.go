@@ -128,7 +128,7 @@ func status(ctx *Context, fo *FeatureOption, asJSON bool) (int, error) {
 
 	warnLocalRepoID(ctx, f)
 	sa := model.ReadSessionApprove(ctx.std, f.Git(), f.Config)
-	// Java kéo chính sách rủi ro từ web ở đây (PolicySync.pullQuietly): giai đoạn 4.
+	f.Web.PolicyPullQuietly()
 	if asJSON {
 		steps, checks := jsonObject{}, jsonObject{}
 		for _, id := range ids {
@@ -159,7 +159,6 @@ func status(ctx *Context, fo *FeatureOption, asJSON bool) (int, error) {
 			suffix = " (chưa `aisdlc web login`)"
 		}
 		ctx.Println("Duyệt: trên web" + suffix)
-		ctx.Println(statusWebPhase4Line)
 	}
 	on := "tắt"
 	if sa.Enabled {

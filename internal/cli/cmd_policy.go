@@ -12,9 +12,6 @@ import (
 	"aisdlc/internal/risk"
 )
 
-// WebCmdPhase4Msg là thông báo của các lệnh `web` và `policy pull`: bản Go chưa có web client.
-const WebCmdPhase4Msg = "Lệnh web chưa có trong bản Go (giai đoạn 4)."
-
 func newPolicyCmd(ctx *Context) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "policy",
@@ -128,17 +125,28 @@ func describeRequirement(q risk.Requirement) string {
 	return b.String()
 }
 
-// policyPull: chưa `aisdlc web login` thì không cần pull (như Java); đã login thì cần web client (giai đoạn 4).
+// policyPull: lấy chính sách mới nhất từ web (lần đầu: gửi aisdlc/risk-policy.yaml lên). Chưa `aisdlc web login`
+// thì không cần pull.
 func policyPull(ctx *Context) (int, error) {
 	root, err := ctx.RepoRoot()
 	if err != nil {
 		return 0, err
 	}
-	if !NewWebCache(ctx, root).PolicyWebMode() {
+	web := NewWebCache(ctx, root)
+	if !web.PolicyWebMode() {
 		return 0, abort(2, "Máy này chưa `aisdlc web login`: chính sách là "+RepoPolicyFile+
 			" trong repo, không cần pull.")
 	}
-	return 0, abort(2, WebCmdPhase4Msg)
+	c, err := web.PolicyPull()
+	if err != nil {
+		return 0, err
+	}
+	// chính sách trên web hỏng thì báo luôn (Abort 2, liệt kê lỗi)
+	if _, err := LoadPolicy(ctx, root, false); err != nil {
+		return 0, err
+	}
+	ctx.Println("Chính sách v" + strconv.Itoa(c.Version) + " (web)")
+	return ExitOK, nil
 }
 
 func policyDiffPreset(ctx *Context) (int, error) {

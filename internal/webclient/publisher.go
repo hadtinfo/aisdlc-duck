@@ -114,6 +114,12 @@ func (p *Publisher) warn(line string) {
 // AfterCommand (lệnh CLI): ghi snapshot mới của tính năng (build) và event e, rồi gửi ngay tối đa InlineDeadline
 // (trừ khi đang backoff hoặc tiến trình khác đang gửi). Lỗi dựng snapshot cũng chỉ ra Err.
 func (p *Publisher) AfterCommand(featureKey string, build func() ([]byte, error), e Event) {
+	p.AfterCommandFunc(featureKey, build, func() Event { return e })
+}
+
+// AfterCommandFunc như AfterCommand, nhưng event dựng trong guard (sau snapshot): lỗi hay panic khi dựng event
+// (vd. đọc git) cũng chỉ thành một dòng ở Err.
+func (p *Publisher) AfterCommandFunc(featureKey string, build func() ([]byte, error), event func() Event) {
 	if !p.Enabled() {
 		return
 	}
@@ -125,7 +131,7 @@ func (p *Publisher) AfterCommand(featureKey string, build func() ([]byte, error)
 		if err := p.Outbox.PutSnapshot(featureKey, snap); err != nil {
 			return err
 		}
-		if err := p.Outbox.AddEvent(e); err != nil {
+		if err := p.Outbox.AddEvent(event()); err != nil {
 			return err
 		}
 		return p.sendInline(context.Background(), InlineDeadline)

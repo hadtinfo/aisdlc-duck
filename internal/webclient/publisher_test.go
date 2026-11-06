@@ -341,6 +341,14 @@ func TestPublisherErrorsGoToStderrOnly(t *testing.T) {
 	if got := f.err.String(); !strings.HasPrefix(got, "aisdlc web: hỏng") {
 		t.Fatalf("%q", got)
 	}
+	// dựng event (sau snapshot) cũng nằm trong guard
+	f.err = &syncBuf{}
+	p = f.pub()
+	p.AfterCommandFunc("X-2", func() ([]byte, error) { return []byte(`{}`), nil },
+		func() Event { panic("git hỏng") })
+	if got := f.err.String(); !strings.HasPrefix(got, "aisdlc web: git hỏng") {
+		t.Fatalf("%q", got)
+	}
 }
 
 // eventOnlyQueuesThenSpawnsBackgroundFlush

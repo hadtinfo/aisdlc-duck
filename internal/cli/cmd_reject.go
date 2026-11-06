@@ -1,8 +1,11 @@
 package cli
 
 import (
-	"github.com/spf13/cobra"
 	"strings"
+
+	"github.com/spf13/cobra"
+
+	"aisdlc/internal/gate"
 )
 
 func newRejectCmd(ctx *Context) *cobra.Command {
@@ -21,9 +24,6 @@ func newRejectCmd(ctx *Context) *cobra.Command {
 		if err != nil {
 			return 0, err
 		}
-		if err := ctx.WebNetwork(f); err != nil {
-			return 0, err
-		}
 		g, err := gateInFlow(f, args[0])
 		if err != nil {
 			return 0, err
@@ -31,19 +31,32 @@ func newRejectCmd(ctx *Context) *cobra.Command {
 		if _, err := gateSummary(ctx, f, g); err != nil {
 			return 0, err
 		}
+		web := f.Mode == gate.ModeWeb
+		if web {
+			if err := f.Web.RequireApproveToken(f, g); err != nil {
+				return 0, err
+			}
+		}
 		hash, err := f.Gates.CurrentHash(g)
 		if err != nil {
 			return 0, err
 		}
-		if _, err := ctx.ConfirmDev(f.Key, invocation(ctx, "reject"), hash); err != nil {
-			return 0, err
-		}
-		approver, err := ctx.Approver(f.Root)
+		channel, err := ctx.ConfirmDev(f.Key, invocation(ctx, "reject"), hash)
 		if err != nil {
 			return 0, err
 		}
-		if err := f.Gates.Reject(g, approver, message); err != nil {
-			return 0, err
+		if web {
+			if err := f.Web.Act("reject", f, g, &message, nil, channel); err != nil {
+				return 0, err
+			}
+		} else {
+			approver, err := ctx.Approver(f.Root)
+			if err != nil {
+				return 0, err
+			}
+			if err := f.Gates.Reject(g, approver, message); err != nil {
+				return 0, err
+			}
 		}
 		ctx.Println("Đã trả lại cổng " + string(g) + "; góp ý ghi vào " + f.Paths.Rel(f.Paths.Feedback()) + ".")
 		ctx.AfterCommand(f, "reject "+strings.ToLower(string(g)))

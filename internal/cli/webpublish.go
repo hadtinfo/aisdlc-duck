@@ -75,7 +75,8 @@ func (c *Context) AfterCommand(f *Feature, command string) {
 	if !p.Enabled() {
 		return
 	}
-	p.AfterCommand(f.Key.String(), func() ([]byte, error) { return c.featureSnapshot(p, f) }, c.commandEvent(f, command))
+	p.AfterCommandFunc(f.Key.String(), func() ([]byte, error) { return c.featureSnapshot(p, f) },
+		func() webclient.Event { return c.commandEvent(f, command) })
 }
 
 // AfterCommandKey như AfterCommand cho tính năng vừa tạo: đọc tính năng cũng trong guard, nên lỗi (vd. tính năng
@@ -93,10 +94,11 @@ func (c *Context) AfterCommandKey(root string, key model.FeatureKey, command str
 		}
 		return c.featureSnapshot(p, f)
 	}
-	// event dựng sau snapshot (cần tính năng); AfterCommand ghi snapshot trước rồi mới ghi event
-	e := webclient.Event{Type: "COMMAND", At: c.now(), Feature: key.String(), Detail: command,
-		Sender: webclient.Sender(c.Git(root))}
-	p.AfterCommand(key.String(), build, e)
+	// event dựng trong guard, sau snapshot: lỗi dựng (kể cả đọc git) chỉ ra stderr
+	p.AfterCommandFunc(key.String(), build, func() webclient.Event {
+		return webclient.Event{Type: "COMMAND", At: c.now(), Feature: key.String(), Detail: command,
+			Sender: webclient.Sender(c.Git(root))}
+	})
 }
 
 func (c *Context) commandEvent(f *Feature, command string) webclient.Event {

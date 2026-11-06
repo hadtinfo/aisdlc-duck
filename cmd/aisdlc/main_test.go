@@ -18,6 +18,7 @@ import (
 	"aisdlc/internal/cli"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
+	"aisdlc/internal/webclient"
 	"aisdlc/internal/webclient/fakeweb"
 )
 
@@ -289,6 +290,8 @@ func TestHookLatencyP95(t *testing.T) {
 		t.Fatalf("lần thử: code=%d out=%q err=%q", r.code, r.out, r.errOut)
 	}
 	post := strings.Replace(in, `"PreToolUse"`, `"PostToolUse"`, 1)
+	// ghi ngoài phạm vi S1: deny (JSON ra stdout) + event SCOPE_DENIED + mở `web flush` thật
+	outOfScope := editJSON(root, filepath.Join(root, "README2.txt"))
 	dead := []string{"AISDLC_WEB_URL=" + closedURL(t), "AISDLC_WEB_TOKEN=t0k"}
 	backoff := filepath.Join(root, ".aisdlc", "web", "backoff-until")
 	cases := []struct {
@@ -298,6 +301,8 @@ func TestHookLatencyP95(t *testing.T) {
 	}{
 		{"web tắt", "pre-tool-use", in, nil, nil},
 		{"web bật nhưng chết", "pre-tool-use", in, dead, nil},
+		{"pre-tool-use deny ngoài phạm vi, web bật nhưng chết", "pre-tool-use", outOfScope, dead,
+			func() { _ = os.Remove(backoff) }},
 		// post-tool-use ghi outbox và mở `web flush` thật; flush đầu gặp cổng đóng thì bật backoff
 		{"post-tool-use web bật nhưng chết", "post-tool-use", post, dead, func() { _ = os.Remove(backoff) }},
 		{"post-tool-use đang backoff", "post-tool-use", post, dead, func() {
@@ -322,10 +327,27 @@ func TestHookLatencyP95(t *testing.T) {
 	if err != nil || len(es) == 0 {
 		t.Fatalf("post-tool-use không ghi outbox: %v", err)
 	}
+	waitFlushDone(t, root)
+}
+
+// waitFlushDone chờ (tối đa 10 giây) tiến trình `web flush` nền đã mở xong việc gửi: khóa gửi rảnh. Gọi trước khi
+// thư mục repo tạm bị xóa, để tiến trình nền không còn ghi vào đó.
+func waitFlushDone(t *testing.T, root string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if l, ok, err := webclient.TryFlushLock(root); err == nil && ok {
+			l.Close()
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("web flush nền chưa xong sau 10 giây")
 }
 
 // hookP95 gọi hook 60 lần mỗi lượt, p95 phải dưới 50 ms. Máy bận (test Docker chạy song song) làm lệch số đo: đo
-// tối đa 3 lượt, một lượt đạt là đủ. vars thêm vào môi trường của hook (cấu hình web).
+// tối đa 3 lượt, một lượt đạt là đủ. vars thêm vào môi trường của hook (cấu hình web). Stdout phải trống, trừ khi
+// input là ghi ngoài phạm vi (README2.txt): khi đó stdout phải là JSON deny.
 func hookP95(t *testing.T, root, event, in string, vars []string) {
 	t.Helper()
 	const n, rounds = 60, 3
@@ -344,8 +366,9 @@ func hookP95(t *testing.T, root, event, in string, vars []string) {
 				t.Fatal(err)
 			}
 			d = append(d, time.Since(t0))
-			if o.Len() != 0 {
-				t.Fatalf("hook %s in ra stdout: %q", event, o.String())
+			deny := strings.Contains(in, "README2.txt")
+			if got := o.String(); (!deny && got != "") || (deny && !strings.Contains(got, `"permissionDecision":"deny"`)) {
+				t.Fatalf("hook %s stdout: %q", event, got)
 			}
 		}
 		sort.Slice(d, func(i, j int) bool { return d[i] < d[j] })
@@ -376,9 +399,23 @@ func TestPostToolUseFastWhenWebHangs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short")
 	}
+	// repo trước fakeweb: cleanup chạy ngược thứ tự, nên web đóng trước (nhả request đang treo), rồi chờ tiến trình
+	// nền xong việc, cuối cùng mới xóa thư mục repo
+	root := stepOneRepo(t)
+	backoff := filepath.Join(root, ".aisdlc", "web", "backoff-until")
+	t.Cleanup(func() {
+		// web đã đóng: tiến trình gửi nền gặp lỗi kết nối, ghi backoff rồi nhả khóa
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(backoff); err == nil {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		waitFlushDone(t, root)
+	})
 	web := fakeweb.New(t)
 	web.Update(func(s *fakeweb.Server) { s.Hang = true })
-	root := stepOneRepo(t)
 	in := strings.Replace(editJSON(root, filepath.Join(root, codePath)), `"PreToolUse"`, `"PostToolUse"`, 1)
 	vars := []string{"AISDLC_WEB_URL=" + web.URL(), "AISDLC_WEB_TOKEN=t0k"}
 	run := func() (time.Duration, result) {

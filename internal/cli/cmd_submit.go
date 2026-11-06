@@ -42,9 +42,6 @@ func newSubmitCmd(ctx *Context) *cobra.Command {
 			if err != nil {
 				return 0, err
 			}
-			if err := ctx.WebNetwork(f); err != nil {
-				return 0, err
-			}
 			return body(&submission{ctx: ctx}, f)
 		})
 		return sc
@@ -64,6 +61,8 @@ type submission struct {
 	reclassified   *risk.RiskFile
 	levelBefore    string // "" khi chưa có risk.yaml
 	reclassifiedBy *risk.RiskPolicy
+	// riskReported: chế độ web, event RISK_CLASSIFIED của reclassified đã vào outbox (chỉ gửi một lần)
+	riskReported bool
 }
 
 func (s *submission) brd(f *Feature) (int, error) {
@@ -85,6 +84,7 @@ func (s *submission) brd(f *Feature) (int, error) {
 }
 
 func (s *submission) design(f *Feature) (int, error) {
+	defer s.reportRisk(f, true)
 	if err := s.precheck(f, gate.DESIGN); err != nil {
 		return 0, err
 	}
@@ -135,6 +135,7 @@ func (s *submission) design(f *Feature) (int, error) {
 }
 
 func (s *submission) cases(f *Feature) (int, error) {
+	defer s.reportRisk(f, true)
 	if err := s.precheck(f, gate.CASES); err != nil {
 		return 0, err
 	}
@@ -351,10 +352,41 @@ func (s *submission) review(f *Feature) (int, error) {
 	return s.submit(f, gate.REVIEW, findings, nil)
 }
 
-// policy là chính sách hiện tại. Bản Java lấy chính sách từ web một lần khi chưa có cache; bản Go chưa có mạng
-// (giai đoạn 4) nên chỉ đọc cache, thiếu thì Abort như LoadPolicy.
+// policy là chính sách hiện tại; web chưa có cache trên máy này thì thử lấy một lần trước (lỗi → Abort như
+// LoadPolicy).
 func (s *submission) policy(f *Feature) (LoadedPolicy, error) {
+	if f.Web.PolicyWebMode() {
+		if _, ok := f.Web.Policy(); !ok {
+			f.Web.PolicyPullQuietly()
+		}
+	}
 	return LoadPolicy(s.ctx, f.Root, false)
+}
+
+// reportRisk (chế độ web): đặt event RISK_CLASSIFIED của risk.yaml vừa ghi vào outbox, một lần; flush gửi ngay (lệnh
+// dừng giữa chừng sau khi phân loại, vd. harness lỗi: lần sau risk.yaml không đổi nên không còn dịp gửi).
+func (s *submission) reportRisk(f *Feature, flush bool) {
+	if f.Mode != gate.ModeWeb || s.reclassified == nil || s.riskReported {
+		return
+	}
+	s.riskReported = true
+	riskClassified(s.ctx, f, *s.reclassified)
+	if flush {
+		s.ctx.Publisher(f.Root).Flush(s.ctx.std)
+	}
+}
+
+// riskLevel là mức trong risk.yaml gửi kèm bản nộp ở chế độ web (server tự duyệt theo mức này); với BRD server lấy
+// mức chặt hơn của mức tạm trong thẻ và mức này, Review không bao giờ tự duyệt. Không có/hỏng risk.yaml thì "".
+func riskLevel(f *Feature, g gate.Gate) string {
+	if g == gate.REVIEW {
+		return ""
+	}
+	r, ok, err := risk.ReadRiskFile(f.Paths.Risk())
+	if err != nil || !ok {
+		return ""
+	}
+	return r.Level
 }
 
 // brdRiskPreview: `submit brd` in mức tạm chỉ bằng rule keyword; không ghi file, lỗi chính sách chỉ cảnh báo.
@@ -412,7 +444,8 @@ func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.R
 		if err := fresh.Write(f.Paths.Risk()); err != nil {
 			return risk.RiskFile{}, err
 		}
-		// web: event gửi sau bản nộp (server thay thế bản tự duyệt khi nhận event) — giai đoạn 4b Task 4
+		// web: event gửi sau bản nộp (server thay thế bản tự duyệt khi nhận event; cổng trước phải còn hiệu lực
+		// lúc nộp, như chế độ local) — xem submit
 		if f.Mode != gate.ModeWeb {
 			riskClassified(s.ctx, f, fresh)
 		}
@@ -588,7 +621,18 @@ func (s *submission) migrationCheck(f *Feature, code string) (*spec.Finding, err
 }
 
 func (s *submission) submit(f *Feature, g gate.Gate, findings []spec.Finding, info []string) (int, error) {
-	if _, err := f.Gates.Submit(g, findings); err != nil {
+	web := f.Mode == gate.ModeWeb
+	if web {
+		// server cần snapshot để biết luồng (thiếu snapshot thì coi là FULL) và thẻ review để tự duyệt
+		p := s.ctx.Publisher(f.Root)
+		p.SendSnapshot(s.ctx.std, f.Key.String(), func() ([]byte, error) { return s.ctx.featureSnapshot(p, f) })
+		err := f.Web.Submit(f, g, findings, riskLevel(f, g))
+		// event mức mới đi sau bản nộp (gửi ở AfterCommand); nộp hỏng thì vẫn báo mức (gửi ngay)
+		s.reportRisk(f, err != nil)
+		if err != nil {
+			return 0, err
+		}
+	} else if _, err := f.Gates.Submit(g, findings); err != nil {
 		return 0, err
 	}
 	for _, x := range info {
@@ -609,13 +653,22 @@ func (s *submission) submit(f *Feature, g gate.Gate, findings []spec.Finding, in
 	}
 	name := strings.ToLower(string(g))
 	s.ctx.AfterCommand(f, "submit "+name)
+	onWeb := ""
+	if web {
+		onWeb = " lên web"
+	}
 	if auto != "" {
-		s.ctx.Println("Đã nộp cổng " + string(g) + ", không có phát hiện: " + auto + ".")
+		s.ctx.Println("Đã nộp cổng " + string(g) + onWeb + ", không có phát hiện: " + auto + ".")
 		return ExitOK, nil
 	}
 	if len(findings) == 0 {
-		s.ctx.Println("Đã nộp cổng " + string(g) + ", không có phát hiện. Dev duyệt bằng `aisdlc approve " + name +
-			"` ở terminal của mình.")
+		if web {
+			s.ctx.Println("Đã nộp cổng " + string(g) + " lên web, không có phát hiện. Dev duyệt trên web (hoặc " +
+				"`aisdlc approve " + name + "` ở terminal của mình).")
+		} else {
+			s.ctx.Println("Đã nộp cổng " + string(g) + ", không có phát hiện. Dev duyệt bằng `aisdlc approve " +
+				name + "` ở terminal của mình.")
+		}
 		return ExitOK, nil
 	}
 	s.ctx.Println(fmt.Sprintf("Cổng %s có %d phát hiện:", g, len(findings)))

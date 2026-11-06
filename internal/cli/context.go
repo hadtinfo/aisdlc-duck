@@ -40,13 +40,6 @@ func abort(code int, msg string) error { return &Abort{Code: code, Msg: msg} }
 // asAbort như errors.As cho *Abort.
 func asAbort(err error, a **Abort) bool { return errors.As(err, a) }
 
-// WebPhase4Msg là thông báo khi lệnh cần gọi web ở chế độ duyệt trên web (bản Go chưa có web client).
-const WebPhase4Msg = "Chế độ duyệt trên web chưa có trong bản Go (giai đoạn 4)."
-
-// statusWebPhase4Line: dòng `aisdlc status` in ở chế độ duyệt trên web.
-const statusWebPhase4Line = "Bản Go này chưa nộp/duyệt được trên web (giai đoạn 4): submit, approve, reject, reopen," +
-	" risk set/reclassify sẽ dừng; trạng thái chỉ đọc từ cache đã ký."
-
 const (
 	noConsoleMsg = "Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). " +
 		"Agent không được chạy lệnh này."
@@ -83,6 +76,8 @@ type Context struct {
 	// spawnFlush mở `aisdlc web flush` nền (nil: webclient.SpawnFlush); publishers: bộ gửi web theo repo
 	spawnFlush func(root string) error
 	publishers map[string]*webclient.Publisher
+	// webDown: đã có một lần không với tới web trong tiến trình này (lệnh sau không thử lại)
+	webDown bool
 }
 
 // NewContext tạo Context với mặc định của tiến trình: env của OS, đồng hồ UTC, git thật, runner và verifier là
@@ -388,31 +383,31 @@ func (c *Context) FeatureAt(root string, key model.FeatureKey) (*Feature, error)
 	}
 	f := &Feature{Root: root, Config: cfg, Key: key, Paths: paths, Meta: meta, Adapter: adapter, ctx: c}
 	f.Web = NewWebCache(c, root)
-	f.Mode = f.Web.CachedMode(cfg)
+	// lệnh CLI hỏi web chế độ duyệt khi chưa có cache hợp lệ; hook (Offline) chỉ đọc cache
+	if c.network {
+		f.Mode = f.Web.Mode(cfg)
+	} else {
+		f.Mode = f.Web.CachedMode(cfg)
+	}
 	if f.Mode == gate.ModeWeb {
 		f.Store = f.Web.Store(key)
 	} else {
 		f.Store = gate.NewLocalGateStore(paths)
 	}
 	f.Gates = gate.NewService(paths, f.Flow(), cfg, f.Store, c.now)
-	if c.network && f.Mode == gate.ModeWeb && !f.Web.LoggedIn() {
-		if !c.loginWarned {
-			c.Eprintln("Chưa `aisdlc web login` trên máy này: repo duyệt trên web, mọi cổng coi như" +
-				" chưa duyệt.")
+	if c.network && f.Mode == gate.ModeWeb {
+		if !f.Web.LoggedIn() {
+			if !c.loginWarned {
+				c.Eprintln("Chưa `aisdlc web login` trên máy này: repo duyệt trên web, mọi cổng coi như" +
+					" chưa duyệt.")
+			}
+			c.loginWarned = true
+		} else if _, err := refreshGates(c, f); err != nil {
+			return nil, err
 		}
-		c.loginWarned = true
 	}
 	f.Control = f.Web.Control(key)
 	return f, nil
-}
-
-// WebNetwork: lệnh cần gọi web (nộp/duyệt qua web, làm mới, gửi) ở chế độ duyệt trên web thì dừng, vì bản Go chưa
-// có web client (giai đoạn 4). Chế độ local trả nil.
-func (c *Context) WebNetwork(f *Feature) error {
-	if f != nil && f.Mode == gate.ModeWeb {
-		return abort(2, WebPhase4Msg)
-	}
-	return nil
 }
 
 // GateOf đọc tên cổng (không phân biệt hoa thường).
@@ -464,6 +459,19 @@ func (c *Context) ConfirmDev(key model.FeatureKey, action policy.DevCommand, gat
 // AskDev hỏi dev qua console thật; không có terminal (agent, pipe, CI) thì exit 3.
 func (c *Context) AskDev(prompt string) (string, error) {
 	typed, ok := c.console.ReadLine(prompt)
+	if !ok {
+		return "", abort(3, noConsoleMsg)
+	}
+	return strings.TrimSpace(typed), nil
+}
+
+// AskDevSecret hỏi dev một giá trị bí mật (token) qua console thật, không hiện chữ; không có terminal thì exit 3.
+func (c *Context) AskDevSecret(prompt string) (string, error) {
+	sc, ok := c.console.(SecretConsole)
+	if !ok {
+		return "", abort(3, noConsoleMsg)
+	}
+	typed, ok := sc.ReadSecret(prompt)
 	if !ok {
 		return "", abort(3, noConsoleMsg)
 	}

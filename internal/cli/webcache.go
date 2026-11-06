@@ -13,8 +13,8 @@ import (
 	"aisdlc/internal/webclient"
 )
 
-// Phần chỉ đọc của web client (giai đoạn 2b): cấu hình web, khóa ghim, định danh repo và các cache phong bì ký
-// trong .aisdlc/web/. Không có gì ở đây gọi mạng; phần có mạng (login, refresh, nộp/duyệt, outbox) ở giai đoạn 4.
+// Phần chỉ đọc của web client: cấu hình web, khóa ghim, định danh repo và các cache phong bì ký trong .aisdlc/web/.
+// Không có gì ở đây gọi mạng; phần có mạng (chế độ, làm mới, nộp/duyệt, migrate, chính sách) ở webgates.go.
 
 // WebConfig là cấu hình web của máy (xem webclient.Config).
 type WebConfig = webclient.Config
@@ -119,10 +119,7 @@ func (w *WebCache) CachedMode(cfg model.RepoConfig) gate.ApprovalMode {
 	if m, ok := w.modeFromCache(); ok {
 		return m
 	}
-	if cfg.Approvals == "web" {
-		return gate.ModeWeb
-	}
-	return gate.ModeLocal
+	return configuredMode(cfg)
 }
 
 func (w *WebCache) modeFromCache() (gate.ApprovalMode, bool) {
@@ -134,29 +131,7 @@ func (w *WebCache) modeFromCache() (gate.ApprovalMode, bool) {
 	if err != nil {
 		return "", false
 	}
-	var env *snapshot.SignedEnvelope
-	if json.Unmarshal(raw, &env) != nil || env == nil {
-		return "", false
-	}
-	payload, ok := env.Verify(w.PinnedKey())
-	if !ok {
-		return "", false
-	}
-	var n map[string]any
-	if json.Unmarshal(payload, &n) != nil {
-		return "", false
-	}
-	repo, _ := n["repo"].(string)
-	if id := w.RepoID(); id == "" || repo != id {
-		return "", false
-	}
-	switch jsonText(n["mode"]) {
-	case "web":
-		return gate.ModeWeb, true
-	case "local":
-		return gate.ModeLocal, true
-	}
-	return "", false
+	return w.parseMode(raw)
 }
 
 // Control là điều khiển từ web của tính năng trong cache đã xác minh (khóa ghim, đúng repo và tính năng); nil nếu

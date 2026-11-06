@@ -23,6 +23,7 @@ import (
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/step"
+	"aisdlc/internal/webclient"
 )
 
 // Abort dừng lệnh với mã thoát và thông báo cho dev (in nguyên văn ra stderr), như Context.Abort của Java.
@@ -38,13 +39,6 @@ func abort(code int, msg string) error { return &Abort{Code: code, Msg: msg} }
 
 // asAbort như errors.As cho *Abort.
 func asAbort(err error, a **Abort) bool { return errors.As(err, a) }
-
-// WebPhase4Msg là thông báo khi lệnh cần gọi web ở chế độ duyệt trên web (bản Go chưa có web client).
-const WebPhase4Msg = "Chế độ duyệt trên web chưa có trong bản Go (giai đoạn 4)."
-
-// statusWebPhase4Line: dòng `aisdlc status` in ở chế độ duyệt trên web.
-const statusWebPhase4Line = "Bản Go này chưa nộp/duyệt được trên web (giai đoạn 4): submit, approve, reject, reopen," +
-	" risk set/reclassify sẽ dừng; trạng thái chỉ đọc từ cache đã ký."
 
 const (
 	noConsoleMsg = "Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). " +
@@ -79,6 +73,13 @@ type Context struct {
 	banner          bool
 	bannerPrinted   bool
 	exit            int
+	// spawnFlush mở `aisdlc web flush` nền (nil: webclient.SpawnFlush); publishers: bộ gửi web theo repo
+	spawnFlush func(root string) error
+	publishers map[string]*webclient.Publisher
+	// webDown: đã có một lần không với tới web trong tiến trình này (lệnh sau không thử lại)
+	webDown bool
+	// controlRefreshed: kết quả làm mới điều khiển từ web theo tính năng trong tiến trình này (mỗi tính năng một lần)
+	controlRefreshed map[model.FeatureKey]bool
 }
 
 // NewContext tạo Context với mặc định của tiến trình: env của OS, đồng hồ UTC, git thật, runner và verifier là
@@ -245,6 +246,12 @@ func (c *Context) Env(name string) (string, bool) {
 	return v, true
 }
 
+// envValue như Env nhưng trả "" khi không đặt (cho webclient.LoadConfig).
+func (c *Context) envValue(name string) string {
+	v, _ := c.Env(name)
+	return v
+}
+
 // Home là HOME của dev (chỉ theo env của Context, để test thay được).
 func (c *Context) Home() (string, bool) { return c.Env("HOME") }
 
@@ -378,31 +385,39 @@ func (c *Context) FeatureAt(root string, key model.FeatureKey) (*Feature, error)
 	}
 	f := &Feature{Root: root, Config: cfg, Key: key, Paths: paths, Meta: meta, Adapter: adapter, ctx: c}
 	f.Web = NewWebCache(c, root)
-	f.Mode = f.Web.CachedMode(cfg)
+	// lệnh CLI hỏi web chế độ duyệt khi chưa có cache hợp lệ; hook (Offline) chỉ đọc cache
+	if c.network {
+		f.Mode = f.Web.Mode(cfg)
+	} else {
+		f.Mode = f.Web.CachedMode(cfg)
+	}
 	if f.Mode == gate.ModeWeb {
 		f.Store = f.Web.Store(key)
 	} else {
 		f.Store = gate.NewLocalGateStore(paths)
 	}
 	f.Gates = gate.NewService(paths, f.Flow(), cfg, f.Store, c.now)
-	if c.network && f.Mode == gate.ModeWeb && !f.Web.LoggedIn() {
-		if !c.loginWarned {
-			c.Eprintln("Chưa `aisdlc web login` trên máy này: repo duyệt trên web, mọi cổng coi như" +
-				" chưa duyệt.")
+	if c.network && f.Mode == gate.ModeWeb {
+		if !f.Web.LoggedIn() {
+			if !c.loginWarned {
+				c.Eprintln("Chưa `aisdlc web login` trên máy này: repo duyệt trên web, mọi cổng coi như" +
+					" chưa duyệt.")
+			}
+			c.loginWarned = true
+		} else if _, err := refreshGates(c, f); err != nil {
+			return nil, err
 		}
-		c.loginWarned = true
 	}
-	f.Control = f.Web.Control(key)
+	f.WebControl = NewWebControl(f.Web)
+	f.applyControl()
+	f.Control = f.WebControl.Cached(key)
+	if f.snapshotPending {
+		// vừa áp dụng lệnh từ web: web thấy trạng thái bước mới ở lần gửi kế tiếp (hook: không in gì)
+		if p := c.Publisher(root); p.Enabled() {
+			p.Stage(key.String(), func() ([]byte, error) { return c.featureSnapshot(p, f) }, !c.network)
+		}
+	}
 	return f, nil
-}
-
-// WebNetwork: lệnh cần gọi web (nộp/duyệt qua web, làm mới, gửi) ở chế độ duyệt trên web thì dừng, vì bản Go chưa
-// có web client (giai đoạn 4). Chế độ local trả nil.
-func (c *Context) WebNetwork(f *Feature) error {
-	if f != nil && f.Mode == gate.ModeWeb {
-		return abort(2, WebPhase4Msg)
-	}
-	return nil
 }
 
 // GateOf đọc tên cổng (không phân biệt hoa thường).
@@ -460,6 +475,19 @@ func (c *Context) AskDev(prompt string) (string, error) {
 	return strings.TrimSpace(typed), nil
 }
 
+// AskDevSecret hỏi dev một giá trị bí mật (token) qua console thật, không hiện chữ; không có terminal thì exit 3.
+func (c *Context) AskDevSecret(prompt string) (string, error) {
+	sc, ok := c.console.(SecretConsole)
+	if !ok {
+		return "", abort(3, noConsoleMsg)
+	}
+	typed, ok := sc.ReadSecret(prompt)
+	if !ok {
+		return "", abort(3, noConsoleMsg)
+	}
+	return strings.TrimSpace(typed), nil
+}
+
 // Approver là git config user.name. Tên "auto" (mọi kiểu chữ) dành cho bản tự duyệt.
 func (c *Context) Approver(root string) (string, error) {
 	name, err := c.Git(root).UserName(c.std)
@@ -487,8 +515,17 @@ type Feature struct {
 	Store   gate.GateStore
 	Gates   *gate.Service
 	Adapter lang.Adapter
-	// Control là điều khiển từ web (tạm dừng, chỉ dẫn, lệnh chờ) đọc từ cache đã ký; nil nếu không có.
+	// Control là điều khiển từ web (tạm dừng, chỉ dẫn, lệnh chờ) đọc từ cache đã ký sau khi áp lệnh chờ; nil nếu
+	// không có.
 	Control *snapshot.FeatureControl
+	// WebControl làm mới và đọc điều khiển từ web của repo.
+	WebControl *WebControl
+	// ControlOffline: lệnh CLI đã thử làm mới điều khiển từ web và thất bại vì web không với tới được.
+	ControlOffline bool
+	// ControlBusy (hook): không lấy được control.lock trong thời hạn nên lệnh chờ chưa xét (PreToolUse ghi thì chặn).
+	ControlBusy bool
+	// snapshotPending: đã áp dụng lệnh từ web khi dựng; FeatureAt đặt snapshot vào outbox.
+	snapshotPending bool
 	// Web đọc cấu hình web, khóa ghim và các cache đã ký của repo (không gọi mạng).
 	Web *WebCache
 	ctx *Context
@@ -558,7 +595,7 @@ func (f *Feature) PendingActions() []snapshot.Action {
 	if f.Control == nil {
 		return nil
 	}
-	_, done := readLedger(f.Root, f.Key)
+	done := NewControlLedger(f.Root, f.Key, 0).Done()
 	var out []snapshot.Action
 	for _, a := range f.Control.Actions {
 		if !done[a.ID] {
@@ -570,17 +607,96 @@ func (f *Feature) PendingActions() []snapshot.Action {
 
 // UndeliveredInstructions là chỉ dẫn trong cache điều khiển chưa giao cho agent trên máy này.
 func (f *Feature) UndeliveredInstructions() []snapshot.Instruction {
-	if f.Control == nil {
-		return nil
+	return f.WebControl.Undelivered(f.Key)
+}
+
+// applyControl: lệnh CLI có mạng làm mới điều khiển trước (mỗi tính năng một lần mỗi tiến trình); rồi áp dụng lệnh
+// chờ trong cache dưới khóa sổ cục bộ, mỗi kết quả ghi sổ và một event ACTION_RESULT. Lệnh CLI in kết quả ra stderr;
+// hook không in gì. Điều khiển từ web không bao giờ làm hỏng lệnh hay hook: lỗi bỏ qua, trừ hết hạn chờ khóa
+// (ControlBusy).
+func (f *Feature) applyControl() {
+	defer func() { _ = recover() }()
+	c := f.ctx
+	if !c.network && !exists(snapshot.ControlCacheFile(f.Root, f.Key)) {
+		return // hook: không có cache thì khỏi đọc khóa ghim
 	}
-	delivered, _ := readLedger(f.Root, f.Key)
-	var out []snapshot.Instruction
-	for _, i := range f.Control.Instructions {
-		if !delivered[i.ID] {
-			out = append(out, i)
+	if !f.Web.LoggedIn() {
+		return
+	}
+	if c.network {
+		ok, done := c.controlRefreshed[f.Key]
+		if !done {
+			ok = f.WebControl.Refresh(f.Key)
+			if c.controlRefreshed == nil {
+				c.controlRefreshed = map[model.FeatureKey]bool{}
+			}
+			c.controlRefreshed[f.Key] = ok
+		}
+		f.ControlOffline = !ok && f.WebControl.Unreachable()
+	}
+	fc := f.WebControl.Cached(f.Key)
+	if fc == nil || len(fc.Actions) == 0 {
+		return
+	}
+	results, err := NewControlLedger(f.Root, f.Key, c.lockBudget()).Apply(func(done map[int64]bool) []step.PendingResult {
+		return step.ApplyPending(*fc, f.Steps(), f.ScopeExtras(), done, c.now())
+	})
+	if err != nil {
+		f.ControlBusy = isControlBusy(err)
+		return
+	}
+	if len(results) == 0 {
+		return
+	}
+	p := c.Publisher(f.Root)
+	sender := ""
+	if p.Enabled() {
+		sender = webclient.Sender(f.Git())
+	}
+	for _, r := range results {
+		var a *snapshot.Action
+		for i := range fc.Actions {
+			if fc.Actions[i].ID == r.ID {
+				a = &fc.Actions[i]
+				break
+			}
+		}
+		e := webclient.Event{Type: "ACTION_RESULT", At: c.now(), Feature: f.Key.String(), Sender: sender,
+			Detail: resultJSON(r), SessionID: c.SessionID()}
+		if a != nil {
+			e.Step, e.Path = a.Step, a.Path
+		}
+		p.Emit(e)
+		if r.Status == step.PendingApplied {
+			f.snapshotPending = true
+			if c.network && a != nil {
+				what := "đã accept " + a.Step
+				if a.Kind == "ALLOW_SCOPE" {
+					what = "đã cho phép " + a.Path + " ở " + a.Step
+				}
+				c.Eprintln("Áp dụng từ web: " + what + " (" + a.By + ")")
+			}
+		} else if c.network {
+			c.Eprintln("Lệnh từ web hết hiệu lực: " + r.Reason)
 		}
 	}
-	return out
+}
+
+// resultJSON là detail của event ACTION_RESULT: {"id":..,"status":..,"reason":..|null}.
+func resultJSON(r step.PendingResult) string {
+	var reason *string
+	if r.Reason != "" {
+		reason = &r.Reason
+	}
+	b, err := jsonMarshal(struct {
+		ID     int64   `json:"id"`
+		Status string  `json:"status"`
+		Reason *string `json:"reason"`
+	}{r.ID, r.Status, reason})
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
 func exists(path string) bool {

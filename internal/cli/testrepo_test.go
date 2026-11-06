@@ -164,6 +164,8 @@ type testRepo struct {
 	out       string
 	err       string
 	live      *bytes.Buffer
+	// spawned: repo mà lệnh/hook đã mở `aisdlc web flush` nền (test không mở tiến trình thật)
+	spawned []string
 }
 
 // hermeticGit cô lập git khỏi cấu hình của máy.
@@ -197,6 +199,7 @@ func (r *testRepo) context(console DevConsole, stdin string, o, e *bytes.Buffer)
 		WithNow(func() time.Time { return r.now }).
 		WithVerifier(func(string, model.RepoConfig) eval.Verifier { return r.verifier })
 	ctx.WithRunner(func(string, model.RepoConfig) CaseRunner { r.runnerStd = ctx.Std(); return r.runner })
+	ctx.WithFlushSpawner(func(root string) error { r.spawned = append(r.spawned, root); return nil })
 	if r.interrupts != nil {
 		ctx.WithInterrupts(r.interrupts)
 	}

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,8 @@ import (
 	"aisdlc/internal/cli"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
+	"aisdlc/internal/webclient"
+	"aisdlc/internal/webclient/fakeweb"
 )
 
 var binPath string // binary đã build một lần cho cả test binary
@@ -286,28 +290,202 @@ func TestHookLatencyP95(t *testing.T) {
 	if r := runCmd(t, root, in, binPath, "hook", "pre-tool-use"); r.code != 0 || r.out != "" {
 		t.Fatalf("lần thử: code=%d out=%q err=%q", r.code, r.out, r.errOut)
 	}
-	// Máy bận (test Docker chạy song song) làm lệch số đo: đo tối đa 3 lượt, một lượt đạt là đủ.
+	post := strings.Replace(in, `"PreToolUse"`, `"PostToolUse"`, 1)
+	// ghi ngoài phạm vi S1: deny (JSON ra stdout) + event SCOPE_DENIED + mở `web flush` thật
+	outOfScope := editJSON(root, filepath.Join(root, "README2.txt"))
+	dead := []string{"AISDLC_WEB_URL=" + closedURL(t), "AISDLC_WEB_TOKEN=t0k"}
+	backoff := filepath.Join(root, ".aisdlc", "web", "backoff-until")
+	cases := []struct {
+		name, event, in string
+		vars            []string
+		before          func()
+	}{
+		{"web tắt", "pre-tool-use", in, nil, nil},
+		{"web bật nhưng chết", "pre-tool-use", in, dead, nil},
+		{"pre-tool-use deny ngoài phạm vi, web bật nhưng chết", "pre-tool-use", outOfScope, dead,
+			func() { _ = os.Remove(backoff) }},
+		// post-tool-use ghi outbox và mở `web flush` thật; flush đầu gặp cổng đóng thì bật backoff
+		{"post-tool-use web bật nhưng chết", "post-tool-use", post, dead, func() { _ = os.Remove(backoff) }},
+		{"post-tool-use đang backoff", "post-tool-use", post, dead, func() {
+			if err := os.MkdirAll(filepath.Dir(backoff), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			until := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+			if err := os.WriteFile(backoff, []byte(until), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.before != nil {
+				c.before()
+			}
+			hookP95(t, root, c.event, c.in, c.vars)
+		})
+	}
+	es, err := os.ReadDir(filepath.Join(root, ".aisdlc", "web", "outbox"))
+	if err != nil || len(es) == 0 {
+		t.Fatalf("post-tool-use không ghi outbox: %v", err)
+	}
+	waitFlushDone(t, root)
+}
+
+// waitFlushDone chờ (tối đa 10 giây) mọi tiến trình `web flush` nền đã mở ở repo root xong hẳn: khóa gửi rảnh và
+// không còn tiến trình `aisdlc web flush` nào có thư mục làm việc là root (sau khi nhả khóa gửi, tiến trình còn làm
+// mới chế độ, cổng, điều khiển và chính sách — vẫn ghi vào .aisdlc/web). Gọi trước khi thư mục repo tạm bị xóa.
+func waitFlushDone(t *testing.T, root string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if l, ok, err := webclient.TryFlushLock(root); err == nil && ok {
+			l.Close()
+			if len(flushProcesses(root)) == 0 {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("web flush nền chưa xong sau 10 giây (còn %v)", flushProcesses(root))
+}
+
+// flushProcesses là pid các tiến trình `<binPath> web flush` đang chạy ở thư mục root (đọc /proc; Linux).
+func flushProcesses(root string) []int {
+	want, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		want = root
+	}
+	es, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, e := range es {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		dir := filepath.Join("/proc", e.Name())
+		cmdline, err := os.ReadFile(filepath.Join(dir, "cmdline"))
+		if err != nil || !strings.HasSuffix(string(cmdline), "\x00web\x00flush\x00") {
+			continue
+		}
+		if cwd, err := os.Readlink(filepath.Join(dir, "cwd")); err == nil && (cwd == want || cwd == root) {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+// hookP95 gọi hook 60 lần mỗi lượt, p95 phải dưới 50 ms. Máy bận (test Docker chạy song song) làm lệch số đo: đo
+// tối đa 3 lượt, một lượt đạt là đủ. vars thêm vào môi trường của hook (cấu hình web). Stdout phải trống, trừ khi
+// input là ghi ngoài phạm vi (README2.txt): khi đó stdout phải là JSON deny.
+func hookP95(t *testing.T, root, event, in string, vars []string) {
+	t.Helper()
 	const n, rounds = 60, 3
 	var p95 time.Duration
 	for r := 1; r <= rounds; r++ {
 		d := make([]time.Duration, 0, n)
 		for i := 0; i < n; i++ {
-			c := exec.Command(binPath, "hook", "pre-tool-use")
+			c := exec.Command(binPath, "hook", event)
 			c.Dir = root
-			c.Env = hermeticEnv(t.TempDir())
+			c.Env = append(hermeticEnv(t.TempDir()), vars...)
 			c.Stdin = strings.NewReader(in)
+			var o bytes.Buffer
+			c.Stdout = &o
 			t0 := time.Now()
 			if err := c.Run(); err != nil {
 				t.Fatal(err)
 			}
 			d = append(d, time.Since(t0))
+			deny := strings.Contains(in, "README2.txt")
+			if got := o.String(); (!deny && got != "") || (deny && !strings.Contains(got, `"permissionDecision":"deny"`)) {
+				t.Fatalf("hook %s stdout: %q", event, got)
+			}
 		}
 		sort.Slice(d, func(i, j int) bool { return d[i] < d[j] })
 		p95 = d[(n*95+99)/100-1]
-		t.Logf("hook pre-tool-use lượt %d: p50=%v p95=%v max=%v (n=%d)", r, d[n/2], p95, d[n-1], n)
+		t.Logf("hook %s lượt %d: p50=%v p95=%v max=%v (n=%d)", event, r, d[n/2], p95, d[n-1], n)
 		if p95 < 50*time.Millisecond {
 			return
 		}
 	}
 	t.Fatalf("p95 %v >= 50ms sau %d lượt", p95, rounds)
+}
+
+// closedURL là địa chỉ một cổng TCP vừa đóng: web "bật nhưng chết".
+func closedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+	return "http://" + addr
+}
+
+// Web treo (nhận kết nối, không bao giờ trả lời): hook post-tool-use của binary thật vẫn trả về ngay, vì chỉ ghi
+// outbox rồi mở `aisdlc web flush` tách rời (không giữ stdout/stderr của hook); tiến trình nền tự dừng ở hạn 5 giây.
+func TestPostToolUseFastWhenWebHangs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short")
+	}
+	// repo trước fakeweb: cleanup chạy ngược thứ tự, nên web đóng trước (nhả request đang treo), rồi chờ tiến trình
+	// nền xong việc, cuối cùng mới xóa thư mục repo
+	root := stepOneRepo(t)
+	backoff := filepath.Join(root, ".aisdlc", "web", "backoff-until")
+	t.Cleanup(func() {
+		// web đã đóng: tiến trình gửi nền gặp lỗi kết nối, ghi backoff rồi nhả khóa
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(backoff); err == nil {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		waitFlushDone(t, root)
+	})
+	web := fakeweb.New(t)
+	web.Update(func(s *fakeweb.Server) { s.Hang = true })
+	in := strings.Replace(editJSON(root, filepath.Join(root, codePath)), `"PreToolUse"`, `"PostToolUse"`, 1)
+	vars := []string{"AISDLC_WEB_URL=" + web.URL(), "AISDLC_WEB_TOKEN=t0k"}
+	run := func() (time.Duration, result) {
+		c := exec.Command(binPath, "hook", "post-tool-use")
+		c.Dir = root
+		c.Env = append(hermeticEnv(t.TempDir()), vars...)
+		c.Stdin = strings.NewReader(in)
+		var o, e bytes.Buffer
+		c.Stdout, c.Stderr = &o, &e // ống như Claude Code: Run chỉ xong khi mọi tiến trình giữ đầu ghi đã đóng nó
+		t0 := time.Now()
+		err := c.Run()
+		d := time.Since(t0)
+		code := 0
+		if x, ok := err.(*exec.ExitError); ok {
+			code = x.ExitCode()
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		return d, result{code, o.String(), e.String()}
+	}
+	d, r := run()
+	if r.code != 0 || r.out != "" || r.errOut != "" {
+		t.Fatalf("code=%d out=%q err=%q", r.code, r.out, r.errOut)
+	}
+	if d >= 200*time.Millisecond {
+		t.Fatalf("post-tool-use mất %v khi web treo (phải < 200ms)", d)
+	}
+	// tiến trình gửi nền đã tới web (và đang treo ở đó); hook kế tiếp không chờ nó
+	deadline := time.Now().Add(3 * time.Second)
+	for len(web.Requests()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(web.Requests()) == 0 {
+		t.Fatal("web flush nền không gửi gì")
+	}
+	d2, r2 := run()
+	if r2.code != 0 || r2.out != "" || d2 >= 200*time.Millisecond {
+		t.Fatalf("lần 2: %v code=%d out=%q", d2, r2.code, r2.out)
+	}
+	t.Logf("post-tool-use khi web treo: %v, %v", d, d2)
 }

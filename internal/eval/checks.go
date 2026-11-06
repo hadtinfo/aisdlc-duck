@@ -242,6 +242,9 @@ func (s *Service) check(ctx context.Context, c model.CheckCommand, out string) H
 	if runErr == nil {
 		return HardCheck{id, true, "exit 0"}
 	}
+	if ctx.Err() != nil { // Ctrl-C/hủy từ ngoài, không phải hết hạn của check
+		return HardCheck{id, false, "bị hủy, đã dừng; xem " + rel}
+	}
 	if cctx.Err() != nil {
 		return HardCheck{id, false, "quá thời gian, đã dừng; xem " + rel}
 	}

@@ -19,8 +19,8 @@ import (
 	"aisdlc/internal/snapshot"
 )
 
-// WebGatesTest, phần chỉ đọc cache (webcache.go). Phần cần FakeWeb sống (mode/refresh/submit/approve qua HTTP,
-// outbox, flush) để giai đoạn 4: xem docs/superpowers/deferred-tests.md.
+// WebGatesTest, phần chỉ đọc cache (webcache.go). Phần cần web sống (mode/refresh/submit/approve qua HTTP) ở
+// webgates_test.go.
 
 // webFx như setUp của WebGatesTest: setup + init PAY-1 + brd.md, HOME tạm có khóa ghim, web cấu hình qua env trỏ
 // vào một server chỉ đếm request (không được gọi). Trả khóa riêng để ký cache, định danh repo và bộ đếm request.
@@ -96,8 +96,9 @@ func TestValidModeCacheBeatsConfigLocal(t *testing.T) {
 func TestNoPinnedKeyMeansConfigModeAndNoApprovals(t *testing.T) {
 	w := newWebFx(t)
 	w.webMode()
-	hash, err := w.feature().Gates.CurrentHash(gate.BRD)
+	c, err := gate.BRD.ArtifactContents(model.FeaturePaths{RepoRoot: w.root, Key: "PAY-1"}, model.FlowFull)
 	must(t, err)
+	hash := model.SHA256Contents(c) // không dựng Feature: lệnh có mạng sẽ hỏi web
 	st := snapshot.FeatureGateState{Repo: w.repoID, Feature: "PAY-1", Mode: "web", IssuedAt: testNow,
 		Submissions: []snapshot.Sub{{Gate: "BRD", Hash: hash, At: testNow}},
 		Approvals:   []snapshot.Appr{{Gate: "BRD", Hash: hash, Approver: "dev", At: testNow, Channel: "web"}}}
@@ -133,6 +134,7 @@ func TestOpenFeaturesInWebModeReadsCacheOnlyWithoutNetworkOrSideEffects(t *testi
 	w := newWebFx(t)
 	w.ok(noConsole(), "init", "PAY-2")
 	w.webMode()
+	before := w.requests.Load() // init gửi event/snapshot (web bật)
 	open, err := NewFeatureResolver(w.context(noConsole(), "", &bytes.Buffer{}, &bytes.Buffer{})).OpenFeatures(w.root)
 	must(t, err)
 	var keys []string
@@ -140,7 +142,7 @@ func TestOpenFeaturesInWebModeReadsCacheOnlyWithoutNetworkOrSideEffects(t *testi
 		keys = append(keys, k.String())
 	}
 	eqList(t, keys, "PAY-1", "PAY-2")
-	eq(t, w.requests.Load(), int64(0))
+	eq(t, w.requests.Load(), before)
 	eq(t, w.exists(".aisdlc/web/control"), false)
 	eq(t, w.exists(".aisdlc/web/gates"), false)
 }

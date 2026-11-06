@@ -11,7 +11,7 @@ import (
 )
 
 // FeatureRisk của Java: phân loại rủi ro một tính năng theo chính sách hiện tại và mức tạm của BRD. Event rủi ro gửi
-// web (RISK_CLASSIFIED, RISK_OVERRIDDEN) ở giai đoạn 4.
+// web (RISK_CLASSIFIED, RISK_OVERRIDDEN) ở webpublish.go.
 
 // classifyRisk là bản chụp mới (chưa override) theo luồng: FULL dùng BRD, thiết kế, migration nháp; LITE dùng
 // cases.yaml.

@@ -108,21 +108,3 @@ func TestScopeAllowOutsideRepoExit2(t *testing.T) {
 	eq(t, r.runC(typed("PAY-1"), "scope", "allow", "."), 2)
 	eq(t, r.exists("aisdlc/features/PAY-1/scope-extra.json"), false)
 }
-
-func TestWebStubsExit2(t *testing.T) {
-	r := newTestRepo(t)
-	r.setupInit()
-	for _, sub := range []string{"status", "push", "flush", "login", "approve-token", "migrate"} {
-		eq(t, r.run("web", sub), 2)
-		contains(t, r.err, "Lệnh web chưa có trong bản Go (giai đoạn 4).")
-	}
-	eq(t, r.run("web"), 2) // không lệnh con: usage
-	// đã `aisdlc web login`: policy pull cần web client
-	home := t.TempDir()
-	r.env["HOME"] = home
-	r.env["AISDLC_WEB_URL"] = "http://127.0.0.1:1"
-	r.env["AISDLC_WEB_TOKEN"] = "x"
-	pinKey(t, home)
-	eq(t, r.run("policy", "pull"), 2)
-	contains(t, r.err, "Lệnh web chưa có trong bản Go (giai đoạn 4).")
-}

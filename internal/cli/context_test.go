@@ -3,8 +3,6 @@ package cli
 import (
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 // ContextColorTest
@@ -30,43 +28,6 @@ func TestUnknownErrorPrintsLoiAndExit2(t *testing.T) {
 		t.Fatalf("stderr phải bắt đầu bằng \"Lỗi: \":\n%s", r.err)
 	}
 	contains(t, r.err, "Lỗi: ", "feature.yaml")
-}
-
-// probe là lệnh chỉ có trong test: phân giải tính năng như mọi lệnh rồi đòi mạng ở chế độ web.
-func netProbe(ctx *Context) *cobra.Command {
-	var fo FeatureOption
-	c := &cobra.Command{Use: "net-probe", Args: cobra.NoArgs}
-	fo.AddTo(c)
-	c.RunE = Wrap(ctx, func(cmd *cobra.Command, args []string) (int, error) {
-		f, err := fo.Feature(ctx)
-		if err != nil {
-			return 0, err
-		}
-		if err := ctx.WebNetwork(f); err != nil {
-			return 0, err
-		}
-		ctx.Println("đã gọi mạng")
-		return ExitOK, nil
-	})
-	return c
-}
-
-func TestWebModeNetworkCommandAborts(t *testing.T) {
-	r := newTestRepo(t)
-	r.extra = append(r.extra, netProbe)
-	r.ok(noConsole(), "setup", "--approvals", "web")
-	r.ok(noConsole(), "init", "PAY-1")
-
-	eq(t, r.run("net-probe"), ExitUsage)
-	contains(t, r.err, "Chế độ duyệt trên web chưa có trong bản Go (giai đoạn 4).",
-		"Chưa `aisdlc web login` trên máy này")
-	notContains(t, r.err, "Lỗi:")
-	notContains(t, r.out, "đã gọi mạng")
-
-	// cùng lệnh ở chế độ local: chạy bình thường
-	r.write("aisdlc/config.yaml", "language: go\n")
-	eq(t, r.run("net-probe"), ExitOK)
-	contains(t, r.out, "đã gọi mạng")
 }
 
 func TestNoArgsPrintsUsageExit2(t *testing.T) {

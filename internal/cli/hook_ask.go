@@ -19,8 +19,6 @@ var (
 	gateVerbs = map[string]bool{"approve": true, "reject": true, "reopen": true}
 	// askModes: chế độ quyền mà Claude Code còn hỏi người.
 	askModes = map[string]bool{"default": true, "acceptEdits": true, "plan": true}
-	// webAbortVerbs: lệnh chỉ dev mà CLI dừng bằng WebPhase4Msg ở chế độ duyệt trên web (Context.WebNetwork).
-	webAbortVerbs = map[string]bool{"approve": true, "reject": true, "reopen": true, "risk set": true}
 	// valueOptions: tùy chọn nhận giá trị ở token kế tiếp. --message là tên dài của -m trong bản Go.
 	valueOptions = map[string]bool{"--feature": true, "-f": true, "-m": true, "--message": true, "--reason": true}
 )
@@ -70,10 +68,6 @@ func (h *hook) devOnly(root string, in *hookInput, command string) (preDecision,
 	f, err := h.ctx.FeatureAt(root, key)
 	if err != nil {
 		return preDecision{}, false, err
-	}
-	// chế độ web: CLI sẽ dừng lệnh này (giai đoạn 4), nên không hỏi dev và không ghi phiếu
-	if f.Mode == gate.ModeWeb && webAbortVerbs[c.Verb] {
-		return preDecision{"deny", WebPhase4Msg}, true, nil
 	}
 	var g gate.Gate
 	hash := ""

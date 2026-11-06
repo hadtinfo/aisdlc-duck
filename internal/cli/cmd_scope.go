@@ -54,6 +54,7 @@ func newScopeCmd(ctx *Context) *cobra.Command {
 			return 0, err
 		}
 		ctx.Println("Đã cho phép " + rel + ".")
+		ctx.AfterCommand(f, "scope allow")
 		return ExitOK, nil
 	})
 	c.AddCommand(allow)

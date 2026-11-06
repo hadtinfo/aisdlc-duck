@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	_ "time/tzdata" // múi giờ nhúng: TZ hoạt động trong ảnh distroless (không có /usr/share/zoneinfo); purge 03:00 theo giờ địa phương cần
 
 	"aisdlc/internal/web"
 	"aisdlc/internal/web/auth"

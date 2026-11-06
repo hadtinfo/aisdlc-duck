@@ -2,6 +2,7 @@ package ingest_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"reflect"
 	"sync"
@@ -101,5 +102,44 @@ func TestRiskEventCallsRiskChanged(t *testing.T) {
 	_ = e.Pool.QueryRow(context.Background(), "SELECT risk_level FROM features").Scan(&lv)
 	if after != before || lv != "high" {
 		t.Fatal(before, after, lv)
+	}
+}
+
+// Hai lô cùng chạm hai tính năng theo thứ tự ngược nhau không deadlock: khóa lấy theo thứ tự (repo, feature).
+func TestOppositeOrderRiskBatchesDoNotDeadlock(t *testing.T) {
+	e := webtest.New(t, func(d web.Deps) http.Handler {
+		r := chi.NewRouter()
+		ingest.Routes(r, &ingest.Service{Pool: d.Pool, Now: d.Now, RiskChanged: func(ctx context.Context, tx pgx.Tx, repo, feature, from, to string) error {
+			_, err := tx.Exec(ctx, "SELECT pg_sleep(0.05)") // giữ khóa đủ lâu để các lô đan xen
+			return err
+		}})
+		return r
+	})
+	w := e.Client(t)
+	repo := "gitlab.corp/pay/dl"
+	if _, err := e.Pool.Exec(context.Background(), "INSERT INTO repos(id) VALUES ($1)", repo); err != nil {
+		t.Fatal(err)
+	}
+	batch := func(a, b string) string {
+		ev := func(f string) map[string]any {
+			return map[string]any{"type": "RISK_CLASSIFIED", "at": "2026-11-05T10:00:00Z", "feature": f, "detail": `{"level":"low"}`}
+		}
+		out, _ := json.Marshal(map[string]any{"repoId": repo, "events": []any{ev(a), ev(b)}})
+		return string(out)
+	}
+	for round := 0; round < 5; round++ {
+		var wg sync.WaitGroup
+		codes := make([]int, 2)
+		for i, body := range []string{batch("A-1", "B-1"), batch("B-1", "A-1")} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				codes[i] = w.Do("POST", "/api/ingest/events", body, map[string]string{"Content-Type": "application/json"}).Status
+			}()
+		}
+		wg.Wait()
+		if codes[0] != 200 || codes[1] != 200 {
+			t.Fatalf("vòng %d: %v", round, codes)
+		}
 	}
 }

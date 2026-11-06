@@ -67,9 +67,10 @@ check "agent reviewer: tiêu chí Go" "grep -q 'context' '$P/agents/aisdlc-revie
 # Launcher khi thiếu binary (lib/ rỗng)
 T="$(mktemp -d)"; mkdir -p "$T/bin" "$T/lib" "$T/plain" "$T/repo/aisdlc/sub"; cp "$P/bin/aisdlc" "$T/bin/aisdlc"; touch "$T/repo/aisdlc/config.yaml"
 W="$T/bin/aisdlc"
+TO=""; command -v timeout >/dev/null 2>&1 && TO="timeout 10" # vòng lặp vô hạn -> rc 124 thay vì treo
 run() { # dir stdin args... -> đặt out, err, rc
   local d="$1" in="$2"; shift 2
-  err="$(cd "$d" && echo "$in" | "$@" 2>&1 >"$T/out")"; rc=$?; out="$(cat "$T/out")"
+  err="$(cd "$d" && echo "$in" | $TO "$@" 2>&1 >"$T/out")"; rc=$?; out="$(cat "$T/out")"
 }
 expect() { # tên rc_mong_đợi [grep]
   if [ "$rc" -eq "$2" ] && [ -z "$out" ] && { [ -z "${3:-}" ] && [ -z "$err" ] || { [ -n "${3:-}" ] && echo "$err" | grep -q "$3"; }; }; then ok "$1"; else ko "$1: rc=$rc out=$out err=$err"; fi
@@ -125,6 +126,19 @@ spoof='{"tool_input":{"cwd":"'"$T/plain"'"},"cwd":"'"$T/repo"'","tool_name":"Wri
 run "$T/plain" "$spoof" "$W" hook pre-tool-use; expect "thiếu binary: payload lớn, cwd giả lồng trước cwd thật (chạy ngoài repo) -> rc 2" 2 'plugin/install.sh'
 run "$T/repo" "$spoof" "$W" hook pre-tool-use; expect "thiếu binary: payload lớn, cwd giả lồng trước cwd thật (chạy trong repo) -> rc 2" 2 'plugin/install.sh'
 run "$T/plain" '{"cwd":"'"$T/plain"'","tool_name":"Write","x":"'"$big"'"}' "$W" hook pre-tool-use; expect "thiếu binary: payload lớn Write, không repo nào -> rc 0 im lặng" 0
+# cwd tương đối (vd "x"): vòng leo thư mục cha không được lặp vô hạn (quá giờ hook = không chặn); vẫn xét $PWD
+for rel in x x/y ./x ../x .; do
+  t0=$(date +%s%N); run "$T/repo" '{"tool_name":"Write","cwd":"'"$rel"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+  if [ "$rc" -eq 2 ] && [ "$ms" -lt 2000 ]; then ok "thiếu binary: cwd tương đối \"$rel\" nhỏ, PWD trong repo -> chặn nhanh (${ms} ms)"; else ko "cwd tương đối $rel nhỏ: rc=$rc ${ms} ms"; fi
+done
+t0=$(date +%s%N); run "$T/plain" '{"tool_name":"Write","cwd":"x"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$rc" -eq 0 ] && [ -z "$err" ] && [ "$ms" -lt 2000 ]; then ok "thiếu binary: cwd tương đối, PWD ngoài repo -> rc 0 nhanh (${ms} ms)"; else ko "cwd tương đối ngoài repo: rc=$rc ${ms} ms err=$err"; fi
+t0=$(date +%s%N); run "$T/repo/aisdlc/sub" '{"tool_name":"Write","x":{"cwd":"x"},"cwd":"x","y":"'"$big"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$rc" -eq 2 ] && [ "$ms" -lt 2000 ]; then ok "thiếu binary: payload > 16 KB, cwd tương đối, PWD trong repo -> chặn nhanh (${ms} ms)"; else ko "cwd tương đối lớn: rc=$rc ${ms} ms"; fi
+t0=$(date +%s%N); run "$T/plain" '{"cwd":"x","tool_name":"Write","cwd":"'"$T/repo"'","y":"'"$big"'"}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$rc" -eq 2 ] && [ "$ms" -lt 2000 ]; then ok "thiếu binary: payload > 16 KB, cwd \"x\" mồi trước cwd thật -> chặn nhanh (${ms} ms)"; else ko "cwd mồi lớn: rc=$rc ${ms} ms"; fi
+t0=$(date +%s%N); run "$T/repo" '{"tool_name":"Write","cwd":"x","tool_input":{"content":"'"$huge"'"}}' "$W" hook pre-tool-use; ms=$(( ($(date +%s%N)-t0)/1000000 ))
+if [ "$rc" -eq 2 ] && [ "$ms" -lt 2000 ]; then ok "thiếu binary: payload 2 MB, cwd tương đối, PWD trong repo -> chặn nhanh (${ms} ms)"; else ko "cwd tương đối 2 MB: rc=$rc ${ms} ms"; fi
 run "$T/repo" '{"tool_name":"Read","tool_input":{"cwd":"'"$T/plain"'"},"cwd":"'"$T/repo"'"}' "$W" hook stop; expect "thiếu binary: cwd lồng trong tool_input bị bỏ qua" 1 'plugin/install.sh'
 run "$T/repo" '{"tool_name":"Read"}' "$W" hook stop; expect "thiếu binary: stop dù tool_name Read vẫn rc 1" 1 'plugin/install.sh'
 run "$T/plain" '{"tool_name":"Edit"}' "$W" hook pre-tool-use; expect "thiếu binary, ngoài repo AISDLC: Edit rc 0 im lặng" 0

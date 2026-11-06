@@ -51,8 +51,12 @@ fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
     done
     dirs+=("$PWD")
   fi
-  [ $big -eq 0 ] && dirs=("${dir:-$PWD}")
+  # Luôn xét cả $PWD (cwd giả chỉ thêm repo, không bớt). cwd không tuyệt đối (vd "x") bị bỏ qua: leo thư mục cha bằng
+  # ${dir%/*} trên đường tương đối không bao giờ tới "/" -> lặp vô hạn -> quá giờ hook = không chặn.
+  [ $big -eq 0 ] && dirs=("$dir" "$PWD")
+  local prev
   for dir in "${dirs[@]}"; do
+    case "$dir" in /*) ;; *) continue ;; esac
     while [ -n "$dir" ]; do
       if [ -f "$dir/aisdlc/config.yaml" ]; then
         if [ "${2:-}" = "pre-tool-use" ]; then
@@ -64,7 +68,8 @@ fail() { # đọc $MSG; $1 = hook?, $2 = sự kiện
         exit 1
       fi
       [ "$dir" = "/" ] && break
-      dir="${dir%/*}"; [ -z "$dir" ] && dir="/"
+      prev="$dir"; dir="${dir%/*}"; [ -z "$dir" ] && dir="/"
+      [ "$dir" = "$prev" ] && break
     done
   done
   exit 0

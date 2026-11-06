@@ -124,6 +124,7 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 	if err := next.Write(f.Paths.Risk()); err != nil {
 		return 0, err
 	}
+	riskOverridden(ctx, f, cur.Level, level, why)
 	ctx.Println("Đã đổi mức rủi ro thành " + level + ". Yêu cầu: " + requirementIDs(next.Requirements))
 	if _, err := supersede(ctx, f, &p, cur.Level, next); err != nil {
 		return 0, err
@@ -135,6 +136,7 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 		}
 		ctx.Println("Cổng Case cần nộp lại: `aisdlc submit cases`.")
 	}
+	ctx.AfterCommand(f, "risk set "+level)
 	return ExitOK, nil
 }
 
@@ -188,6 +190,7 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 	if err := fresh.Write(f.Paths.Risk()); err != nil {
 		return 0, err
 	}
+	riskClassified(ctx, f, fresh)
 	tail := ""
 	if reopen {
 		tail = " Cổng Case đã mở lại; nộp lại `aisdlc submit cases`."
@@ -200,6 +203,7 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 	if _, err := supersede(ctx, f, &p, before, fresh); err != nil {
 		return 0, err
 	}
+	ctx.AfterCommand(f, "risk reclassify")
 	return ExitOK, nil
 }
 

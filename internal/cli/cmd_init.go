@@ -107,7 +107,7 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 	}
 
 	ctx.Println("Đã tạo tính năng " + k.String() + " (luồng " + string(flow) + "): " + t)
-	// Java gửi event/snapshot lên web ở đây (WebPublisher.afterCommand): giai đoạn 4.
+	ctx.AfterCommandKey(root, k, "init")
 	for _, f := range files {
 		ctx.Println("  " + paths.Rel(f.path))
 	}

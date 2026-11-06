@@ -160,6 +160,7 @@ func runEval(ctx *Context, f *Feature, ci bool, base string) (int, error) {
 	}
 	fmt.Fprint(ctx.Out(), string(md))
 	ctx.Println("Đã ghi " + f.Paths.Rel(filepath.Join(dir, "report.json")) + ".")
+	ctx.AfterCommand(f, "eval")
 	if r.Passed {
 		return ExitOK, nil
 	}

@@ -133,6 +133,7 @@ func TestOpenFeaturesInWebModeReadsCacheOnlyWithoutNetworkOrSideEffects(t *testi
 	w := newWebFx(t)
 	w.ok(noConsole(), "init", "PAY-2")
 	w.webMode()
+	before := w.requests.Load() // init gửi event/snapshot (web bật)
 	open, err := NewFeatureResolver(w.context(noConsole(), "", &bytes.Buffer{}, &bytes.Buffer{})).OpenFeatures(w.root)
 	must(t, err)
 	var keys []string
@@ -140,7 +141,7 @@ func TestOpenFeaturesInWebModeReadsCacheOnlyWithoutNetworkOrSideEffects(t *testi
 		keys = append(keys, k.String())
 	}
 	eqList(t, keys, "PAY-1", "PAY-2")
-	eq(t, w.requests.Load(), int64(0))
+	eq(t, w.requests.Load(), before)
 	eq(t, w.exists(".aisdlc/web/control"), false)
 	eq(t, w.exists(".aisdlc/web/gates"), false)
 }

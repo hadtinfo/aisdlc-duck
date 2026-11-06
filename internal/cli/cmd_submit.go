@@ -412,6 +412,10 @@ func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.R
 		if err := fresh.Write(f.Paths.Risk()); err != nil {
 			return risk.RiskFile{}, err
 		}
+		// web: event gửi sau bản nộp (server thay thế bản tự duyệt khi nhận event) — giai đoạn 4b Task 4
+		if f.Mode != gate.ModeWeb {
+			riskClassified(s.ctx, f, fresh)
+		}
 		print = true
 	}
 	if print {
@@ -604,6 +608,7 @@ func (s *submission) submit(f *Feature, g gate.Gate, findings []spec.Finding, in
 		}
 	}
 	name := strings.ToLower(string(g))
+	s.ctx.AfterCommand(f, "submit "+name)
 	if auto != "" {
 		s.ctx.Println("Đã nộp cổng " + string(g) + ", không có phát hiện: " + auto + ".")
 		return ExitOK, nil

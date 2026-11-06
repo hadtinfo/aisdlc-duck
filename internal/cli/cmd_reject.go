@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
+	"strings"
 )
 
 func newRejectCmd(ctx *Context) *cobra.Command {
@@ -45,6 +46,7 @@ func newRejectCmd(ctx *Context) *cobra.Command {
 			return 0, err
 		}
 		ctx.Println("Đã trả lại cổng " + string(g) + "; góp ý ghi vào " + f.Paths.Rel(f.Paths.Feedback()) + ".")
+		ctx.AfterCommand(f, "reject "+strings.ToLower(string(g)))
 		return ExitOK, nil
 	})
 	return c

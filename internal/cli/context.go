@@ -23,6 +23,7 @@ import (
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/step"
+	"aisdlc/internal/webclient"
 )
 
 // Abort dừng lệnh với mã thoát và thông báo cho dev (in nguyên văn ra stderr), như Context.Abort của Java.
@@ -79,6 +80,9 @@ type Context struct {
 	banner          bool
 	bannerPrinted   bool
 	exit            int
+	// spawnFlush mở `aisdlc web flush` nền (nil: webclient.SpawnFlush); publishers: bộ gửi web theo repo
+	spawnFlush func(root string) error
+	publishers map[string]*webclient.Publisher
 }
 
 // NewContext tạo Context với mặc định của tiến trình: env của OS, đồng hồ UTC, git thật, runner và verifier là

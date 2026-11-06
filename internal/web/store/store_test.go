@@ -1,7 +1,10 @@
 package store_test
 
 import (
+	"net/url"
+
 	"context"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"net/http"
 	"reflect"
 	"sort"
@@ -85,5 +88,44 @@ func TestMigrateIdempotent(t *testing.T) {
 	env := webtest.New(t, func(d web.Deps) http.Handler { return web.NewHandler(d) })
 	if err := store.Migrate(context.Background(), env.Pool); err != nil {
 		t.Fatalf("migrate lần 2: %v", err)
+	}
+}
+
+// Nhiều bản server khởi động cùng lúc trên DB trắng: khóa phiên của goose làm chúng lần lượt migrate, không bản nào lỗi.
+func TestMigrateConcurrentOnFreshDB(t *testing.T) {
+	env := webtest.New(t, func(d web.Deps) http.Handler { return web.NewHandler(d) })
+	ctx := context.Background()
+	name := "t_conc_" + strings.ToLower(t.Name()[len(t.Name())-4:])
+	if _, err := env.Pool.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = env.Pool.Exec(ctx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)") })
+	u, err := url.Parse(env.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + name
+	const n = 4
+	pools := make([]*pgxpool.Pool, n)
+	for i := range pools {
+		if pools[i], err = store.Open(ctx, u.String(), "", ""); err != nil {
+			t.Fatal(err)
+		}
+		defer pools[i].Close()
+	}
+	errs := make(chan error, n)
+	start := make(chan struct{})
+	for _, p := range pools {
+		go func() { <-start; errs <- store.Migrate(ctx, p) }()
+	}
+	close(start)
+	for range pools {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var cnt int
+	if err := pools[0].QueryRow(ctx, "SELECT count(*) FROM users").Scan(&cnt); err != nil {
+		t.Fatal(err)
 	}
 }

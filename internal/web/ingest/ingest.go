@@ -30,6 +30,7 @@ type Service struct {
 	// Changed được gọi sau khi commit, với mỗi (repo, tính năng) vừa đổi (nil-safe). Task 5 nối vào SSE.
 	Changed func(repoID, feature string)
 	// RiskChanged được gọi trong giao dịch khi mức rủi ro của tính năng đổi (AutoApprover.onRiskChanged); from rỗng = chưa biết.
+	// Mọi truy vấn của nó phải đi qua tx, không dùng pool (tránh cạn pool khi đang giữ tx).
 	// Lỗi trả về hủy cả lô. nil = không làm gì.
 	RiskChanged func(ctx context.Context, tx pgx.Tx, repoID, feature, from, to string) error
 }

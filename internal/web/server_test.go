@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -62,3 +63,19 @@ func TestRecoverPanic500(t *testing.T) {
 		t.Fatalf("%d %s", resp.StatusCode, b)
 	}
 }
+
+// FlushError của trackingWriter để http.ResponseController.Flush trong handler thấy lỗi của writer gốc (SSE cần).
+func TestRecovererFlushErrorPropagates(t *testing.T) {
+	h := web.Recoverer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := http.NewResponseController(w).Flush(); !errors.Is(err, errBoom) {
+			t.Errorf("Flush = %v, muốn errBoom", err)
+		}
+	}))
+	h.ServeHTTP(&failFlush{ResponseWriter: httptest.NewRecorder()}, httptest.NewRequest("GET", "/", nil))
+}
+
+var errBoom = errors.New("boom")
+
+type failFlush struct{ http.ResponseWriter }
+
+func (failFlush) FlushError() error { return errBoom }

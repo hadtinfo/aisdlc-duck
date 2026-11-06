@@ -1,6 +1,7 @@
 package gates_test
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -199,25 +200,29 @@ func TestConcurrentApproveOneWins(t *testing.T) {
 		f.submitOk("BRD")
 		sessions := []struct{ s, csrf string }{{fx.ownerS.ID, fx.ownerS.CSRF}, {fx.leadS.ID, fx.leadS.CSRF}, {fx.ownerS.ID, fx.ownerS.CSRF}, {fx.leadS.ID, fx.leadS.CSRF}}
 		var wg sync.WaitGroup
-		approvers := make([]string, len(sessions))
-		status := make([]int, len(sessions))
+		res := make([]httpResult, len(sessions))
 		start := make(chan struct{})
 		for i, s := range sessions {
 			wg.Add(1)
-			go func(i int, id, csrf string) {
+			go func(i int, id, csrf string) { // không gọi t.Fatal trong goroutine: chỉ ghi kết quả
 				defer wg.Done()
 				<-start
-				r := fx.w.Do("POST", "/api/gates/approve", f.approveBody("BRD", f.hash("BRD")),
-					map[string]string{"Cookie": "AISDLC_SESSION=" + id, "X-CSRF-Token": csrf, "Content-Type": "application/json"})
-				status[i] = r.Status
-				if r.Status == 200 {
-					st := fx.verified(t, r.Body)
-					approvers[i] = apprKeys(st.Approvals, func(a snapshot.Appr) string { return a.Approver })
-				}
+				res[i] = fx.post(context.Background(), "/api/gates/approve", f.approveBody("BRD", f.hash("BRD")), sessionHdr(id, csrf))
 			}(i, s.s, s.csrf)
 		}
 		close(start)
 		wg.Wait()
+		approvers := make([]string, len(res))
+		status := make([]int, len(res))
+		for i, r := range res {
+			if r.err != nil {
+				t.Fatalf("vòng %d: %v", round, r.err)
+			}
+			status[i] = r.status
+			if r.status == 200 {
+				approvers[i] = apprKeys(fx.verified(t, r.body).Approvals, func(a snapshot.Appr) string { return a.Approver })
+			}
+		}
 		for i := range status {
 			if status[i] != 200 || approvers[i] != approvers[0] || approvers[i] == "" {
 				t.Fatalf("vòng %d: %v %v", round, status, approvers)
@@ -247,22 +252,21 @@ func TestApproveRacingResubmissionNeverApprovesChangedContent(t *testing.T) {
 		f.text["BRD"] = "BRD v2"
 		f.push() // snapshot mới: currentHash = v2; bản nộp hiện tại vẫn là v1
 		var wg sync.WaitGroup
-		var approve, submit int
-		var approveErr string
+		var ar, sr httpResult
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			r := fx.w.PostSession("/api/gates/approve", f.approveBody("BRD", f.hash("BRD")), fx.ownerS, fx.ownerS.CSRF)
-			approve = r.Status
-			if r.Status != 200 {
-				approveErr = r.Body
-			}
+			ar = fx.post(context.Background(), "/api/gates/approve", f.approveBody("BRD", f.hash("BRD")), sessionHdr(fx.ownerS.ID, fx.ownerS.CSRF))
 		}()
-		go func() { defer wg.Done(); submit = f.submit("BRD", "[]").Status }()
+		go func() {
+			defer wg.Done()
+			sr = fx.post(context.Background(), "/api/cli/submissions", f.submissionBody("BRD", "[]"), bearerHdr(fx.ingest))
+		}()
 		wg.Wait()
-		if submit != 200 {
-			t.Fatal("submit", submit)
+		if ar.err != nil || sr.err != nil || sr.status != 200 {
+			t.Fatal("submit", sr.status, sr.err, ar.err)
 		}
+		approve, approveErr := ar.status, ar.body
 		switch approve {
 		case 200: // nộp lại thắng trước: duyệt đúng bản v2
 			if h := fx.str(t, "SELECT hash FROM approvals WHERE repo_id = $1", repo); h != f.hash("BRD") || h == oldHash {

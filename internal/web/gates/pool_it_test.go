@@ -71,3 +71,61 @@ func TestGateActionsDoNotStarveSmallPool(t *testing.T) {
 		t.Fatal(c)
 	}
 }
+
+// TestAutoHooksDoNotStarveSmallPool: AutoApprove (trong tx nộp) và OnRiskChanged (trong tx ingest) cũng chỉ truy vấn
+// qua tx. Nộp đồng thời (tự duyệt) xen với sự kiện rủi ro (thay thế) trên cùng tính năng, pool 2 kết nối: không treo.
+func TestAutoHooksDoNotStarveSmallPool(t *testing.T) {
+	fx := newGfx(t, "pa")
+	a := fx.autoFeat(t, "r/pa-a", "K-1", genericPolicy(t), cards("low", "[]"))
+	a.submitOk("BRD") // tự duyệt ở low: các lần thay thế sau có bản để thu hồi
+	if c := fx.count(t, "SELECT count(*) FROM approvals WHERE repo_id = 'r/pa-a' AND channel = 'auto'"); c != 1 {
+		t.Fatal(c)
+	}
+
+	cfg, err := pgxpool.ParseConfig(fx.e.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.MaxConns = 2
+	small, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer small.Close()
+	srv := httptest.NewServer(web.NewHandler(web.Deps{Pool: small, Keys: fx.keys, Now: tickingClock()}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	const n = 8
+	res := make([]httpResult, 2*n)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			res[i] = postTo(ctx, srv.URL, "/api/cli/submissions", a.submissionBody("BRD", "[]"), bearerHdr(fx.ingest))
+		}(i)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			level := []string{"high", "low"}[i%2]
+			body := fmt.Sprintf(`{"repoId":"%s","events":[{"type":"RISK_CLASSIFIED","at":"2026-11-06T10:00:00Z","feature":"%s",`+
+				`"detail":"{\"level\":\"%s\",\"policyVersion\":1}"}]}`, a.repo, a.key, level)
+			res[n+i] = postTo(ctx, srv.URL, "/api/ingest/events", body, bearerHdr(fx.ingest))
+		}(i)
+	}
+	began := time.Now()
+	close(start)
+	wg.Wait()
+	for i, r := range res {
+		if r.err != nil || r.status != 200 {
+			t.Fatalf("request %d sau %v: %d %v %s", i, time.Since(began), r.status, r.err, r.body)
+		}
+	}
+	if c := fx.count(t, "SELECT count(*) FROM approvals WHERE repo_id = 'r/pa-a' AND revoked_at IS NULL"); c > 1 {
+		t.Fatal("nhiều bản tự duyệt còn hiệu lực:", c)
+	}
+}

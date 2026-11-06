@@ -60,7 +60,7 @@ type Service struct {
 	// feedback mới nhất của cổng, nên trả lại rồi nộp lại cần thời điểm sau lớn hơn hẳn thời điểm trước. Đồng hồ đứng
 	// yên hoặc lùi làm bản nộp lại bị coi như đã bị trả lại.
 	Now func() time.Time
-	// AfterSubmit chạy trong tx nộp, sau khi đã lưu submission (Task 7: AutoApprover.afterSubmit). nil = không làm gì.
+	// AfterSubmit chạy trong tx nộp, sau khi đã lưu submission (server nối Service.AutoApprove). nil = không làm gì.
 	// Mọi truy vấn của nó phải đi qua tx (không dùng Pool): tx đang giữ một kết nối và khóa của tính năng.
 	AfterSubmit func(ctx context.Context, tx pgx.Tx, s Submitted) error
 }
@@ -71,8 +71,9 @@ type Submitted struct {
 	Gate          gate.Gate
 	SubmissionID  int64
 	Hash          string
-	Clean         bool    // không có finding
-	RiskLevel     *string // risk.level CLI gửi kèm, nil nếu không có
+	Clean         bool      // không có finding
+	RiskLevel     *string   // risk.level CLI gửi kèm, nil nếu không có
+	At            time.Time // thời điểm nộp (cùng thời điểm cho bản tự duyệt, như now() của tx trong Java)
 }
 
 var _ board.GateView = (*Service)(nil)
@@ -583,7 +584,7 @@ func (s *Service) Submit(ctx context.Context, p httpx.Principal, ip string, r Su
 		}
 		if s.AfterSubmit != nil {
 			return s.AfterSubmit(ctx, tx, Submitted{Repo: r.Repo, Feature: r.Feature, Gate: r.Gate, SubmissionID: id, Hash: r.Hash,
-				Clean: len(r.findings) == 0, RiskLevel: r.RiskLevel})
+				Clean: len(r.findings) == 0, RiskLevel: r.RiskLevel, At: now})
 		}
 		return nil
 	})

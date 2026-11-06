@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,23 @@ func (s *Service) AppendEvents(ctx context.Context, login string, batch any) (in
 	}
 	if err := br.Close(); err != nil {
 		return 0, err
+	}
+	// Khóa mọi tính năng có hiệu ứng RISK_* theo thứ tự (repo, feature) trước khi áp dụng: hai lô chạm các tính năng theo
+	// thứ tự ngược nhau không thể chờ vòng tròn (deadlock). lockFeature trong applyEffect sau đó là no-op (đã giữ khóa).
+	var riskFeatures []string
+	for _, f := range effects {
+		if f.feature != nil && f.detail != nil && strings.HasPrefix(f.typ, "RISK_") {
+			riskFeatures = append(riskFeatures, *f.feature)
+		}
+	}
+	sort.Strings(riskFeatures)
+	for i, ft := range riskFeatures {
+		if i > 0 && ft == riskFeatures[i-1] {
+			continue
+		}
+		if err := lockFeature(ctx, tx, repoID, ft); err != nil {
+			return 0, err
+		}
 	}
 	for _, f := range effects {
 		if err := s.applyEffect(ctx, tx, repoID, f); err != nil {

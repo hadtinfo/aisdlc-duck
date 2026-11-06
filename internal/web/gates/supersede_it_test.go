@@ -1,68 +1,49 @@
 package gates_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/model"
 	"aisdlc/internal/snapshot"
-	"aisdlc/internal/web/gates"
 )
 
-// Port SupersedeIT (3), phần thuộc Task 6: kho (supersedeAuto, supersededGates), phong bì (superseded) và lớp phủ
-// (cờ superseded). Việc server tự duyệt khi nộp và tự thay thế khi sự kiện rủi ro nâng mức là AutoApprover (Task 7):
-// ở đây bản tự duyệt được ghi bằng gates.SaveAutoApproval và thay thế bằng gates.SupersedeAuto như AutoApprover sẽ gọi.
+// Port SupersedeIT (3): sự kiện rủi ro nâng mức → server thay thế bản tự duyệt mà flow của mức mới là duyệt tay
+// (spec risk-flow §5.4). Bản tự duyệt do AutoApprover ghi khi nộp; thay thế chạy trong tx ingest (RiskChanged).
 
 func (f *gfx) revoked(t *testing.T, repo string) string {
 	return strings.Join(f.strs(t, "SELECT gate || ':' || channel || ':' || coalesce(revoked_by, '-') FROM approvals "+
 		"WHERE repo_id = $1 ORDER BY id", repo), ",")
 }
 
-// autoApprove: tự duyệt bản nộp còn hiệu lực mới nhất của cổng ở mức low.
-func (f *gfx) autoApprove(t *testing.T, ft *feat, g string) {
-	t.Helper()
-	ctx := context.Background()
-	var id int64
-	var hash string
-	if err := f.e.Pool.QueryRow(ctx, "SELECT id, hash FROM submissions WHERE repo_id = $1 AND feature_key = $2 AND gate = $3 "+
-		"ORDER BY id DESC LIMIT 1", ft.repo, ft.key, g).Scan(&id, &hash); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := gates.SaveAutoApproval(ctx, f.e.Pool, id, ft.repo, ft.key, gate.Gate(g), hash, "flow:low", time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
+func (f *gfx) supersedeFeat(t *testing.T, repo, brdFlags string) *feat {
+	return f.autoFeat(t, repo, "PAY-1", genericPolicy(t), cards("low", brdFlags))
 }
 
-func (f *gfx) supersede(t *testing.T, ft *feat, gs ...gate.Gate) []string {
-	t.Helper()
-	out, err := gates.SupersedeAuto(context.Background(), f.e.Pool, ft.repo, ft.key, gs, time.Now().UTC())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-
-func TestSupersedeOnRaise(t *testing.T) { // SupersedeIT.supersede_onRiskClassifiedRaise
+func TestSupersedeOnRiskClassifiedRaise(t *testing.T) {
 	fx := newGfx(t, "ss")
-	f := fx.feat(t, "r/ss-1", "PAY-1", "FULL")
+	f := fx.supersedeFeat(t, "r/ss-1", "[]")
+	f.riskEvent("RISK_CLASSIFIED", `{"level":"low","policyVersion":1,"matched":[]}`)
 	f.submitOk("BRD")
-	fx.autoApprove(t, f, "BRD")
-	f.submitOk("DESIGN")
-	fx.autoApprove(t, f, "DESIGN")
+	fx.okState(t, f.submitWithRisk("DESIGN", "low"))
 	if s := fx.revoked(t, "r/ss-1"); s != "BRD:auto:-,DESIGN:auto:-" {
 		t.Fatal(s)
 	}
-	if got := fx.supersede(t, f, gate.BRD, gate.DESIGN, gate.CASES); len(got) != 2 {
-		t.Fatal(got)
-	}
+
+	f.riskEvent("RISK_CLASSIFIED", `{"level":"high","policyVersion":1,"matched":["G1"]}`)
 	if s := fx.revoked(t, "r/ss-1"); s != "BRD:auto:auto-supersede,DESIGN:auto:auto-supersede" {
 		t.Fatal(s)
+	}
+	if m := fx.str(t, "SELECT detail->>'message' FROM audit WHERE repo_id = 'r/ss-1' AND action = 'gate.auto-supersede'"); m != "Mức tăng low → high: cổng BRD, Thiết kế cần dev duyệt lại." {
+		t.Fatal(m)
+	}
+	if a := fx.str(t, "SELECT coalesce(login, '-') || '|' || channel || '|' || target || '|' || (detail->>'from') || '|' || "+
+		"(detail->>'to') || '|' || (detail->'gates')::text || '|' || (detail->>'policyVersion') FROM audit WHERE repo_id = 'r/ss-1' "+
+		"AND action = 'gate.auto-supersede'"); a != `-|auto|BRD,DESIGN|low|high|["BRD", "DESIGN"]|1` {
+		t.Fatal(a)
 	}
 
 	// trang tính năng: cổng bị thay thế mang cờ superseded (huy hiệu "đã thay thế")
@@ -108,52 +89,71 @@ func TestSupersedeOnRaise(t *testing.T) { // SupersedeIT.supersede_onRiskClassif
 	if got := apprKeys(env.Approvals, func(a snapshot.Appr) string { return a.Gate + "|" + a.Channel }); got != "BRD|web" {
 		t.Fatal(got)
 	}
-	if got := apprKeys(env.Superseded, func(a snapshot.Appr) string { return a.Gate }); got != "DESIGN" {
+	if got := gatesOf(env.Superseded); got != "DESIGN" {
 		t.Fatal(got)
 	}
 }
 
-func TestResubmitBrdAfterRaiseStaysPending(t *testing.T) { // SupersedeIT.resubmitBrdAfterRaise_staysPending (phần Task 6)
+func TestResubmitBrdAfterRaiseStaysPending(t *testing.T) {
 	fx := newGfx(t, "ss")
-	f := fx.feat(t, "r/ss-4", "PAY-1", "FULL")
+	f := fx.supersedeFeat(t, "r/ss-4", "[]")
 	f.submitOk("BRD")
-	fx.autoApprove(t, f, "BRD")
-	f.submitOk("DESIGN")
-	fx.autoApprove(t, f, "DESIGN")
-	fx.supersede(t, f, gate.BRD, gate.DESIGN)
-	// nộp lại BRD không đổi: không có gì làm bản bị thay thế có hiệu lực lại
-	if r := f.submit("BRD", "[]"); r.Status != 200 {
-		t.Fatal(r.Status, r.Body)
-	}
+	fx.okState(t, f.submitWithRisk("DESIGN", "low"))
+	f.riskEvent("RISK_CLASSIFIED", `{"level":"high","policyVersion":1,"matched":["G1"]}`)
 	if s := fx.revoked(t, "r/ss-4"); s != "BRD:auto:auto-supersede,DESIGN:auto:auto-supersede" {
 		t.Fatal(s)
 	}
-	if env := fx.envelope(t, f); len(env.Approvals) != 0 || len(env.Superseded) != 2 {
-		t.Fatalf("%+v", env)
+	// không biết mức trước (risk_level NULL): thông điệp lấy mức từ rule flow:low của bản bị thay thế
+	if m := fx.str(t, "SELECT detail->>'message' FROM audit WHERE repo_id = 'r/ss-4' AND action = 'gate.auto-supersede'"); m != "Mức tăng low → high: cổng BRD, Thiết kế cần dev duyệt lại." {
+		t.Fatal(m)
+	}
+
+	// agent nộp lại BRD không đổi (mức tạm trong thẻ vẫn low): mức risk.yaml gửi kèm là high → chờ dev
+	fx.okState(t, f.submitWithRisk("BRD", "high"))
+	if s := fx.revoked(t, "r/ss-4"); s != "BRD:auto:auto-supersede,DESIGN:auto:auto-supersede" {
+		t.Fatal(s)
+	}
+	// không gửi mức (CLI cũ): mức server đã biết (features.risk_level = high) vẫn chặn
+	f.submitOk("BRD")
+	if s := fx.revoked(t, "r/ss-4"); s != "BRD:auto:auto-supersede,DESIGN:auto:auto-supersede" {
+		t.Fatal(s)
+	}
+	if env := fx.envelope(t, f); len(env.Approvals) != 0 {
+		t.Fatal(env.Approvals)
 	}
 }
 
-func TestSupersedeIgnoresManualApprovals(t *testing.T) { // SupersedeIT.supersede_ignoresManualApprovals (phần Task 6)
+func TestSupersedeIgnoresManualApprovals(t *testing.T) {
+	// BRD có cờ HIGH: dev duyệt tay; Thiết kế tự duyệt ở mức low
 	fx := newGfx(t, "ss")
-	f := fx.feat(t, "r/ss-2", "PAY-1", "FULL")
+	f := fx.supersedeFeat(t, "r/ss-2", highFlag)
 	f.submitOk("BRD")
 	f.approveOk("BRD")
-	f.submitOk("DESIGN")
-	fx.autoApprove(t, f, "DESIGN")
+	fx.okState(t, f.submitWithRisk("DESIGN", "low"))
 	if s := fx.revoked(t, "r/ss-2"); s != "BRD:web:-,DESIGN:auto:-" {
 		t.Fatal(s)
 	}
-	if got := fx.supersede(t, f, gate.BRD, gate.DESIGN); !reflect.DeepEqual(got, []string{"DESIGN"}) {
-		t.Fatal(got)
-	}
+
+	// đổi tay lên medium (RISK_OVERRIDDEN): chỉ bản tự duyệt bị thay thế
+	f.riskEvent("RISK_OVERRIDDEN", `{"from":"low","to":"medium","reason":"r"}`)
 	if s := fx.revoked(t, "r/ss-2"); s != "BRD:web:-,DESIGN:auto:auto-supersede" {
 		t.Fatal(s)
 	}
-	if got := apprKeys(fx.envelope(t, f).Approvals, func(a snapshot.Appr) string { return a.Gate }); got != "BRD" {
+	if got := gatesOf(fx.envelope(t, f).Approvals); got != "BRD" {
 		t.Fatal(got)
 	}
-	// không còn bản tự duyệt hiệu lực: thay thế lần nữa không đổi gì
-	if got := fx.supersede(t, f, gate.DESIGN); len(got) != 0 {
-		t.Fatal(got)
+	if m := fx.str(t, "SELECT detail->>'message' FROM audit WHERE repo_id = 'r/ss-2' AND action = 'gate.auto-supersede'"); m != "Mức tăng low → medium: cổng Thiết kế cần dev duyệt lại." {
+		t.Fatal(m)
+	}
+
+	// mức vẫn cho phép auto: không thay thế gì
+	g := fx.supersedeFeat(t, "r/ss-3", "[]")
+	g.submitOk("BRD")
+	g.riskEvent("RISK_CLASSIFIED", `{"level":"low","policyVersion":1,"matched":[]}`)
+	if s := fx.revoked(t, "r/ss-3"); s != "BRD:auto:-" {
+		t.Fatal(s)
+	}
+	if n := fx.count(t, "SELECT count(*) FROM audit WHERE repo_id = 'r/ss-3' AND action = 'gate.auto-supersede'"); n != 0 {
+		t.Fatal(n)
 	}
 }

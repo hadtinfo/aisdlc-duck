@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,7 @@ type gfx struct {
 	ownerS, devS, leadS              webtest.Session
 	ingest, approveOwner, approveDev string
 	seq                              int
+	onChanged                        func(repo, feature string) // quan sát Deps.Changed; đặt sau newGfx, trước khi gọi API
 }
 
 // tickingClock: giờ thật, cắt micro giây, luôn tăng ngặt giữa các lần gọi.
@@ -58,6 +60,11 @@ func newGfx(t *testing.T, prefix string) *gfx {
 		f.keys = k
 		d.Keys = k
 		d.Now = tickingClock()
+		d.Changed = func(r, k string) {
+			if f.onChanged != nil {
+				f.onChanged(r, k)
+			}
+		}
 		return web.NewHandler(d)
 	})
 	f.w = f.e.Client(t)
@@ -88,6 +95,7 @@ type feat struct {
 	text                map[string]string
 	evalJSON, stepsJSON string
 	tree                string // "" = không gửi
+	cardsJSON           string // reviewCards; "" = không gửi
 }
 
 func (f *gfx) feat(t *testing.T, repo, key, flow string) *feat {
@@ -126,6 +134,9 @@ func (ft *feat) push() {
 	if ft.tree != "" {
 		s["tree"] = ft.tree
 	}
+	if ft.cardsJSON != "" {
+		s["reviewCards"] = json.RawMessage(ft.cardsJSON)
+	}
 	b, _ := json.Marshal(s)
 	r := ft.f.w.PostBearer("/api/ingest/snapshot", string(b), ft.f.ingest)
 	if r.Status != 200 || r.JSON(t)["accepted"] != true {
@@ -141,6 +152,30 @@ func (ft *feat) submissionBody(gate, findingsJSON string) string {
 
 func (ft *feat) submit(gate, findingsJSON string) webtest.Resp {
 	return ft.f.w.PostBearer("/api/cli/submissions", ft.submissionBody(gate, findingsJSON), ft.f.ingest)
+}
+
+// submitWithRisk nộp sạch kèm risk.level (mức trong risk.yaml).
+func (ft *feat) submitWithRisk(gate, level string) webtest.Resp {
+	b := ft.submissionBody(gate, "[]")
+	b = b[:strings.LastIndex(b, "}")] + `,"risk":{"level":"` + level + `"}}`
+	return ft.f.w.PostBearer("/api/cli/submissions", b, ft.f.ingest)
+}
+
+// importPolicy: chính sách đầu tiên của repo (phiên bản 1), như POST /api/cli/policy/import (Task 9) lưu.
+func (ft *feat) importPolicy(yaml string) {
+	ft.t.Helper()
+	ft.f.exec(ft.t, "INSERT INTO risk_policy_versions(repo_id, version, body, hash, author, reason, source) "+
+		"VALUES ($1, 1, $2, 'sha256:x', $3, 'import', 'import')", ft.repo, yaml, ft.f.owner)
+}
+
+// riskEvent gửi một sự kiện rủi ro của tính năng (Bearer ingest).
+func (ft *feat) riskEvent(typ, detailJSON string) {
+	ft.t.Helper()
+	b, _ := json.Marshal(map[string]any{"repoId": ft.repo, "events": []any{map[string]any{"type": typ,
+		"at": time.Now().UTC().Format(time.RFC3339Nano), "feature": ft.key, "detail": detailJSON}}})
+	if r := ft.f.w.PostBearer("/api/ingest/events", string(b), ft.f.ingest); r.Status != 200 {
+		ft.t.Fatal("events", r.Status, r.Body)
+	}
 }
 
 func (ft *feat) submitOk(gate string) {
@@ -278,4 +313,41 @@ func apprKeys(as []snapshot.Appr, fn func(snapshot.Appr) string) string {
 		out = append(out, fn(a))
 	}
 	return strings.Join(out, ",")
+}
+
+// httpResult là phản hồi đọc được trong goroutine (không gọi t.Fatal ngoài goroutine của test).
+type httpResult struct {
+	status int
+	body   string
+	err    error
+}
+
+func sessionHdr(id, csrf string) map[string]string {
+	return map[string]string{"Cookie": "AISDLC_SESSION=" + id, "X-CSRF-Token": csrf, "Content-Type": "application/json"}
+}
+
+func bearerHdr(token string) map[string]string {
+	return map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+}
+
+// postTo gửi POST tới base (an toàn trong goroutine: lỗi trả về, không gọi t.Fatal).
+func postTo(ctx context.Context, base, path, body string, hdr map[string]string) httpResult {
+	req, err := http.NewRequestWithContext(ctx, "POST", base+path, strings.NewReader(body))
+	if err != nil {
+		return httpResult{err: err}
+	}
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return httpResult{err: err}
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(res.Body)
+	return httpResult{status: res.StatusCode, body: string(b), err: err}
+}
+
+func (f *gfx) post(ctx context.Context, path, body string, hdr map[string]string) httpResult {
+	return postTo(ctx, f.e.Server.URL, path, body, hdr)
 }

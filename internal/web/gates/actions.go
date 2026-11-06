@@ -20,6 +20,8 @@ func gateRoutes(r chi.Router, s *Service) {
 	r.With(limit).Post("/api/gates/reject", s.handle(s.reject))
 	r.With(limit).Post("/api/gates/reopen", s.handle(s.reopen))
 	r.With(limit).Post("/api/gates/confirm-import", s.handle(s.confirmImport))
+	ImportRoutes(r, s)
+	CIRoutes(r, s)
 }
 
 func (s *Service) handle(fn func(r *http.Request, p httpx.Principal) (snapshot.FeatureGateState, error)) http.HandlerFunc {

@@ -167,7 +167,18 @@ func (r *Reader) Owner(ctx context.Context, row Row) (*string, error) {
 
 // EmailToLogin: email (đã trim, chữ thường) → login.
 func (r *Reader) EmailToLogin(ctx context.Context) (map[string]string, error) {
-	rows, err := r.Pool.Query(ctx, "SELECT email, login FROM users WHERE email IS NOT NULL")
+	return EmailToLogin(ctx, r.Pool)
+}
+
+// Querier là pool hoặc tx (pgx).
+type Querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// EmailToLogin đọc qua db cho trước. Trong một tx phải truyền chính tx: lấy thêm kết nối pool khi đang giữ tx (và khóa
+// tính năng) có thể làm cạn pool và treo khi nhiều thao tác cùng lúc.
+func EmailToLogin(ctx context.Context, db Querier) (map[string]string, error) {
+	rows, err := db.Query(ctx, "SELECT email, login FROM users WHERE email IS NOT NULL")
 	if err != nil {
 		return nil, err
 	}

@@ -121,7 +121,8 @@ func TestAuthAreaNormalization(t *testing.T) {
 		{"POST", "/api/login/", "", 401},
 		{"GET", "http://h/api/zz", "", 401},
 		{"GET", "http://h/index.html", "", 401},
-		{"GET", "/index.html", "", 404}, // tĩnh sạch: qua lọc
+		{"GET", "/index.html", "", 200}, // tĩnh sạch: qua lọc, UI nhúng phục vụ index.html
+		{"GET", "/assets/missing.js", "", 404},
 		{"GET", "/a/b.js?x=/api/zz", "", 404},
 		// Bearer: vùng sau chuẩn hóa áp luật, lệch vùng → 403
 		{"GET", "/api/cli;x/zz", "login", 403},

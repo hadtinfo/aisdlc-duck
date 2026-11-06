@@ -7,28 +7,48 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	neturl "net/url"
 	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Open mở pool tới url; user/password khác rỗng thì ghi đè phần trong URL.
-func Open(ctx context.Context, url, user, password string) (*pgxpool.Pool, error) {
+// DefaultUser là user DB mặc định khi cả URL lẫn AISDLC_DB_USER đều không đặt.
+const DefaultUser = "aisdlc"
+
+// poolConfig phân tích url và áp user/password ghi đè.
+func poolConfig(url, user, password string) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("AISDLC_DB_URL không hợp lệ: %w", err)
+	}
+	if user == "" {
+		// Mặc định như application.yml của Java: URL không có user (và không có AISDLC_DB_USER) thì dùng "aisdlc".
+		if u, perr := neturl.Parse(url); perr == nil && (u.Scheme == "postgres" || u.Scheme == "postgresql") && u.User.Username() == "" {
+			user = DefaultUser
+		}
 	}
 	if user != "" {
 		cfg.ConnConfig.User = user
 	}
 	if password != "" {
 		cfg.ConnConfig.Password = password
+	}
+	return cfg, nil
+}
+
+// Open mở pool tới url; user/password khác rỗng thì ghi đè phần trong URL (user mặc định: DefaultUser).
+func Open(ctx context.Context, url, user, password string) (*pgxpool.Pool, error) {
+	cfg, err := poolConfig(url, user, password)
+	if err != nil {
+		return nil, err
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -49,7 +69,12 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	db := stdlib.OpenDBFromPool(pool)
 	defer db.Close()
-	p, err := goose.NewProvider(goose.DialectPostgres, db, sub)
+	// Khóa phiên Postgres (advisory): nhiều bản server khởi động cùng lúc thì lần lượt migrate, không đua nhau.
+	locker, err := lock.NewPostgresSessionLocker()
+	if err != nil {
+		return err
+	}
+	p, err := goose.NewProvider(goose.DialectPostgres, db, sub, goose.WithSessionLocker(locker))
 	if err != nil {
 		return err
 	}

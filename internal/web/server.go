@@ -18,10 +18,13 @@ import (
 
 	"aisdlc/internal/web/auth"
 	"aisdlc/internal/web/board"
+	"aisdlc/internal/web/control"
 	"aisdlc/internal/web/gates"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/ingest"
+	"aisdlc/internal/web/policy"
 	"aisdlc/internal/web/signing"
+	"aisdlc/internal/web/spa"
 	"aisdlc/internal/web/store"
 )
 
@@ -59,12 +62,14 @@ type Deps struct {
 
 // services là các service dựng từ Deps, dùng chung giữa các route.
 type services struct {
-	auth   *auth.Service
-	modes  *gates.ModeService
-	gates  *gates.Service
-	ingest *ingest.Service
-	reader *board.Reader
-	hub    *board.Hub
+	auth    *auth.Service
+	modes   *gates.ModeService
+	gates   *gates.Service
+	ingest  *ingest.Service
+	reader  *board.Reader
+	hub     *board.Hub
+	policy  *policy.Service
+	control *control.Service
 }
 
 // registerRoutes là điểm các task sau thêm route.
@@ -73,6 +78,8 @@ func registerRoutes(r chi.Router, d Deps, s services) {
 	gates.Routes(r, &gates.Handlers{Modes: s.modes, Keys: d.Keys, Gates: s.gates})
 	ingest.Routes(r, s.ingest)
 	board.Routes(r, s.reader, s.hub)
+	policy.Routes(r, s.policy)
+	control.Routes(r, s.control)
 }
 
 // NewHandler dựng router chi: recover, xác thực (bọc mọi request, trước định tuyến), 404/405 JSON cho /api/*, rồi các route.
@@ -90,16 +97,22 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 	reader := &board.Reader{Pool: d.Pool, Now: d.Now} // Control (Task 8) gắn sau
 	hub := board.NewHub(reader)
 	modes := &gates.ModeService{Pool: d.Pool, Keys: d.Keys, Now: d.Now, Auth: a}
-	gs := &gates.Service{Pool: d.Pool, Keys: d.Keys, Modes: modes, Auth: a, Hub: hub, Now: d.Now}
-	reader.Gates = gs
 	changed := func(repoID, feature string) {
 		hub.Publish(repoID, feature)
 		if d.Changed != nil {
 			d.Changed(repoID, feature)
 		}
 	}
-	s := services{auth: a, modes: modes, gates: gs,
-		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed}, reader: reader, hub: hub}
+	gs := &gates.Service{Pool: d.Pool, Keys: d.Keys, Modes: modes, Auth: a, Hub: publishFunc(changed), Now: d.Now}
+	gs.AfterSubmit = gs.AutoApprove // tự duyệt theo mức rủi ro, trong tx nộp
+	reader.Gates = gs
+	ctl := &control.Service{Pool: d.Pool, Keys: d.Keys, Auth: a, Hub: publishFunc(changed), Now: d.Now}
+	reader.Control = ctl
+	s := services{auth: a, modes: modes, gates: gs, control: ctl,
+		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed, RiskChanged: gs.OnRiskChanged}, // thay thế bản tự duyệt, trong tx ingest
+		reader: reader, hub: hub,
+		policy: &policy.Service{Pool: d.Pool, Keys: d.Keys, Auth: a, Now: d.Now}}
+	ui := spa.Embedded()
 	r := chi.NewRouter()
 	r.Use(Recoverer)
 	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody
@@ -109,7 +122,7 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 			httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
-		http.NotFound(w, req)
+		ui.ServeHTTP(w, req) // SPA fallback + tệp tĩnh; không có thì 404
 	})
 	// Spring trả 405 kèm Allow; body JSON dạng ApiError với câu lỗi chuẩn của Spring.
 	r.MethodNotAllowed(func(w http.ResponseWriter, req *http.Request) {
@@ -125,6 +138,11 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 	registerRoutes(r, d, s)
 	return r, hub
 }
+
+// publishFunc đưa một hàm thành giao diện Publish của service.
+type publishFunc func(repoID, feature string)
+
+func (f publishFunc) Publish(repoID, feature string) { f(repoID, feature) }
 
 func isAPI(req *http.Request) bool {
 	return req.URL.Path == "/api" || strings.HasPrefix(req.URL.Path, "/api/")
@@ -184,9 +202,12 @@ func (t *trackingWriter) Write(b []byte) (int, error) {
 	return t.ResponseWriter.Write(b)
 }
 
-func (t *trackingWriter) Flush() {
+func (t *trackingWriter) Flush() { _ = t.FlushError() }
+
+// FlushError để http.ResponseController.Flush thấy lỗi flush/write-deadline của writer gốc (SSE dùng để phát hiện client chết).
+func (t *trackingWriter) FlushError() error {
 	t.started = true
-	_ = http.NewResponseController(t.ResponseWriter).Flush()
+	return http.NewResponseController(t.ResponseWriter).Flush()
 }
 
 func (t *trackingWriter) Unwrap() http.ResponseWriter { return t.ResponseWriter }
@@ -207,6 +228,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	h, hub := build(Deps{Pool: pool, Keys: keys})
+	go SchedulePurge(ctx, time.Now, time.After, (&ingest.Service{Pool: pool, Now: func() time.Time { return time.Now().UTC() }}).PurgeOld) // dừng khi ctx hủy
 	srv := &http.Server{Addr: cfg.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout: 120 * time.Second} // không đặt WriteTimeout: SSE
 	ln, err := net.Listen("tcp", cfg.Listen)

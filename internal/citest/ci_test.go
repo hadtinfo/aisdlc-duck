@@ -299,8 +299,50 @@ func TestMakefileBuildCaHarness(t *testing.T) {
 				t.Errorf("%s không build %s:\n%s", target, strings.TrimSpace(pkg), recipe)
 			}
 		}
+		// CI build với -buildvcs=false: phiên bản (để aisdlc kiểm cùng bản với aisdlc-harness) đi qua ldflags.
+		if strings.Count(recipe, "$(LDVER)") != 2 {
+			t.Errorf("%s phải truyền $(LDVER) cho cả hai binary:\n%s", target, recipe)
+		}
+	}
+	if !strings.Contains(string(b), "-X aisdlc/internal/buildinfo.version=") {
+		t.Error("Makefile thiếu LDVER (-X aisdlc/internal/buildinfo.version=...)")
 	}
 	if !strings.Contains(string(b), "plugin/lib/aisdlc-harness-$$os-$$arch") {
 		t.Error("plugin-dist phải ra plugin/lib/aisdlc-harness-<os>-<arch>")
+	}
+}
+
+// flat nối mọi lệnh của một danh sách lệnh (GitLab làm phẳng danh sách lồng, vd alias *node-setup).
+func flat(v any) string {
+	var sb strings.Builder
+	switch x := v.(type) {
+	case string:
+		sb.WriteString(x + "\n")
+	case []any:
+		for _, y := range x {
+			sb.WriteString(flat(y))
+		}
+	}
+	return sb.String()
+}
+
+// Image mặc định (golang) không có docker CLI, jq, Node: job e2e cài chúng (và Chromium kèm thư viện hệ thống cho
+// Playwright, đúng bản trong e2e/package.json) trước make e2e. run-e2e.sh đòi go git jq curl script docker node npm.
+func TestE2ECaiCongCuTruocKhiChay(t *testing.T) {
+	j := job(t, load(t), "e2e")
+	bs := flat(j["before_script"])
+	for _, w := range []string{
+		"apt-get install", " jq", "bsdutils", // script (util-linux) nằm trong bsdutils
+		"download.docker.com/linux/static/stable/$(uname -m)/docker-", "-C /usr/local/bin", "docker/docker",
+		"deb.nodesource.com", "nodejs",
+		"jq -r .dependencies.playwright e2e/package.json", `npx --yes "playwright@$PW" install --with-deps chromium`,
+		"docker --version", "jq --version", "node --version", "npm --version",
+	} {
+		if !strings.Contains(bs, w) {
+			t.Errorf("e2e before_script thiếu %q:\n%s", w, bs)
+		}
+	}
+	if strings.Index(bs, "jq -r .dependencies.playwright") < strings.Index(bs, "apt-get install") {
+		t.Error("đọc bản Playwright bằng jq phải sau khi cài jq")
 	}
 }

@@ -25,7 +25,7 @@ POST /api/v1/limits/check · body {"accountId": "...", "amount": 1000000}
 | 404 | không thấy tài khoản | `{"error": "NOT_FOUND"}` |
 
 ## DB
-<!-- Migration nằm trong thư mục db/ cạnh file này (ví dụ db/V100__create_usage.sql). -->
+<!-- Migration nằm trong thư mục db/ cạnh file này (ví dụ db/00100_create_usage.sql, theo goose, có `-- +goose Up`). -->
 
 ## Giả định
 <!-- Mỗi lựa chọn BRD/ticket không ghi (kiểu dữ liệu, đơn vị, múi giờ, mặc định, lỗi hệ thống ngoài, khóa/giao dịch...): "- <quyết định>. (<nguồn>)"

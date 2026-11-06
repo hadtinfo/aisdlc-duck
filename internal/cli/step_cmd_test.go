@@ -8,7 +8,7 @@ import (
 
 // CliFlowTest (phần step/scope/diff/eval) và các lệnh tạm eval, web, policy pull.
 
-const s1File = "src/main/java/com/example/limit/web/LimitController.java"
+const s1File = "internal/limit/handler/LimitController.java"
 
 // s1AwaitingDev: như casesApproved + S1 đã finish, đang chờ dev.
 func (r *testRepo) s1AwaitingDev() {
@@ -29,7 +29,7 @@ func TestFullFlowStepAndDiff(t *testing.T) {
 	if c := r.run("step", "start", "S1"); c != 0 {
 		t.Fatalf("exit %d\n%s%s", c, r.out, r.err)
 	}
-	contains(t, r.out, "Bắt đầu bước S1 — Validate request", "src/main/java/**/limit/web/**", "3 file", "C1",
+	contains(t, r.out, "Bắt đầu bước S1 — Validate request", "internal/limit/handler/**", "3 file", "C1",
 		"Xong thì chạy `aisdlc step finish S1`.")
 	r.write(s1File, "class LimitController {}\n")
 	r.write("go.mod", "module example.com/pay\n\ngo 1.26\n// đổi\n")

@@ -27,10 +27,9 @@ plugin-dist:
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags="-s -w" -o plugin/lib/aisdlc-$$os-$$arch ./cmd/aisdlc || exit 1; \
 	done
 
-# UI React: build rồi chép vào thư mục nhúng của server (placeholder được commit sẵn để go build chạy khi chưa build UI).
+# UI React: build rồi chép vào thư mục nhúng của server (dist chỉ có .gitkeep được commit; chưa build UI thì server phục vụ trang placeholder).
 ui:
-	cd web/ui && npm ci && npm run build && rm -rf ../../internal/web/spa/dist && cp -r dist ../../internal/web/spa/dist
-	@git update-index --skip-worktree internal/web/spa/dist/index.html 2>/dev/null || true  # placeholder đã commit bị bản build ghi đè: đừng hiện là sửa đổi
+	cd web/ui && npm ci && npm run build && find ../../internal/web/spa/dist -mindepth 1 ! -name .gitkeep -delete && cp -r dist/. ../../internal/web/spa/dist/
 
 ui-test:
 	cd web/ui && npm ci && npm run test -- --run

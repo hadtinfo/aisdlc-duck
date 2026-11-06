@@ -4,6 +4,6 @@
 /plugin/lib/
 /web/ui/node_modules/
 /web/ui/dist/
-# bản build UI thật; chỉ giữ placeholder index.html
+# bản build UI thật (make ui); chỉ giữ .gitkeep để //go:embed có thư mục
 /internal/web/spa/dist/*
-!/internal/web/spa/dist/index.html
+!/internal/web/spa/dist/.gitkeep

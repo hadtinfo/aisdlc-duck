@@ -11,6 +11,7 @@ import (
 	"aisdlc/internal/model"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/web/httpx"
+	"aisdlc/internal/web/javaish"
 )
 
 // Đọc/kiểm body JSON của các API cổng (GateRequests.java); sai thì trả *httpx.ApiError 400/413.
@@ -47,8 +48,8 @@ func body(r *http.Request) (map[string]any, error) {
 	return m, nil
 }
 
-// isBlank như String.isBlank (khoảng trắng Unicode).
-func isBlank(s string) bool { return strings.TrimSpace(s) == "" }
+// isBlank như String.isBlank (Character.isWhitespace).
+func isBlank(s string) bool { return javaish.IsBlank(s) }
 
 // text là chuỗi bắt buộc: khác rỗng, không chỉ khoảng trắng, không NUL (GateRequests.text).
 func text(b map[string]any, field string) (string, error) {

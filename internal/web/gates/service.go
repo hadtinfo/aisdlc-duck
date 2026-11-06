@@ -19,6 +19,7 @@ import (
 	"aisdlc/internal/web/auth"
 	"aisdlc/internal/web/board"
 	"aisdlc/internal/web/httpx"
+	"aisdlc/internal/web/javaish"
 	"aisdlc/internal/web/review"
 	"aisdlc/internal/web/signing"
 	"aisdlc/internal/web/store"
@@ -55,8 +56,12 @@ type Service struct {
 	Auth  *auth.Service // audit (auth.WriteAudit trong tx)
 	// Hub được báo sau mỗi thao tác làm đổi trạng thái cổng của một tính năng (nil-safe).
 	Hub interface{ Publish(repoID, feature string) }
+	// Now phải tăng đơn điệu (giờ UTC thật trong production): bản nộp chỉ "còn hiệu lực" khi submitted_at lớn hơn
+	// feedback mới nhất của cổng, nên trả lại rồi nộp lại cần thời điểm sau lớn hơn hẳn thời điểm trước. Đồng hồ đứng
+	// yên hoặc lùi làm bản nộp lại bị coi như đã bị trả lại.
 	Now func() time.Time
 	// AfterSubmit chạy trong tx nộp, sau khi đã lưu submission (Task 7: AutoApprover.afterSubmit). nil = không làm gì.
+	// Mọi truy vấn của nó phải đi qua tx (không dùng Pool): tx đang giữ một kết nối và khóa của tính năng.
 	AfterSubmit func(ctx context.Context, tx pgx.Tx, s Submitted) error
 }
 
@@ -241,7 +246,7 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p httpx.Principal, r
 	if row == nil {
 		return nil, httpx.NewError(http.StatusNotFound, "Không tìm thấy tính năng")
 	}
-	emails, err := (&board.Reader{Pool: s.Pool}).EmailToLogin(ctx)
+	emails, err := board.EmailToLogin(ctx, tx) // trên tx: không lấy thêm kết nối pool khi đang giữ khóa
 	if err != nil {
 		return nil, err
 	}
@@ -754,7 +759,4 @@ func utf16Len(s string) int {
 	return n
 }
 
-// javaTrim như String.trim: bỏ ký tự <= U+0020 ở hai đầu.
-func javaTrim(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool { return r <= ' ' })
-}
+func javaTrim(s string) string { return javaish.Trim(s) }

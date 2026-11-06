@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"aisdlc/internal/web/httpx"
+	"aisdlc/internal/web/javaish"
 )
 
 // MaxPatchChars là tổng độ dài patch tối đa trả về (đơn vị ký tự UTF-16 như String.length của Java); quá thì các patch
@@ -239,11 +240,6 @@ func title(line string) string {
 	return javaTrim(t)
 }
 
-// javaTrim như String.trim: bỏ ký tự <= U+0020 ở hai đầu.
-func javaTrim(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool { return r <= ' ' })
-}
-
 // index: artifact có nội dung theo đường dẫn (file vắng bị bỏ), kèm thứ tự.
 func index(s StoredSubmission) (map[string]*fileish, []string) {
 	m := map[string]*fileish{}
@@ -276,3 +272,5 @@ func utf16Len(s string) int {
 	}
 	return n
 }
+
+func javaTrim(s string) string { return javaish.Trim(s) }

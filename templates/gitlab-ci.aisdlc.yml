@@ -5,7 +5,7 @@
 # Harness chạy Postgres/Kafka bằng testcontainers qua Docker-in-Docker: DOCKER_HOST trỏ tới service docker:dind (không TLS,
 # cổng 2375), TESTCONTAINERS_HOST_OVERRIDE=docker để harness nối tới container qua host "docker", và tắt Ryuk
 # (TESTCONTAINERS_RYUK_DISABLED) vì job dùng dind riêng, bị huỷ cả khi job xong. GIT_DEPTH: 0 để merge-base chạy được
-# (không shallow clone).
+# (không shallow clone). Khi Ryuk tắt, job bị crash thì container còn sót được dọn nhờ dind bị hủy cùng job.
 aisdlc-eval:
   stage: test
   image: golang:1.26
@@ -17,6 +17,15 @@ aisdlc-eval:
     DOCKER_TLS_CERTDIR: ""
     TESTCONTAINERS_HOST_OVERRIDE: docker
     TESTCONTAINERS_RYUK_DISABLED: "true"
+    GOPATH: $CI_PROJECT_DIR/.go
+    GOCACHE: $CI_PROJECT_DIR/.gocache
+  cache:
+    key:
+      files:
+        - go.sum
+    paths:
+      - .go/pkg/mod/
+      - .gocache/
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:

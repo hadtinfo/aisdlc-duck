@@ -36,20 +36,23 @@ func TestTemplatesHaveNoJavaMentions(t *testing.T) {
 }
 
 func TestDesignTemplateScopesAreGo(t *testing.T) {
-	for _, f := range []string{"design.yaml", "cases.lite.yaml"} {
-		if !strings.Contains(read(t, f), "internal/limit/") {
-			t.Errorf("%s thiếu scope internal/limit/**", f)
-		}
+	want := map[string][]string{
+		"design.yaml":     {`["internal/limit/handler/**", "cmd/server/**"]`, `["internal/limit/service/**", "db/migrations/**"]`},
+		"cases.lite.yaml": {`scope: ["internal/limit/handler/*.go"]`},
 	}
-	if !strings.Contains(read(t, "design.yaml"), "db/migrations/**") {
-		t.Error("design.yaml thiếu db/migrations/**")
+	for f, ws := range want {
+		for _, w := range ws {
+			if !strings.Contains(read(t, f), w) {
+				t.Errorf("%s thiếu scope %s", f, w)
+			}
+		}
 	}
 }
 
 func TestCITemplateUsesGoAndDind(t *testing.T) {
 	s := read(t, "gitlab-ci.aisdlc.yml")
 	for _, w := range []string{"image: golang:", "docker:dind", "DOCKER_HOST: tcp://docker:2375",
-		"TESTCONTAINERS_HOST_OVERRIDE: docker", "aisdlc eval --ci"} {
+		"TESTCONTAINERS_HOST_OVERRIDE: docker", "TESTCONTAINERS_RYUK_DISABLED", "go.sum", "aisdlc eval --ci"} {
 		if !strings.Contains(s, w) {
 			t.Errorf("CI thiếu %q", w)
 		}

@@ -1,4 +1,4 @@
-// Dịch vụ mẫu e2e: GET /api/v1/fees, GET /healthz. Tắt êm khi nhận SIGTERM để coverage được ghi.
+// Dịch vụ mẫu e2e: route khai trong routes.go. Tắt êm khi nhận SIGTERM để coverage được ghi.
 package main
 
 import (
@@ -11,25 +11,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"example.com/fixture/internal/fee"
 )
 
 func main() {
 	ctx := context.Background()
+	var pool *pgxpool.Pool
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
-		pool, err := pgxpool.New(ctx, dsn)
-		if err != nil {
+		var err error
+		if pool, err = pgxpool.New(ctx, dsn); err != nil {
 			log.Fatalf("database: %v", err)
 		}
 		defer pool.Close()
 	}
-	r := chi.NewRouter()
-	r.Mount("/", fee.Router())
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	srv := &http.Server{Addr: "127.0.0.1:" + os.Getenv("PORT"), Handler: r}
+	srv := &http.Server{Addr: "127.0.0.1:" + os.Getenv("PORT"), Handler: routes(pool)}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM, os.Interrupt)

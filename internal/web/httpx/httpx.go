@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -72,6 +73,14 @@ func TooLarge() *ApiError { return NewError(http.StatusRequestEntityTooLarge, "P
 
 const maxDrain = 256 << 20
 
+// Drain đọc bỏ phần thân request còn lại (tối đa 256 MB) để client đang gửi nhận được phản hồi chứ không bị reset,
+// như Tomcat max-swallow-size -1 của Java.
+func Drain(r *http.Request) {
+	if r.Body != nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxDrain))
+	}
+}
+
 // LimitBody giới hạn body tối đa max byte. Quá giới hạn (theo Content-Length hoặc khi đọc) thì đọc bỏ phần còn lại
 // (để client nhận được phản hồi chứ không bị reset) rồi trả 413 {"error":"Payload vượt 8 MB"}.
 func LimitBody(max int64) func(http.Handler) http.Handler {
@@ -121,7 +130,12 @@ type Principal struct {
 	Login  string
 	Role   string
 	Via    string // "session" | "login" | "ingest" | "ci" | "approve"
+	// TokenID là id token Bearer; 0 khi đi bằng phiên.
+	TokenID int64
 }
+
+// IsLead cho biết vai trò lead.
+func (p Principal) IsLead() bool { return p.Role == "lead" }
 
 // IsSession cho biết xác thực bằng cookie phiên.
 func (p Principal) IsSession() bool { return p.Via == "session" }
@@ -139,5 +153,20 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 	return p, ok
 }
 
-// Instant định dạng thời điểm ISO-8601 UTC (có phần lẻ giây khi khác 0, bỏ số 0 thừa cuối).
-func Instant(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+// Instant định dạng thời điểm ISO-8601 UTC như DateTimeFormatter.ISO_INSTANT của Java (Jackson, Instant.toString):
+// không có phần lẻ giây khi bằng 0, ngược lại đệm tới 3, 6 hoặc 9 chữ số (".500Z", ".123456Z", ".123456789Z").
+func Instant(t time.Time) string {
+	t = t.UTC()
+	base := t.Format("2006-01-02T15:04:05")
+	ns := t.Nanosecond()
+	switch {
+	case ns == 0:
+		return base + "Z"
+	case ns%1_000_000 == 0:
+		return fmt.Sprintf("%s.%03dZ", base, ns/1_000_000)
+	case ns%1_000 == 0:
+		return fmt.Sprintf("%s.%06dZ", base, ns/1_000)
+	default:
+		return fmt.Sprintf("%s.%09dZ", base, ns)
+	}
+}

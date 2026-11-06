@@ -80,8 +80,20 @@ func TestInstantFormat(t *testing.T) {
 	if got := httpx.Instant(time.Date(2026, 11, 5, 17, 0, 0, 0, loc)); got != "2026-11-05T10:00:00Z" {
 		t.Fatal(got)
 	}
-	if got := httpx.Instant(time.Date(2026, 11, 5, 10, 0, 0, 500_000_000, time.UTC)); got != "2026-11-05T10:00:00.5Z" {
-		t.Fatal(got)
+	for _, c := range []struct {
+		ns   int
+		want string
+	}{
+		{500_000_000, "2026-11-05T10:00:00.500Z"},
+		{123_000_000, "2026-11-05T10:00:00.123Z"},
+		{123_456_000, "2026-11-05T10:00:00.123456Z"},
+		{100_000, "2026-11-05T10:00:00.000100Z"},
+		{123_456_789, "2026-11-05T10:00:00.123456789Z"},
+		{1, "2026-11-05T10:00:00.000000001Z"},
+	} {
+		if got := httpx.Instant(time.Date(2026, 11, 5, 10, 0, 0, c.ns, time.UTC)); got != c.want {
+			t.Errorf("%d: %s, muốn %s", c.ns, got, c.want)
+		}
 	}
 }
 

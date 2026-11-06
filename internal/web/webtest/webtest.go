@@ -23,6 +23,7 @@ import (
 
 // Env là môi trường của một test.
 type Env struct {
+	URL    string // URL pgx của DB riêng của test
 	Pool   *pgxpool.Pool
 	Server *httptest.Server
 	Now    *time.Time // đồng hồ giả, đổi được giữa các bước
@@ -93,7 +94,7 @@ func New(t *testing.T, build func(web.Deps) http.Handler) *Env {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
-	env := &Env{Pool: pool, Now: &now}
+	env := &Env{URL: u.String(), Pool: pool, Now: &now}
 	h := build(web.Deps{Pool: pool, Now: func() time.Time { return *env.Now }})
 	env.Server = httptest.NewServer(h)
 	t.Cleanup(env.Server.Close) // chạy trước cleanup đóng pool (LIFO)

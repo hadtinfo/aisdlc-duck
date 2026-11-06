@@ -29,11 +29,22 @@ func TestConfigFromEnvDefaults(t *testing.T) {
 	}
 }
 
-func TestUnknownApiIs404JSON(t *testing.T) {
+// /api lạ không xác thực → 401 (lọc chạy trước định tuyến, như AuthFilter); đã xác thực → 404 JSON
+// (TestMethodNotAllowedJSON ở internal/web/auth).
+func TestUnknownApiUnauthenticatedIs401JSON(t *testing.T) {
 	h := web.NewHandler(web.Deps{})
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/nope", nil))
-	if w.Code != 404 || strings.TrimSpace(w.Body.String()) != `{"error":"not found"}` {
+	if w.Code != 401 || strings.TrimSpace(w.Body.String()) != `{"error":"unauthorized"}` {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestStaticPathNotFoundPlain(t *testing.T) {
+	h := web.NewHandler(web.Deps{})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/nope.js", nil))
+	if w.Code != 404 || strings.Contains(w.Body.String(), "unauthorized") {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }

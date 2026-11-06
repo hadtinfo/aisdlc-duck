@@ -46,10 +46,10 @@ ui:
 
 build:
   stage: build
-  before_script: *node-setup
+  needs: [ui]
   script:
     - make plugin-dist
-    - make build-web
+    - make build-web-bin
   artifacts:
     paths: [plugin/lib/, bin/aisdlc-web]
     expire_in: 1 week
@@ -58,30 +58,28 @@ docker:
   extends: .dind
   stage: docker
   image: docker:27
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
+  needs: []
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   script:
-    - docker build -f Dockerfile.web -t "$CI_REGISTRY_IMAGE/web:${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}" .
+    - IMAGE="${CI_REGISTRY_IMAGE:-aisdlc}/web:${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+    - docker build -f Dockerfile.web -t "$IMAGE" .
     - |
       if [ -n "$CI_REGISTRY_IMAGE" ] && [ -n "$CI_REGISTRY_PASSWORD" ]; then
         echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-        docker push "$CI_REGISTRY_IMAGE/web:${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+        docker push "$IMAGE"
       fi
 
 # e2e chạy tay hoặc theo lịch; chạy hai lần liền để kiểm tra chạy lại trên cùng máy sạch sót.
-# Bỏ qua êm nếu Makefile chưa có target e2e.
 e2e:
   extends: .dind
   stage: e2e
+  needs: []
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - when: manual
       allow_failure: true
   script:
-    - grep -q '^e2e:' Makefile || { echo "Makefile chưa có target e2e, bỏ qua"; exit 0; }
     - make e2e
     - make e2e

@@ -182,3 +182,73 @@ func TestCacheGoTheoGoSum(t *testing.T) {
 		t.Errorf("cache key phải theo go.sum: %v", c)
 	}
 }
+
+func TestDindTatTLS(t *testing.T) {
+	for _, name := range []string{"check", "e2e", "docker"} {
+		svcs, _ := job(t, load(t), name)["services"].([]any)
+		ok := false
+		for _, s := range svcs {
+			m, _ := s.(map[string]any)
+			cmd, _ := m["command"].([]any)
+			for _, c := range cmd {
+				if str(c) == "--tls=false" {
+					ok = true
+				}
+			}
+		}
+		if !ok {
+			t.Errorf("job %s: service dind thiếu command --tls=false", name)
+		}
+	}
+}
+
+func TestE2EKhongCoGuardBoQua(t *testing.T) {
+	s := script(job(t, load(t), "e2e"))
+	if strings.Contains(s, "grep") || strings.Contains(s, "exit 0") {
+		t.Errorf("e2e không được có guard bỏ qua: %s", s)
+	}
+}
+
+func TestDockerKhongKhaiBaoLaiBienDind(t *testing.T) {
+	raw := load(t)["docker"].(map[string]any)
+	if v, ok := raw["variables"]; ok {
+		t.Errorf("job docker không nên khai báo lại variables của .dind: %v", v)
+	}
+	if !strings.Contains(script(raw), "aisdlc") {
+		t.Error("docker cần tag dự phòng khi không có CI_REGISTRY_IMAGE")
+	}
+}
+
+func TestNeedsVaArtifactLaDauRaMakefile(t *testing.T) {
+	p := load(t)
+	for _, name := range []string{"docker", "e2e"} {
+		if n, ok := job(t, p, name)["needs"].([]any); !ok || len(n) != 0 {
+			t.Errorf("job %s phải có needs: []", name)
+		}
+	}
+	b := job(t, p, "build")
+	if n, _ := b["needs"].([]any); len(n) != 1 || str(n[0]) != "ui" {
+		t.Errorf("build phải needs: [ui], có %v", b["needs"])
+	}
+	if strings.Contains(script(b), "make build-web\n") || strings.Contains(script(b), "npm") {
+		t.Error("build không được chạy lại UI")
+	}
+	mk, err := os.ReadFile("../../Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"build", "ui"} {
+		arts, _ := job(t, p, name)["artifacts"].(map[string]any)
+		paths, _ := arts["paths"].([]any)
+		if len(paths) == 0 {
+			t.Fatalf("job %s thiếu artifacts.paths", name)
+		}
+		for _, x := range paths {
+			p := strings.TrimSuffix(str(x), "/")
+			base := p[strings.LastIndex(p, "/")+1:]
+			if !strings.Contains(string(mk), p) && !strings.Contains(string(mk), base) {
+				t.Errorf("artifact %s không thấy trong Makefile", p)
+			}
+		}
+	}
+}

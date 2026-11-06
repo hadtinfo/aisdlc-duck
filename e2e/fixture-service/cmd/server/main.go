@@ -1,4 +1,5 @@
 // Dịch vụ mẫu e2e: route khai trong routes.go. Tắt êm khi nhận SIGTERM để coverage được ghi.
+// FIXTURE_IGNORE_SIGTERM=1: bỏ qua SIGTERM (nhánh âm tính của e2e: harness phải SIGKILL, coverage N/A).
 package main
 
 import (
@@ -27,7 +28,12 @@ func main() {
 	srv := &http.Server{Addr: "127.0.0.1:" + os.Getenv("PORT"), Handler: routes(pool)}
 
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM, os.Interrupt)
+	if os.Getenv("FIXTURE_IGNORE_SIGTERM") == "1" {
+		signal.Ignore(syscall.SIGTERM)
+		signal.Notify(sig, os.Interrupt)
+	} else {
+		signal.Notify(sig, syscall.SIGTERM, os.Interrupt)
+	}
 	go func() {
 		<-sig
 		sctx, cancel := context.WithTimeout(ctx, 5*time.Second)

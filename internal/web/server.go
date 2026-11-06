@@ -18,6 +18,7 @@ import (
 
 	"aisdlc/internal/web/auth"
 	"aisdlc/internal/web/board"
+	"aisdlc/internal/web/control"
 	"aisdlc/internal/web/gates"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/ingest"
@@ -60,13 +61,14 @@ type Deps struct {
 
 // services là các service dựng từ Deps, dùng chung giữa các route.
 type services struct {
-	auth   *auth.Service
-	modes  *gates.ModeService
-	gates  *gates.Service
-	ingest *ingest.Service
-	reader *board.Reader
-	hub    *board.Hub
-	policy *policy.Service
+	auth    *auth.Service
+	modes   *gates.ModeService
+	gates   *gates.Service
+	ingest  *ingest.Service
+	reader  *board.Reader
+	hub     *board.Hub
+	policy  *policy.Service
+	control *control.Service
 }
 
 // registerRoutes là điểm các task sau thêm route.
@@ -76,6 +78,7 @@ func registerRoutes(r chi.Router, d Deps, s services) {
 	ingest.Routes(r, s.ingest)
 	board.Routes(r, s.reader, s.hub)
 	policy.Routes(r, s.policy)
+	control.Routes(r, s.control)
 }
 
 // NewHandler dựng router chi: recover, xác thực (bọc mọi request, trước định tuyến), 404/405 JSON cho /api/*, rồi các route.
@@ -102,7 +105,9 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 			d.Changed(repoID, feature)
 		}
 	}
-	s := services{auth: a, modes: modes, gates: gs,
+	ctl := &control.Service{Pool: d.Pool, Keys: d.Keys, Auth: a, Hub: publishFunc(changed), Now: d.Now}
+	reader.Control = ctl
+	s := services{auth: a, modes: modes, gates: gs, control: ctl,
 		ingest: &ingest.Service{Pool: d.Pool, Now: d.Now, Changed: changed, RiskChanged: gs.OnRiskChanged}, // thay thế bản tự duyệt, trong tx ingest
 		reader: reader, hub: hub,
 		policy: &policy.Service{Pool: d.Pool, Keys: d.Keys, Auth: a, Now: d.Now}}
@@ -131,6 +136,11 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 	registerRoutes(r, d, s)
 	return r, hub
 }
+
+// publishFunc đưa một hàm thành giao diện Publish của service.
+type publishFunc func(repoID, feature string)
+
+func (f publishFunc) Publish(repoID, feature string) { f(repoID, feature) }
 
 func isAPI(req *http.Request) bool {
 	return req.URL.Path == "/api" || strings.HasPrefix(req.URL.Path, "/api/")

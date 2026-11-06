@@ -45,6 +45,7 @@ func newReopenCmd(ctx *Context) *cobra.Command {
 		}
 		ctx.Println("Đã mở lại cổng " + string(g) + "; sửa artifact rồi `aisdlc submit " +
 			strings.ToLower(string(g)) + "`.")
+		ctx.AfterCommand(f, "reopen "+strings.ToLower(string(g)))
 		return ExitOK, nil
 	})
 	return c

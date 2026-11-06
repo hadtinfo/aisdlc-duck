@@ -112,7 +112,7 @@ func TestScopeAllowOutsideRepoExit2(t *testing.T) {
 func TestWebStubsExit2(t *testing.T) {
 	r := newTestRepo(t)
 	r.setupInit()
-	for _, sub := range []string{"status", "push", "flush", "login", "approve-token", "migrate"} {
+	for _, sub := range []string{"status", "push", "login", "approve-token", "migrate"} { // flush: hook_web_test.go
 		eq(t, r.run("web", sub), 2)
 		contains(t, r.err, "Lệnh web chưa có trong bản Go (giai đoạn 4).")
 	}

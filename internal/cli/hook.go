@@ -19,7 +19,7 @@ import (
 // Hook của Claude Code (HookCommand của Java): đọc JSON từ stdin, gọi policy, in quyết định. Luôn exit 0 như bản
 // Java (Claude Code chỉ đọc JSON trên stdout khi exit 0). Ngoài repo AISDLC: không in gì. Trong repo AISDLC mà lỗi
 // (kể cả panic): PreToolUse của tool ghi thì deny (đóng), sự kiện khác thì im lặng. Hook không bao giờ gọi mạng
-// (Context.Offline): chế độ web chỉ đọc cache đã ký; outbox, web flush, sổ điều khiển là giai đoạn 4.
+// (Context.Offline): chế độ web chỉ đọc cache đã ký; event chỉ ghi vào outbox rồi mở `web flush` nền (hook_web.go).
 
 var (
 	// guardedTools: tool ghi, xét đủ luật.
@@ -73,9 +73,10 @@ func newHookCmd(ctx *Context) *cobra.Command {
 		event("stop", "Hook Stop: không cho agent dừng giữa bước.", nil, (*hook).stop),
 		event("session-start", "Hook SessionStart: nạp quy tắc và trạng thái vào ngữ cảnh.", nil,
 			(*hook).sessionStart),
-		event("post-tool-use", "Hook PostToolUse: phục vụ web (giai đoạn 4); hiện im lặng.", nil, (*hook).silent),
-		event("user-prompt-submit", "Hook UserPromptSubmit: phục vụ web (giai đoạn 4); hiện im lặng.", nil,
-			(*hook).silent),
+		event("post-tool-use", "Hook PostToolUse: giao chỉ dẫn từ web cho agent, gửi event sửa file lên web.", nil,
+			(*hook).postToolUse),
+		event("user-prompt-submit", "Hook UserPromptSubmit: làm mới điều khiển từ web ở nền, giao chỉ dẫn chưa giao.",
+			nil, (*hook).userPromptSubmit),
 	)
 	return cmd
 }
@@ -238,6 +239,12 @@ func (h *hook) guarded(in *hookInput, root, tool string) (preDecision, bool, err
 	}
 	dec := policy.PreToolUse(policy.ToolCall{ToolName: tool, FilePath: file, Command: command, Cwd: in.cwd}, st)
 	if !dec.Allow {
+		switch dec.Code {
+		case "PAUSED":
+			h.pausedFlush(root)
+		case "OUT_OF_SCOPE":
+			h.scopeDenied(root, in.cwd, file, st)
+		}
 		return preDecision{"deny", dec.Reason}, true, nil
 	}
 	return preDecision{}, false, nil
@@ -278,18 +285,27 @@ func (h *hook) stop() int {
 	if !found || in.json == nil {
 		return ExitOK
 	}
-	defer func() { _ = recover() }() // im lặng: không chặn được việc dừng thì thôi
+	if !h.stopBlocked(in, root) {
+		h.sessionEvent(root, "SESSION_STOP") // chặn dừng = agent còn chạy tiếp
+	}
+	return ExitOK
+}
+
+// stopBlocked in quyết định chặn dừng nếu có; lỗi thì im lặng (không chặn được việc dừng thì thôi).
+func (h *hook) stopBlocked(in *hookInput, root string) (blocked bool) {
+	defer func() { _ = recover() }()
 	st, _, err := h.state(root)
 	if err != nil {
-		return ExitOK
+		return false
 	}
 	if d := policy.Stop(truthy(in.json["stop_hook_active"]), st); !d.Allow {
+		blocked = true
 		h.printJSON(struct {
 			Decision string `json:"decision"`
 			Reason   string `json:"reason"`
 		}{"block", d.Reason})
 	}
-	return ExitOK
+	return blocked
 }
 
 func (h *hook) sessionStart() int {
@@ -301,10 +317,17 @@ func (h *hook) sessionStart() int {
 	if !found || in.json == nil {
 		return ExitOK
 	}
-	defer func() { _ = recover() }() // im lặng
+	h.sessionContext(in, root)
+	h.sessionEvent(root, "SESSION_START")
+	return ExitOK
+}
+
+// sessionContext in quy tắc và trạng thái (additionalContext); lỗi thì im lặng.
+func (h *hook) sessionContext(in *hookInput, root string) {
+	defer func() { _ = recover() }()
 	st, f, err := h.state(root)
 	if err != nil || !stateReadable(st) {
-		return ExitOK
+		return
 	}
 	text := policy.SessionContext(st)
 	// 2b chỉ đọc cache: chỉ dẫn chưa có trong sổ cục bộ (không ghi sổ, không event — giai đoạn 4)
@@ -316,7 +339,6 @@ func (h *hook) sessionStart() int {
 	h.printJSON(struct {
 		Out sessionStartOut `json:"hookSpecificOutput"`
 	}{sessionStartOut{"SessionStart", text}})
-	return ExitOK
 }
 
 type sessionStartOut struct {
@@ -339,13 +361,6 @@ func stateReadable(st policy.PolicyState) bool {
 	}
 	_, _, err := st.Steps.Current()
 	return err == nil
-}
-
-// silent: post-tool-use và user-prompt-submit chỉ phục vụ web (giai đoạn 4): đọc hết stdin, không in gì.
-func (h *hook) silent() int {
-	h.ctx.Offline()
-	_, _ = io.Copy(io.Discard, h.ctx.In())
-	return ExitOK
 }
 
 // exportSession ghi `export AISDLC_SESSION=<id>` vào CLAUDE_ENV_FILE để mọi lệnh Bash của session mang biến này

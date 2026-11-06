@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -83,6 +84,7 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 			return 0, err
 		}
 		ctx.Println("Đã duyệt cổng " + string(g) + " bởi " + a.Approver + " (hash " + a.Hash + ").")
+		ctx.AfterCommand(f, "approve "+strings.ToLower(string(g)))
 		return ExitOK, nil
 	})
 	return c

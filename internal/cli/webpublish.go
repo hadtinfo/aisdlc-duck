@@ -16,15 +16,20 @@ import (
 // AfterCommand (snapshot + event COMMAND, gửi ngay tối đa 2 giây); hook chỉ ghi outbox rồi mở `aisdlc web flush` nền.
 // Web tắt (chưa cấu hình) thì mọi thứ ở đây không làm gì. Lỗi chỉ ra stderr, không đổi stdout hay mã thoát.
 
-// WithFlushSpawner thay cách mở tiến trình gửi nền `aisdlc web flush` cho repo root (test ghi lại thay vì mở).
-func (c *Context) WithFlushSpawner(f func(root string) error) *Context { c.spawnFlush = f; return c }
+// WithFlushSpawner thay cách mở tiến trình gửi nền `aisdlc web flush` cho repo root (test ghi lại thay vì mở);
+// feature là tính năng của phiên gọi ("" nếu không có).
+func (c *Context) WithFlushSpawner(f func(root string, feature model.FeatureKey) error) *Context {
+	c.spawnFlush = f
+	return c
+}
 
-// SpawnFlush mở `aisdlc web flush` tách rời cho repo root.
+// SpawnFlush mở `aisdlc web flush` tách rời cho repo root, kèm `--feature` là tính năng của phiên (flushFeature, do
+// hook đặt) để tiến trình nền làm mới cả tính năng đó, không chỉ .aisdlc/active.
 func (c *Context) SpawnFlush(root string) error {
 	if c.spawnFlush != nil {
-		return c.spawnFlush(root)
+		return c.spawnFlush(root, c.flushFeature)
 	}
-	return webclient.SpawnFlush(root)
+	return webclient.SpawnFlush(root, string(c.flushFeature))
 }
 
 // Publisher là bộ gửi web của repo root (một bản mỗi repo mỗi lệnh; cấu hình web đọc lười một lần). Lỗi ra stderr.

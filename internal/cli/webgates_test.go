@@ -761,3 +761,13 @@ func (r *testRepo) tree(rel string) []string {
 	})
 	return out
 }
+
+// URL web có userinfo (user:mật khẩu@): link duyệt in ra không mang userinfo.
+func TestApproveTokenLinkStripsUserinfo(t *testing.T) {
+	g := newGatesFx(t)
+	g.designAwaiting()
+	g.env["AISDLC_WEB_URL"] = strings.Replace(g.web.URL(), "http://", "http://alice:s3cret@", 1)
+	eq(t, g.runC(typed("PAY-1"), "approve", "design"), 2)
+	contains(t, g.err, "Chưa có token approve. Duyệt trên web: "+g.web.URL()+"/f/")
+	notContains(t, g.out+g.err, "alice", "s3cret")
+}

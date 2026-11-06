@@ -5,8 +5,14 @@ PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 build:
 	go build -o bin/aisdlc ./cmd/aisdlc
 
+# Số gói test chạy song song. Mặc định của Go (= số CPU) mở hàng chục container Docker cùng lúc (mỗi gói web một
+# Postgres, harness thêm Kafka) với một Ryuk dùng chung: máy bận thì test Docker chập chờn ("wait for reaper …:
+# context deadline exceeded") và số đo độ trễ hook lệch. Đổi bằng `make test TEST_P=8`. Thời hạn Ryuk được nới
+# trong harnesstest.RequireDocker (TuneTestcontainers).
+TEST_P ?= 4
+
 test:
-	go test ./...
+	go test -p $(TEST_P) ./...
 
 test-short:
 	AISDLC_SKIP_DOCKER=1 go test ./...

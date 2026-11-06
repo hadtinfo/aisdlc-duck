@@ -45,9 +45,11 @@ build-web:
 ci:
 	$(MAKE) check && $(MAKE) ui && $(MAKE) ui-test
 
-# Placeholder: Task 4 thay bằng e2e/run-e2e.sh. Cố ý fail để job CI không xanh giả.
+# E2E toàn bộ (cần Go, Docker, git, jq, curl, script, Node + npm): repo đầu (PAY-1 FULL, FIX-2 LITE, âm tính), web
+# (server Go + Postgres docker run, Playwright), flow, session. Log ở e2e/out/. Chạy lại liền nhiều lần được.
 e2e:
-	@echo "e2e chưa có: Task 4 sẽ thêm e2e/run-e2e.sh" >&2; exit 1
+	bash e2e/run-e2e.sh
 
+# Chỉ phần web: repo local/web-service (duyệt trên web, điều khiển agent) và flow-service ở chế độ web.
 e2e-web:
-	@echo "e2e-web chưa có: Task 4 sẽ thêm e2e/run-e2e.sh" >&2; exit 1
+	E2E_PARTS=web,flow WEB=1 bash e2e/run-e2e.sh

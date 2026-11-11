@@ -126,10 +126,14 @@ func (s *Service) audit(ctx context.Context, tx pgx.Tx, e auth.AuditEntry) error
 	return s.Auth.WriteAudit(ctx, tx, e)
 }
 
-// ImportFirst nhập lần đầu. YAML hỏng → *risk.PolicyError; đã có phiên bản → không đổi gì (created=false).
+// ImportFirst nhập lần đầu. YAML hỏng hoặc còn schema 1 → *risk.PolicyError (schema 1: thông điệp của Usable, nhắc
+// chạy `aisdlc policy migrate` trước); đã có phiên bản → không đổi gì (created=false).
 func (s *Service) ImportFirst(ctx context.Context, repo, yaml, author, ip string) (created bool, version int, err error) {
 	p, err := risk.ParsePolicy(yaml)
 	if err != nil {
+		return false, 0, err
+	}
+	if err := p.Usable(); err != nil {
 		return false, 0, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {

@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -126,7 +127,7 @@ func TestImportCreatesV1OnceOnly(t *testing.T) {
 	if got := f.str(t, "SELECT source || '|' || author || '|' || reason FROM risk_policy_versions WHERE repo_id = $1 AND version = 1", repo); got != "import|"+f.owner+"|Nhập từ aisdlc/risk-policy.yaml" {
 		t.Fatal(got)
 	}
-	banking, _ := risk.PresetYAML("banking", "1")
+	banking, _ := risk.PresetYAML("banking", risk.PresetLatestVersion("banking"))
 	if r := f.importYaml(repo, banking); r.Status != 200 || r.JSON(t)["version"] != 1.0 {
 		t.Fatal(r.Status, r.Body)
 	}
@@ -338,6 +339,43 @@ func schema1YAML(t *testing.T) string {
 	return y
 }
 
+// seedSchema1: repo có phiên bản 1 schema 1 (nhập trước khi web từ chối schema 1), ghi thẳng vào DB.
+func (f *fixture) seedSchema1(t *testing.T, repo string) {
+	t.Helper()
+	p, err := risk.ParsePolicy(schema1YAML(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Version = 1
+	y, err := p.ToYAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.e.Pool.Exec(t.Context(), "INSERT INTO risk_policy_versions(repo_id, version, body, hash, author, reason, source) "+
+		"VALUES ($1, 1, $2, $3, $4, 'import', 'import')", repo, y, p.Hash(), f.owner); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Nhập lần đầu chính sách schema 1: 400 với đúng thông điệp Usable (nhắc `aisdlc policy migrate`), không tạo phiên bản.
+func TestImportRejectsSchema1(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	r := f.importYaml(repo, schema1YAML(t))
+	p, _ := risk.ParsePolicy(schema1YAML(t))
+	var pe *risk.PolicyError
+	if !errors.As(p.Usable(), &pe) {
+		t.Fatal("Usable phải trả *risk.PolicyError")
+	}
+	want := pe.Errors[0]
+	if r.Status != 400 || r.JSON(t)["error"] != want || !strings.Contains(want, "aisdlc policy migrate") {
+		t.Fatal(r.Status, r.Body)
+	}
+	if f.count(t, repo) != 0 {
+		t.Fatal("không được tạo phiên bản")
+	}
+}
+
 func (f *fixture) migrateDraft(repo string) webtest.Resp {
 	b, _ := json.Marshal(map[string]any{"repo": repo})
 	return f.w.PostSession("/api/policy/migrate-draft", string(b), f.ownerS, f.ownerS.CSRF)
@@ -346,9 +384,7 @@ func (f *fixture) migrateDraft(repo string) webtest.Resp {
 func TestMigrateDraftFromSchema1(t *testing.T) {
 	f := newFixture(t)
 	repo := f.repo()
-	if r := f.importYaml(repo, schema1YAML(t)); r.Status != 201 {
-		t.Fatal(r.Status, r.Body)
-	}
+	f.seedSchema1(t, repo)
 	if f.live(t, repo)["policy"].(map[string]any)["schema"] != 1.0 {
 		t.Fatal("chính sách sống phải là schema 1")
 	}
@@ -391,9 +427,7 @@ func TestMigrateDraftFromSchema1(t *testing.T) {
 func TestPublishRejectsSchema1(t *testing.T) {
 	f := newFixture(t)
 	repo := f.repo()
-	if r := f.importYaml(repo, schema1YAML(t)); r.Status != 201 {
-		t.Fatal(r.Status, r.Body)
-	}
+	f.seedSchema1(t, repo)
 	p1 := f.live(t, repo)["policy"]
 	r := f.publish(repo, 1, p1, "x", false)
 	if r.Status != 400 || !strings.Contains(r.JSON(t)["error"].(string), "schema 1") {
@@ -410,9 +444,7 @@ func TestPublishRejectsSchema1(t *testing.T) {
 func TestVersionsShowSchemaMigrated(t *testing.T) {
 	f := newFixture(t)
 	repo := f.repo()
-	if r := f.importYaml(repo, schema1YAML(t)); r.Status != 201 {
-		t.Fatal(r.Status, r.Body)
-	}
+	f.seedSchema1(t, repo)
 	pol := f.migrateDraft(repo).JSON(t)["policy"]
 	if r := f.publish(repo, 1, pol, "chuyển schema 2", false); r.Status != 201 {
 		t.Fatal(r.Status, r.Body)

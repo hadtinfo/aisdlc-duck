@@ -376,7 +376,45 @@ func TestSubmitCasesLiteClassifiesFromLLM(t *testing.T) {
 	eq(t, r.run("submit", "cases"), 1)
 	contains(t, r.out, "RISK_AGENT_MISSING")
 	r.writeLLM("PAY-1", "high")
-	r.run("submit", "cases")
+	eq(t, r.run("submit", "cases"), 1) // chỉ còn phát hiện RISK_REQ của mức high
 	eq(t, r.risk().Level, "high")
 	contains(t, r.out, "RISK_REQ")
+}
+
+// Dev đã đổi mức tay, rồi thiết kế đổi và subagent chạy lại: giữ mức đổi tay, risk.yaml gắn kết quả mới nên cổng Case
+// không báo RISK_STALE.
+func TestOverrideThenDesignChangeRefreshesLLM(t *testing.T) {
+	r := llmRepo(t)
+	r.writeLLM("PAY-1", "high")
+	r.ok(noConsole(), "submit", "design")
+	r.ok(typed("PAY-1"), "risk", "set", "low", "--reason", "Chỉ đọc sổ cái")
+	r.write("aisdlc/features/PAY-1/design.md", r.read("aisdlc/features/PAY-1/design.md")+"\nThêm một dòng.\n")
+	r.writeLLM("PAY-1", "medium")
+	r.ok(noConsole(), "submit", "design")
+	contains(t, r.err, "giữ mức đổi tay low")
+	f := r.risk()
+	eq(t, f.Level, "low")
+	if f.Override == nil || f.Override.From != "medium" || f.Override.By != "Dev Một" {
+		t.Fatalf("override = %+v", f.Override)
+	}
+	eq(t, f.LLM.Level, "medium")
+	r.ok(typed("PAY-1"), "approve", "design")
+	r.runner.cases = failingCases
+	if code := r.run("submit", "cases"); code != 0 {
+		t.Fatalf("exit %d\n%s%s", code, r.out, r.err)
+	}
+	notContains(t, r.out, "RISK_STALE")
+	eq(t, r.risk().Level, "low")
+}
+
+func TestMarkerFeatureRiskFileWithoutLLMIsStale(t *testing.T) {
+	r := llmRepo(t)
+	r.writeLLM("PAY-1", "")
+	r.ok(noConsole(), "submit", "design")
+	r.ok(typed("PAY-1"), "approve", "design")
+	y := r.read(riskFile)
+	r.write(riskFile, y[:strings.Index(y, "llm:")]+y[strings.Index(y, "\noverride:")+1:])
+	r.runner.cases = failingCases
+	eq(t, r.run("submit", "cases"), 1)
+	contains(t, r.out, "RISK_STALE", "chưa có kết quả xếp loại LLM")
 }

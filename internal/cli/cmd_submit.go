@@ -406,7 +406,21 @@ func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.R
 				f.Paths.Rel(f.Paths.Risk()) + " (xếp loại mới ra " + fresh.Level + "); giữ mức đổi tay " + old.Level +
 				" của " + old.Override.By + ". Dev chạy `aisdlc risk reclassify` để áp kết quả mới.")
 		}
-		return old, nil, nil
+		// giữ mức đổi tay nhưng gắn với kết quả xếp loại mới (llm, luật khớp, chính sách): cổng Case không còn coi
+		// risk.yaml là cũ chỉ vì dev đã đổi mức
+		kept := old
+		ov := *old.Override
+		ov.From = fresh.Level
+		kept.Override = &ov
+		kept.LLM, kept.Matched, kept.Policy = fresh.LLM, fresh.Matched, fresh.Policy
+		kept.Requirements = append([]risk.Requirement(nil), p.RequirementsFor(old.Level)...)
+		kept.Flow = risk.FlowOf(p, old.Level)
+		if !sameYAML(old, kept) {
+			if err := kept.Write(f.Paths.Risk()); err != nil {
+				return risk.RiskFile{}, nil, err
+			}
+		}
+		return kept, nil, nil
 	}
 	if !ok || !sameYAML(old, fresh) {
 		if s.reclassified == nil {
@@ -472,7 +486,11 @@ func (s *submission) riskRequirements(f *Feature, cs spec.CasesSpec) ([]spec.Fin
 			if err != nil {
 				return nil, err
 			}
-			if rf.LLM == nil || rf.LLM.InputsHash != hash {
+			if rf.LLM == nil {
+				return []spec.Finding{{Code: "RISK_STALE", Message: f.Paths.Rel(f.Paths.Risk()) + " chưa có kết quả " +
+					"xếp loại LLM; chạy subagent aisdlc-risk-classifier rồi `aisdlc risk reclassify`."}}, nil
+			}
+			if rf.LLM.InputsHash != hash {
 				return []spec.Finding{{Code: "RISK_STALE", Message: "Chính sách hoặc tài liệu đầu vào đã đổi kể từ " +
 					"lần xếp loại rủi ro (" + f.Paths.Rel(f.Paths.Risk()) + "): chạy lại `aisdlc risk inputs` và " +
 					"subagent aisdlc-risk-classifier, rồi dev chạy `aisdlc risk reclassify`."}}, nil

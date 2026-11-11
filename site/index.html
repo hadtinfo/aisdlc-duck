@@ -137,8 +137,8 @@ git status --short</code></pre>
   <div class="wrap">
     <h2>Walkthrough: PAY-1 “daily limit check”</h2>
     <p class="sub">The same scenario the E2E test runs on the sample service <code>e2e/fixture-service</code>. The repo's risk
-      policy marks anything mentioning “hạn mức” (limit) as <span class="pill bad">high</span>, which requires a
-      duplicate-request case and a DB invariant. (CLI output is in Vietnamese; translations are in the comments.)</p>
+      policy has a rule described as “Chặn giao dịch theo hạn mức” (blocking transactions by a limit) at level
+      <span class="pill bad">high</span>, which requires a duplicate-request case and a DB invariant. (CLI output is in Vietnamese; translations are in the comments.)</p>
 
     <h3>1 · Initialize and write the BRD</h3>
     <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc init PAY-1 --title "Kiểm tra hạn mức ngày"</span>
@@ -150,8 +150,7 @@ git status --short</code></pre>
 <span class="d">Tiếp theo: soạn brd.md rồi chạy `aisdlc submit brd`.   # next: write brd.md, then submit</span>
 
 <span class="p">$</span> <span class="c">aisdlc submit brd</span>
-<span class="w">Rủi ro tạm (từ khóa): high</span>                      <span class="d"># provisional risk from keywords</span>
-<span class="ok">Đã nộp cổng BRD, không có phát hiện.</span>            <span class="d"># BRD submitted, no findings</span></pre></div>
+<span class="ok">Đã nộp cổng BRD, không có phát hiện.</span>            <span class="d"># BRD submitted, no findings; the dev always approves BRD</span></pre></div>
 
     <h3>2 · The developer approves — in their own terminal</h3>
     <p>If the agent tries to approve, it is refused (exit 3), and the hook blocks code writes while the gate is closed.
@@ -176,9 +175,12 @@ Gõ lại feature key (PAY-1) để xác nhận: <span class="c">PAY-1</span>
     budget: { files: 3, lines: 80 }
 invariants:
   - name: Số đã dùng không vượt hạn mức
-    sql: "SELECT account_id FROM daily_limit WHERE used_amount &lt; 0 OR used_amount &gt; limit_amount"
-impact: { level: medium, labels: [schema-change] }</code></pre>
-    <p><code>submit design</code> test-runs the draft migration on a real Postgres and computes the full risk level. The review card flags
+    sql: "SELECT account_id FROM daily_limit WHERE used_amount &lt; 0 OR used_amount &gt; limit_amount"</code></pre>
+    <p>Before submitting, the agent runs <code>aisdlc risk inputs</code> and hands the listed files to the read-only subagent
+      <code>aisdlc-risk-classifier</code>, which matches each rule by meaning and quotes its evidence
+      (rule <code>E1</code>: “App chặn sớm giao dịch chuyển tiền vượt hạn mức ngày của tài khoản”). <code>submit design</code>
+      checks that result against the current documents, test-runs the draft migration on a real Postgres and records level
+      <span class="pill bad">high</span>. The review card flags
       <span class="pill bad">SCOPE_OVERLAP</span> (S1 and S2 both touch <code>internal/limit/web/**</code>) and
       <span class="pill warn">SCOPE_MATCHES_OLD_MIGRATION</span> — see the <a href="#web">Design gate screenshot</a> below.</p>
 
@@ -262,15 +264,17 @@ aisdlc web login</code></pre>
 <section id="risk">
   <div class="wrap">
     <h2>Risk policy</h2>
-    <p class="sub">Each repo declares a level scale, rules that detect risky features (keywords, paths, tables, endpoints, labels) and
-      requirements per level. The agent can only raise a level, never lower it. Low levels can auto-approve clean submissions — Review is always manual.</p>
+    <p class="sub">Each repo declares a level scale, rules written in plain words and requirements per level. An independent
+      subagent classifies each feature once, at the Design gate, quoting the text behind every matched rule; CI re-checks that
+      the result still matches the documents. Low levels can auto-approve clean Design, Cases and step submissions — BRD and
+      Review are always manual.</p>
 
     <div class="split">
       <div>
 <pre><code>flow:
-  low:    { brd: auto,   design: auto,   cases: auto,   step: auto }
-  medium: { brd: manual, design: manual, cases: manual, step: auto }
-  high:   { brd: manual, design: manual, cases: manual, step: manual }</code></pre>
+  low:    { design: auto,   cases: auto,   step: auto }
+  medium: { design: manual, cases: manual, step: auto }
+  high:   { design: manual, cases: manual, step: manual }</code></pre>
         <div class="tbl">
           <table>
             <tr><th>Requirement</th><th>Meaning</th></tr>
@@ -286,11 +290,11 @@ aisdlc web login</code></pre>
       <div class="grid">
         <figure class="shot crop">
           <a href="images/web-chinh-sach-rui-ro.png"><img src="images/web-chinh-sach-rui-ro.png" alt="Risk policy page on the Requirements by level tab" loading="lazy" width="1440" height="1400"></a>
-          <figcaption><b>Edit the policy on the web</b> — drafts, publish with a reason, version history and a “try classification” tab.</figcaption>
+          <figcaption><b>Edit the policy on the web</b> — drafts, publish with a reason, version history and a one-click migration draft from schema 1.</figcaption>
         </figure>
         <figure class="shot crop">
-          <a href="images/web-tu-duyet.png"><img src="images/web-tu-duyet.png" alt="BRD gate page of feature FEE-3 marked as auto-approved at level low" loading="lazy" width="1440" height="1400"></a>
-          <figcaption><b>Auto-approved at level low.</b> FEE-3 runs straight to Review; only the final gate waits for a human.</figcaption>
+          <a href="images/web-tu-duyet.png"><img src="images/web-tu-duyet.png" alt="Gate page of feature FEE-3 marked as auto-approved at level low" loading="lazy" width="1440" height="1400"></a>
+          <figcaption><b>Auto-approved at level low.</b> Once the dev approves its BRD, FEE-3 runs straight to Review; only the final gate waits for a human.</figcaption>
         </figure>
       </div>
     </div>

@@ -2,7 +2,7 @@
 
 > English: [user-guide.md](user-guide.md).
 
-Cập nhật: 2026-11-06
+Cập nhật: 2026-11-11
 
 ## 1. AISDLC là gì
 
@@ -11,7 +11,7 @@ AISDLC để agent Claude Code viết tài liệu, case và code, còn dev duy�
 Một tính năng đi qua 5 cổng, mỗi cổng phải được duyệt thì cổng sau mới mở:
 
 1. **BRD**: yêu cầu nghiệp vụ, các rule `BR-n`.
-2. **Thiết kế**: `design.md` (sequence Mermaid có S1…Sn, bảng API, giả định), `design.yaml` (scope và ngân sách từng bước, đánh giá tác động), migration goose nháp trong `db/`.
+2. **Thiết kế**: `design.md` (sequence Mermaid có S1…Sn, bảng API, giả định), `design.yaml` (scope và ngân sách từng bước, bất biến), migration goose nháp trong `db/`.
 3. **Case**: `cases.yaml` (HTTP, DB, message, stub). Lúc nộp, bộ case phải có case fail vì chưa có code.
 4. **Code từng bước S1…Sn**: agent chỉ ghi được file trong scope của bước; dev accept từng bước.
 5. **Review**: eval phải ĐẠT, có review độc lập của subagent; dev duyệt rồi mở MR.
@@ -26,19 +26,19 @@ Mỗi mũi tên sang phải là một lần agent nộp; chỉ sau khi dev duy�
 
 | | Agent (Claude Code) | Dev |
 | --- | --- | --- |
-| Viết | `brd.md`, `design.md`, `design.yaml`, migration, `cases.yaml`, code, `review-agent.json` (qua subagent) | Không bắt buộc viết gì; đọc review card, diff, report |
-| Lệnh | `init`, `submit`, `step start`, `step finish`, `eval`, `review`, `status`, `diff`, `policy show` | `approve`, `reject`, `reopen`, `step accept`, `scope allow`, `risk set`, `risk reclassify`, `web login` |
+| Viết | `brd.md`, `design.md`, `design.yaml`, migration, `cases.yaml`, code, `risk-agent.json` và `review-agent.json` (qua subagent) | Không bắt buộc viết gì; đọc review card, diff, report |
+| Lệnh | `init`, `submit`, `step start`, `step finish`, `eval`, `review`, `status`, `diff`, `policy show`, `risk inputs` | `approve`, `reject`, `reopen`, `step accept`, `scope allow`, `risk set`, `risk reclassify`, `web login` |
 | Không được | Duyệt, accept bước, cho phép file ngoài scope, sửa file trạng thái hay artifact đã duyệt | (không giới hạn; lệnh của dev đòi console thật hoặc hộp Yes/No trong Claude Code) |
 
 **Luồng đầy đủ và luồng nhẹ.** FULL (mặc định) đi đủ 5 cổng, dùng cho thay đổi có DB, API hoặc dòng tiền. LITE (`aisdlc init <KEY> --lite`) cho sửa lỗi hay thay đổi nhỏ không đổi DB/API: bỏ BRD và thiết kế, còn Case → S1 → Review (mục 3.3).
 
-**Mức rủi ro.** Mỗi repo có một chính sách rủi ro (`aisdlc/risk-policy.yaml` hoặc trên web). Mỗi tính năng được xếp một mức (mặc định `low < medium < high`); mức càng cao thì bộ case càng phải chặt, và chính sách có thể cho mức thấp **tự duyệt** các cổng BRD, Thiết kế, Case và accept bước khi nộp sạch. Review luôn do dev duyệt. Chi tiết: mục 7.
+**Mức rủi ro.** Mỗi repo có một chính sách rủi ro (`aisdlc/risk-policy.yaml` hoặc trên web). Mỗi tính năng được xếp một mức (mặc định `low < medium < high`). Rule viết bằng lời; một subagent độc lập (`aisdlc-risk-classifier`) đọc tài liệu của tính năng lúc `submit design` (luồng nhẹ: `submit cases`) để quyết định rule nào khớp. Mức càng cao thì bộ case càng phải chặt, và chính sách có thể cho mức thấp **tự duyệt** các cổng Thiết kế, Case và accept bước khi nộp sạch. BRD và Review luôn do dev duyệt. Chi tiết: mục 7.
 
 Các thành phần dev đụng tới:
 
 | Thành phần | Vai trò |
 | --- | --- |
-| Plugin Claude Code (`plugin/`) | Slash command `/aisdlc:*`, hook, subagent `aisdlc-reviewer` |
+| Plugin Claude Code (`plugin/`) | Slash command `/aisdlc:*`, hook, subagent `aisdlc-reviewer` và `aisdlc-risk-classifier` |
 | CLI `aisdlc` | Một binary Go: lệnh của agent và của dev; cũng là chương trình chạy hook |
 | Harness `aisdlc-harness` | Binary thứ hai, `aisdlc` gọi khi chạy case (`submit design`/`submit cases`, `step finish`) và `eval`: dựng Postgres/Kafka bằng Docker (testcontainers), chạy dịch vụ và `cases.yaml` như hộp đen. Tách riêng để hook khởi động nhanh |
 | Web `aisdlc-web` (tùy chọn) | Bảng theo dõi, duyệt cổng và điều khiển agent trên web |
@@ -49,11 +49,12 @@ Trạng thái của một tính năng nằm trong repo, ở `aisdlc/features/<KE
 
 | File | Ai ghi | Nội dung |
 | --- | --- | --- |
-| `feature.yaml` | CLI (`init`) | Key, tiêu đề, luồng, commit gốc |
+| `feature.yaml` | CLI (`init`) | Key, tiêu đề, luồng, commit gốc, `riskSchema: 2` (mức do subagent xếp) |
 | `brd.md`, `design.md`, `design.yaml`, `db/*.sql`, `cases.yaml` | Agent | Artifact của các cổng |
 | `gates.json` | CLI | Bản nộp và bản duyệt từng cổng (chế độ `local`) |
 | `steps.json`, `scope-extra.json` | CLI | Trạng thái bước, file được cho phép ngoài scope |
-| `risk.yaml` | CLI | Mức rủi ro, chính sách đã dùng, yêu cầu của mức |
+| `risk-agent.json` | Subagent `aisdlc-risk-classifier` | Kết quả xếp loại rủi ro: mức, rule khớp kèm câu trích, rule không khớp kèm lý do, `inputsHash` của tài liệu đã đọc |
+| `risk.yaml` | CLI | Mức rủi ro, chính sách đã dùng, kết quả xếp loại đã áp (`llm`), yêu cầu của mức |
 | `feedback.md` | CLI | Góp ý khi dev trả lại cổng |
 | `review-agent.json` | Subagent `aisdlc-reviewer` | Kết quả review độc lập |
 | `eval/report.md`, `eval/report.json`, `eval/diff-by-step.md` | CLI (`eval`) | Kết quả eval |
@@ -198,7 +199,7 @@ Mỗi session Claude Code nhớ tính năng riêng của mình: hook SessionStar
 
 **FULL** (mặc định): BRD → Thiết kế → Case → Code từng bước → Review, như mục 3. Ví dụ trọn vẹn ở mục 3.4.
 
-**LITE** (`--lite`): cho sửa lỗi hoặc thay đổi nhỏ, không đổi DB hay API. Bỏ BRD và thiết kế; còn ba cổng CASES → code → REVIEW. `cases.yaml` tự khai `scope`, `budget` (và `impact`, `invariants` khi repo có chính sách rủi ro) và có đúng một bước `S1`. Mẫu: `templates/cases.lite.yaml`; ví dụ thật: `e2e/solutions/FIX-2/cases.yaml`.
+**LITE** (`--lite`): cho sửa lỗi hoặc thay đổi nhỏ, không đổi DB hay API. Bỏ BRD và thiết kế; còn ba cổng CASES → code → REVIEW. `cases.yaml` tự khai `scope`, `budget` (và `invariants` khi repo có chính sách rủi ro) và có đúng một bước `S1`. Mẫu: `templates/cases.lite.yaml`; ví dụ thật: `e2e/solutions/FIX-2/cases.yaml`.
 
 ```bash
 # chạy-được
@@ -208,7 +209,7 @@ aisdlc status
 
 Ví dụ `status` sau lệnh trên: cổng `CASES` là `NOT_SUBMITTED`, `REVIEW` là `LOCKED_BY_PREVIOUS`, bước `S1` là `NOT_STARTED`. Làm tiếp một tính năng LITE từ đầu đến cuối:
 
-1. `/aisdlc:cases`: agent sửa `aisdlc/features/DOC-1/cases.yaml` (scope Go như `internal/fee/**`, ngân sách, `impact`, case thật), chạy `aisdlc submit cases`. Submit chạy bộ case trên dịch vụ hiện có nên phải có ít nhất một case fail.
+1. `/aisdlc:cases`: agent sửa `aisdlc/features/DOC-1/cases.yaml` (scope Go như `internal/fee/**`, ngân sách, case thật), nhờ subagent `aisdlc-risk-classifier` xếp loại rủi ro từ tiêu đề và `cases.yaml` (ghi `risk-agent.json`, mục 7), rồi chạy `aisdlc submit cases`. Submit chạy bộ case trên dịch vụ hiện có nên phải có ít nhất một case fail.
 2. Dev `aisdlc approve cases`. Từ giờ `cases.yaml` bị khóa.
 3. `/aisdlc:step S1`: agent code trong scope, `aisdlc step finish S1` chạy các case của bước. Dev `aisdlc step accept S1`.
 4. `/aisdlc:review`: eval, review độc lập, `aisdlc submit review`. Dev `aisdlc approve review`, rồi mở MR.
@@ -223,7 +224,7 @@ echo '{"tool_name":"Write","tool_input":{"file_path":"'"$PWD"'/internal/fee/fee.
 
 ### 3.4. Ví dụ đầu-cuối: PAY-1 "Kiểm tra hạn mức ngày"
 
-Ví dụ này đi lại đúng kịch bản mà E2E chạy (`e2e/run-e2e.sh`) trên dịch vụ mẫu `e2e/fixture-service`; mọi artifact có sẵn trong `e2e/solutions/PAY-1/`. Dịch vụ mẫu có bảng `account` và chính sách rủi ro `aisdlc/risk-policy.yaml` với rule `E1`: từ khóa `hạn mức` → mức `high`; mức `high` đòi case gửi trùng (`idempotent`) và bất biến DB (`invariant`).
+Ví dụ này đi lại đúng kịch bản mà E2E chạy (`e2e/run-e2e.sh`) trên dịch vụ mẫu `e2e/fixture-service`; mọi artifact có sẵn trong `e2e/solutions/PAY-1/`. Dịch vụ mẫu có bảng `account` và chính sách rủi ro `aisdlc/risk-policy.yaml` (schema 2) với rule `E1` mô tả `Chặn giao dịch theo hạn mức (E2E)` → mức `high`; mức `high` đòi case gửi trùng (`idempotent`) và bất biến DB (`invariant`).
 
 **Khởi tạo.** Trong Claude Code, dev gõ `/aisdlc:init PAY-1`; agent đề xuất luồng FULL và chạy:
 
@@ -240,7 +241,7 @@ Tiếp theo: soạn brd.md rồi chạy `aisdlc submit brd`.
 
 `aisdlc status` lúc này: `BRD NOT_SUBMITTED`, ba cổng sau `LOCKED_BY_PREVIOUS`, các bước `NOT_STARTED`, dòng cuối `Cổng kế tiếp cần xử lý: BRD`.
 
-**BRD.** `/aisdlc:brd`: agent viết `brd.md` (mục tiêu, trong/ngoài phạm vi, quy tắc nghiệp vụ, tiêu chí chấp nhận, câu hỏi mở) và nộp. `submit brd` in thêm mức rủi ro tạm tính từ rule từ khóa (`Rủi ro tạm (từ khóa): …`; ở đây là `high` vì BRD có chữ "hạn mức"):
+**BRD.** `/aisdlc:brd`: agent viết `brd.md` (mục tiêu, trong/ngoài phạm vi, quy tắc nghiệp vụ, tiêu chí chấp nhận, câu hỏi mở) và nộp. `submit brd` không tính mức rủi ro (mức chỉ được xếp một lần, lúc `submit design`), và cổng BRD luôn chờ dev:
 
 ```
 $ aisdlc submit brd
@@ -281,13 +282,32 @@ invariants:
   - name: Số đã dùng không vượt hạn mức
     sql: "SELECT account_id FROM daily_limit WHERE used_amount < 0 OR used_amount > limit_amount"
     step: S2
-impact:
-  level: medium
-  labels: [schema-change]
-  reason: "Thêm bảng daily_limit; API chỉ đọc, không ghi số đã dùng."
 ```
 
-`aisdlc submit design` chạy thử migration chính cộng migration nháp trên Postgres thật, ghi `schema-expected.json` (schema mà eval sẽ so), tính mức rủi ro đầy đủ và ghi `risk.yaml`: ở đây in `Rủi ro: high` (rule `E1` khớp từ khóa trong BRD, cao hơn `medium` agent tự đánh giá). `aisdlc review design` hiện cờ `SCOPE_OVERLAP` (HIGH: S1 và S2 cùng chạm `internal/limit/web/**`) và `SCOPE_MATCHES_OLD_MIGRATION` (WARN: glob `db/migrations/**` của S2 khớp cả migration cũ). Dev đọc thẻ rồi `aisdlc approve design` (cờ không chặn).
+Trước khi nộp, agent lấy đầu vào cho subagent xếp loại:
+
+```
+$ aisdlc risk inputs
+[PAY-1]
+aisdlc/features/PAY-1/brd.md
+aisdlc/features/PAY-1/db/00002_daily_limit.sql
+aisdlc/features/PAY-1/design.md
+aisdlc/features/PAY-1/design.yaml
+policy: .aisdlc/risk/policy-effective.yaml
+inputsHash: 5c0e…
+```
+
+Agent đưa đúng các đường dẫn và `inputsHash` này cho subagent `aisdlc-risk-classifier` (chỉ đọc). Subagent xét từng rule rồi trả JSON; agent ghi nguyên văn vào `risk-agent.json` (`e2e/solutions/PAY-1/risk-agent.json`):
+
+```json
+{"inputsHash": "5c0e…", "level": "high",
+ "matched": [{"rule": "E1", "evidence": "App chặn sớm giao dịch chuyển tiền vượt hạn mức ngày của tài khoản", "file": "aisdlc/features/PAY-1/brd.md"},
+             {"rule": "G2", "evidence": "CREATE TABLE daily_limit (", "file": "aisdlc/features/PAY-1/db/00002_daily_limit.sql"}],
+ "notMatched": [{"rule": "G1", "reason": "API chỉ kiểm tra hạn mức, không chuyển tiền …"}, …],
+ "override": null, "summary": "…"}
+```
+
+`aisdlc submit design` chạy thử migration chính cộng migration nháp trên Postgres thật, ghi `schema-expected.json` (schema mà eval sẽ so), kiểm `risk-agent.json` (băm phải khớp tài liệu và chính sách hiện tại, mỗi rule đang bật có đúng một lần, câu trích phải có thật trong file) và ghi `risk.yaml`: ở đây in `Rủi ro: high …` (rule `E1` và `G2` khớp). Thiếu `risk-agent.json` hợp lệ thì bản nộp bị chặn (`RISK_AGENT_MISSING`, `RISK_AGENT_INVALID`); agent sửa tài liệu sau đó thì băm không còn khớp, phải chạy lại subagent. `aisdlc review design` hiện cờ `SCOPE_OVERLAP` (HIGH: S1 và S2 cùng chạm `internal/limit/web/**`) và `SCOPE_MATCHES_OLD_MIGRATION` (WARN: glob `db/migrations/**` của S2 khớp cả migration cũ). Dev đọc thẻ rồi `aisdlc approve design` (cờ không chặn).
 
 **Case.** `/aisdlc:cases`: agent viết `cases.yaml` (C1–C2 cho S1, C3–C7 cho S2). Bản đầu thiếu case gửi trùng nên bị chặn theo mức `high`:
 
@@ -305,9 +325,9 @@ Agent thêm C7 (`when.repeat: 2`, kiểm `used_amount` không đổi) và nộp 
 
 **Eval và review.** `/aisdlc:review`: agent chạy `aisdlc eval` (ghi `eval/report.md`, dòng đầu `Eval PAY-1: ĐẠT`, có mục `## Rủi ro`), gọi subagent `aisdlc-reviewer` ghi `review-agent.json` (5 tiêu chí: sequence, error-handling, over-engineering, naming, security), rồi `aisdlc submit review` (cập nhật dòng `AGENT_REVIEW` trong report). Dev `aisdlc approve review`: lệnh in thêm `Agent review: …` và các issue `high` nếu có.
 
-**MR.** Commit toàn bộ (code, migration, `aisdlc/features/PAY-1/`) và mở MR. Job CI chạy `aisdlc eval --ci --base origin/<nhánh đích>` và in `Eval PAY-1: ĐẠT`. Nếu ai đó sửa `cases.yaml` sau khi duyệt, eval fail ở `CASES_LOCKED`.
+**MR.** Commit toàn bộ (code, migration, `aisdlc/features/PAY-1/`) và mở MR. Job CI chạy `aisdlc eval --ci --base origin/<nhánh đích>` và in `Eval PAY-1: ĐẠT`, trong đó có `RISK_LLM` (kết quả xếp loại trong `risk.yaml` còn khớp tài liệu và chính sách hiện tại; CI không gọi LLM). Nếu ai đó sửa `cases.yaml` sau khi duyệt, eval fail ở `CASES_LOCKED`.
 
-Cùng dịch vụ đó, `FIX-2` (LITE, `e2e/solutions/FIX-2/`) đi Case → S1 (`3/3 pass`) → Review; còn `FEE-3` (`e2e/solutions/FEE-3/`) là tính năng mức `low` chạy một mạch nhờ tự duyệt (mục 7.2).
+Cùng dịch vụ đó, `FIX-2` (LITE, `e2e/solutions/FIX-2/`) đi Case → S1 (`3/3 pass`) → Review; còn `FEE-3` (`e2e/solutions/FEE-3/`) là tính năng mức `low`: dev duyệt BRD xong thì chạy một mạch nhờ tự duyệt (mục 7.2).
 
 ### 3.5. Lệnh hay dùng khác
 
@@ -316,6 +336,7 @@ Cùng dịch vụ đó, `FIX-2` (LITE, `e2e/solutions/FIX-2/`) đi Case → S1 (
 - `--feature <KEY>` (`-f`): chỉ định tính năng cho một lệnh, không đổi tính năng đang làm.
 - `aisdlc review cases`: xem trước review card của một cổng.
 - `aisdlc policy show`: thang mức rủi ro, rule và yêu cầu theo mức.
+- `aisdlc risk inputs`: file đầu vào và `inputsHash` cho subagent xếp loại rủi ro.
 - `aisdlc diff --by-step --patch`: diff theo từng bước.
 - `aisdlc reopen <gate>`: mở lại cổng để sửa artifact đã duyệt (xóa bản nộp và bản duyệt). Sửa thẳng làm cổng thành STALE và các cổng sau coi như đóng.
 
@@ -419,7 +440,8 @@ Eval ghi `eval/report.md`, dòng đầu là `Eval <KEY>: ĐẠT` hoặc `KHÔNG 
 | `SCOPE` | Cứng | Mọi file đổi so với lúc `init` nằm trong scope các bước (cộng `scope allow`) |
 | `CHECK:<tên>` | Cứng | Lệnh khai trong `checks` của `config.yaml` (ví dụ `go vet ./...`) |
 | `RISK_COVERAGE` | Cứng | Coverage dòng mới ≥ `min` khi mức rủi ro yêu cầu `coverage` |
-| `RISK_FILE` | Cứng | `risk.yaml` hỏng, hoặc thiếu trong khi `design.yaml` có `impact` |
+| `RISK_FILE` | Cứng | `risk.yaml` hỏng, hoặc thiếu ở tính năng FULL cần có (tạo với `riskSchema: 2`, hoặc tính năng cũ có `design.yaml` còn `impact`) |
+| `RISK_LLM` | Cứng, chỉ CI | Tính năng có `riskSchema: 2`: `llm.inputsHash` trong `risk.yaml` khớp tài liệu và chính sách có hiệu lực hiện tại (chế độ web: chính sách lấy trực tiếp từ web bằng token CI). Không gọi LLM |
 | `GATE_AUTO:<cổng>` | Cứng | Cổng tự duyệt phải khớp `flow` đã chụp trong `risk.yaml` (mục 7.2) |
 | `BUDGET:Sx` | Mềm | Vượt 1,5 lần ngân sách bước |
 | `COVERAGE_CHANGED_LINES` | Mềm | Coverage dòng mới dưới 80% (`coverageWarn`), khi mức rủi ro không yêu cầu `coverage` |
@@ -442,7 +464,7 @@ Job (image `golang:1.26`, chạy cho merge request) chạy `aisdlc eval --ci --b
 
 - Sửa `aisdlc/config.yaml` phải nằm ở MR riêng; eval luôn đánh fail thay đổi kèm sửa cấu hình. MR cấu hình cần tech lead duyệt và merge theo ngoại lệ của team.
 - MR đổi code không thuộc tính năng nào (ví dụ nâng dependency) bị fail: tạo một tính năng `--lite`, hoặc đặt `ciRequireFeature: false` ở MR riêng.
-- Chế độ duyệt web cần thêm `AISDLC_WEB_URL` và `AISDLC_CI_TOKEN` (mục 6.3).
+- Chế độ duyệt web cần thêm `AISDLC_WEB_URL` và `AISDLC_CI_TOKEN` (mục 6.3). Token CI cũng đọc được chính sách rủi ro hiện hành (`GET /api/cli/policy`) để kiểm `RISK_LLM`.
 
 ## 6. Web (tùy chọn)
 
@@ -506,7 +528,7 @@ Bật bằng `approvals: web` trong `aisdlc/config.yaml` (MR cấu hình riêng;
 - Từ lần nộp thứ hai, trang cổng có mục **Thay đổi so với lần nộp trước** kèm diff và trạng thái từng góp ý (`có thay đổi liên quan`, `chưa thấy thay đổi`…). Nhắc đúng tên mục (`## API`) hay tên file trong lý do trả lại để web khớp được.
 - Hook không gọi mạng: nó đọc trạng thái cổng đã ký trong `.aisdlc/web/gates/<KEY>.json`. Cache bị sửa hay chép từ nơi khác thì coi như chưa duyệt; `aisdlc status` tải lại bản đúng. Trả lại / mở lại trên web được ghi vào `feedback.md` khi cache làm mới.
 - Repo đang dùng `local`: chạy `aisdlc web migrate` (gửi các bản duyệt còn khớp nội dung trong `gates.json` lên web dưới dạng chờ xác nhận), rồi bấm **Xác nhận** trên trang tính năng **theo thứ tự cổng** (sai thứ tự thì web báo `Xác nhận cổng trước trước`). Cổng REVIEW không nhập được: nộp và duyệt lại trên web. `gates.json` không bị sửa.
-- Chính sách rủi ro ở chế độ web: `aisdlc policy pull` lấy chính sách từ web (lần đầu web nhập `aisdlc/risk-policy.yaml` làm bản v1); `submit design`/`submit cases` dừng và nhắc lệnh này khi cache chính sách thiếu hoặc sai chữ ký (mục 7).
+- Chính sách rủi ro ở chế độ web: `aisdlc policy pull` lấy chính sách từ web (lần đầu web nhập `aisdlc/risk-policy.yaml` làm bản v1, file phải là schema 2); `submit design`/`submit cases` dừng và nhắc lệnh này khi cache chính sách thiếu hoặc sai chữ ký (mục 7).
 - CI: thêm biến `AISDLC_WEB_URL` và `AISDLC_CI_TOKEN` (Masked, Protected); token CI do admin cấp bằng `user ci-token <tên>`. CI FAIL khi cổng chưa duyệt, nội dung lệch hash, code đổi sau khi duyệt REVIEW (`REVIEW đã đổi sau duyệt …`), thiếu biến, hoặc web không trả lời.
 
 ![Hộp xác nhận duyệt cổng Thiết kế: cờ HIGH/WARN, 2 giả định chưa xem, các file đã nộp; phía trên là thay đổi so với lần nộp trước](images/web-xac-nhan-duyet.png)
@@ -527,30 +549,50 @@ Dùng được ở cả hai chế độ duyệt, miễn máy dev đã `aisdlc we
 
 ## 7. Chính sách rủi ro và quy trình theo mức
 
-Mỗi repo có một **chính sách rủi ro**: thang mức (mặc định `low < medium < high`), các **rule** nhận diện tính năng rủi ro, **yêu cầu case theo mức** và khối `flow` (cổng nào tự duyệt ở mức nào). Lõi AISDLC không biết nghiệp vụ: từ khóa, đường dẫn, tên bảng đều do dự án khai.
+Mỗi repo có một **chính sách rủi ro**: thang mức (mặc định `low < medium < high`), các **rule** nhận diện tính năng rủi ro, **yêu cầu case theo mức** và khối `flow` (cổng nào tự duyệt ở mức nào). Lõi AISDLC không biết nghiệp vụ: mọi rule do dự án viết, bằng lời.
 
-**Khởi tạo.** `aisdlc setup --preset <generic|banking>` chép mẫu vào `aisdlc/risk-policy.yaml` (mặc định `generic`; chạy lại không ghi đè file đã có). `generic` có rule theo nhãn tác động (`money-movement`, `schema-change`, `auth`, `external-api`); `banking` thêm rule nghiệp vụ ngân hàng.
+**Khởi tạo.** `aisdlc setup --preset <generic|banking>` chép mẫu vào `aisdlc/risk-policy.yaml` (mặc định `generic`; chạy lại không ghi đè file đã có). `generic` có 4 rule (dòng tiền, đổi cấu trúc dữ liệu, xác thực/phân quyền, API ngoài); `banking` thêm rule nghiệp vụ ngân hàng (sổ cái, phí, mã hạch toán, bảng sổ cái).
+
+**Rule (chính sách `schema: 2`).** Mỗi rule gồm id, mức và câu mô tả `describe`, viết bằng ngôn ngữ nào cũng được:
+
+```yaml
+schema: 2
+default: low
+rules:
+  - { id: G1, level: high, describe: "Có dòng tiền hoặc giá trị đi qua (chuyển tiền, thanh toán, hoàn tiền, trừ hoặc cộng số dư)" }
+  - { id: E1, level: high, describe: "Chặn giao dịch theo hạn mức (E2E)" }
+```
+
+`describe` bắt buộc; `enabled: false` tắt rule. Không còn `kind`/`match`: các rule `keyword`, `path`, `table`, `endpoint`, `label` cũ so khớp chữ mà không hiểu nghĩa (bắt nhầm như "không thu phí" khớp rule phí, bỏ sót như BRD tiếng Anh ghi "ledger posting"). `default` là mức sàn: xếp loại thấp hơn thì lấy `default`.
+
+**Chuyển chính sách schema 1.** Chính sách còn `schema: 1` làm mọi lệnh cần xếp loại hay phát hành dừng (exit 2, `Chính sách dùng schema 1 …; chạy aisdlc policy migrate …`). `aisdlc policy migrate` đổi mỗi rule cũ thành `describe` gồm ghi chú cộng gợi ý từ mẫu cũ (ví dụ `"Chặn giao dịch theo hạn mức (từ khóa cũ: hạn mức)"`), bỏ `classification.agent` và khóa `flow.<mức>.brd`, in diff mà không ghi; `aisdlc policy migrate --write` mới ghi file. Đọc lại câu chữ rồi đưa vào qua MR như mọi thay đổi chính sách. Chế độ web thì chính sách nằm trên server: quản trị mở trang chính sách, bấm **Chuyển sang schema 2** để nạp bản nháp dựng theo đúng quy tắc đó, xem lại rồi xuất bản thành phiên bản mới. Phiên bản cũ vẫn xem được trên web (lịch sử, so sánh).
 
 **Sửa chính sách ở đâu.**
 
 - Chưa `aisdlc web login`: nguồn là `aisdlc/risk-policy.yaml`. Sửa file và đưa vào qua MR như mọi file khác. `aisdlc policy show` in `(file)`.
-- Đã `aisdlc web login`: nguồn là web, trang `/risk/<repo>` (mở từ `/repos` hay link "Xem chính sách" trên trang tính năng). Lần đầu CLI kéo chính sách (`aisdlc policy pull`, hoặc tự động khi `submit`, `status`) mà web chưa có thì web nhập file trong repo làm **v1**. Trang có 3 tab: **Rule nhận diện** (`#rules`), **Yêu cầu theo mức** (`#levels`), **Phiên bản** (`#history`). Chính sách schema 1 chỉ xem được; nút **Chuyển sang schema 2** nạp bản nháp để xem lại và xuất bản. Sửa nằm trong nháp tới khi bấm **Xuất bản** (bắt ghi lý do; nới yêu cầu thì hộp xác nhận liệt kê phần bị nới). CLI lưu bản đã ký vào `.aisdlc/web/policy.json`; hook và validator chỉ đọc cache. Cache thiếu hay sai chữ ký thì `submit design`/`submit cases` dừng và nhắc `aisdlc policy pull`.
-- `aisdlc policy show` in thang mức, rule, nhãn mà rule `label` dùng và yêu cầu theo mức (agent dùng để điền `impact`). `aisdlc policy diff-preset` so chính sách với bản mới nhất của mẫu gốc (không tự áp dụng).
+- Đã `aisdlc web login`: nguồn là web, trang `/risk/<repo>` (mở từ `/repos` hay link "Xem chính sách" trên trang tính năng). Lần đầu CLI kéo chính sách (`aisdlc policy pull`, hoặc tự động khi `submit`, `status`) mà web chưa có thì web nhập file trong repo làm **v1**. Trang có 3 tab: **Rule nhận diện** (`#rules`, hiện mô tả từng rule), **Yêu cầu theo mức** (`#levels`), **Phiên bản** (`#history`). Không có ô "thử phân loại": server không có LLM. Chính sách schema 1 chỉ xem được cho tới khi chuyển. Sửa nằm trong nháp tới khi bấm **Xuất bản** (bắt ghi lý do; đổi `describe` của một rule được coi là có thể nới lỏng, nới yêu cầu thì hộp xác nhận liệt kê phần bị nới). CLI lưu bản đã ký vào `.aisdlc/web/policy.json`; hook và validator chỉ đọc cache. Cache thiếu hay sai chữ ký thì `submit design`/`submit cases` dừng và nhắc `aisdlc policy pull`.
+- `aisdlc policy show` in thang mức, rule và yêu cầu theo mức. `aisdlc policy diff-preset` so chính sách với bản mới nhất của mẫu gốc (không tự áp dụng).
 
 ![Trang chính sách rủi ro, tab Yêu cầu theo mức](images/web-chinh-sach-rui-ro.png)
 
-**Rule** có 5 loại: `keyword` (regex, so với tiêu đề, `brd.md`, `design.md`), `path` (glob, so với `scope` các bước), `table` (glob tên bảng/cột trong migration mới), `endpoint` (`METHOD /path/**` trong bảng API của `design.md`), `label` (nhãn agent ghi trong `impact`). Luồng nhẹ chỉ dùng `keyword` (tiêu đề và `title` các case), `path` và `label`.
+**Subagent xếp loại.** Mức được xếp **một lần, lúc `submit design`** (luồng nhẹ: `submit cases`), khi đã có đủ BRD, thiết kế và migration nháp. `submit brd` không có mức tạm, và cổng BRD luôn do dev duyệt.
 
-**Agent đánh giá tác động.** Ở bước thiết kế agent ghi `impact` (mức, nhãn, lý do) và `invariants` vào `design.yaml` (ví dụ ở mục 3.4); luồng nhẹ ghi vào `cases.yaml`. Có chính sách mà thiếu `impact` (hoặc `level` lạ) là lỗi ở `submit design` (luồng nhẹ: `IMPACT_LEVEL` ở `submit cases`). Bất biến là truy vấn phải trả 0 dòng; không khai `step` thì chạy sau mọi case, có `step: Sx` thì chỉ chạy sau case của Sx và các bước sau (bước không có là lỗi `DESIGN_INVARIANT_STEP`). Vi phạm làm case đó FAIL, kèm tên bất biến và tối đa 5 dòng vi phạm.
+1. Agent chạy `aisdlc risk inputs`. Lệnh in các file đầu vào (FULL: `brd.md`, `design.md`, `design.yaml`, migration nháp trong `db/`; LITE: `feature.yaml` có tiêu đề, và `cases.yaml`), dòng `policy: .aisdlc/risk/policy-effective.yaml` (chính sách có hiệu lực, kể cả khi lấy từ web) và `inputsHash`, băm của chính sách đã chuẩn hóa và nội dung các file.
+2. Agent gọi subagent `aisdlc-risk-classifier` (chỉ có `Read`, `Grep`, `Glob`) với đúng các đường dẫn và băm đó. Với mỗi rule đang bật, subagent quyết định theo nghĩa rule có khớp không. Mức đề xuất là mức cao nhất trong các rule khớp (hoặc `default`); subagent được chọn mức khác, nâng hoặc hạ, nhưng phải ghi `override: {from, reason}`.
+3. Agent ghi nguyên văn JSON vào `aisdlc/features/<KEY>/risk-agent.json`: `inputsHash`, `level`, `matched` (rule, câu trích nguyên văn `evidence`, `file`), `notMatched` (rule, `reason`), `override`, `summary`.
+4. `submit design` chặn với `RISK_AGENT_MISSING` (thiếu file) hoặc `RISK_AGENT_INVALID` khi JSON sai, `inputsHash` khác tài liệu và chính sách hiện tại, mức không có trong thang, rule lạ, rule đang bật bị thiếu hay lặp, câu trích không có trong file, hoặc `override` thiếu hay không khớp. Sửa tài liệu sau khi xếp loại thì chạy lại bước 1–3; không sửa tay JSON.
+5. CLI ghi `risk.yaml`: `level`, `policy`, `matched` (rule, mức, câu trích) và `llm` (`level`, `override`, `summary`, `inputsHash`). Mức dev đổi tay (`override`) được giữ.
 
-**Phân loại.** Mức = cao nhất trong: `default`, các rule đang bật mà khớp, `impact.level` của agent (khi `classification.agent: raise`), mức dev nâng tay. Agent chỉ nâng được, không hạ được. `submit brd` in mức tạm (chỉ rule `keyword`, ví dụ `Rủi ro tạm (từ khóa): low`). `submit design` tính đầy đủ và ghi `aisdlc/features/<KEY>/risk.yaml`. `submit cases` tính lại nếu chính sách hay thiết kế đã đổi. Duyệt cổng Case thì `risk.yaml` bị khóa theo hash cổng: đổi chính sách sau đó không đổi yêu cầu của tính năng đang làm. Chỉ CLI ghi `risk.yaml`; hook chặn agent ghi file này, `.aisdlc/web/policy.json` và `aisdlc/risk-policy.yaml`.
+Khối `impact` trong `design.yaml` (luồng nhẹ: `cases.yaml`) không còn dùng: còn khối này thì validator chỉ cảnh báo. Bất biến vẫn khai trong `design.yaml` (luồng nhẹ: `cases.yaml`): bất biến là truy vấn phải trả 0 dòng; không khai `step` thì chạy sau mọi case, có `step: Sx` thì chỉ chạy sau case của Sx và các bước sau (bước không có là lỗi `DESIGN_INVARIANT_STEP`). Vi phạm làm case đó FAIL, kèm tên bất biến và tối đa 5 dòng vi phạm.
+
+`submit cases` (FULL) kiểm kết quả xếp loại trong `risk.yaml` còn khớp chính sách và tài liệu hiện tại, không thì báo `RISK_STALE` (chạy lại subagent rồi `aisdlc risk reclassify`). Duyệt cổng Case thì `risk.yaml` bị khóa theo hash cổng: đổi chính sách sau đó không đổi yêu cầu của tính năng đang làm. Chỉ CLI ghi `risk.yaml`; hook chặn agent ghi file này, `.aisdlc/web/policy.json` và `aisdlc/risk-policy.yaml`. Ở CI, `eval --ci` kiểm `RISK_LLM`: `llm.inputsHash` phải khớp tài liệu và chính sách hiện tại (chế độ web thì lấy chính sách trực tiếp từ web bằng token CI). CI không gọi LLM. Kết quả do phía agent ghi nên lớp bảo vệ thật vẫn là dev đọc card, cổng duyệt tay và MR. Tính năng tạo trước thay đổi này (không có `riskSchema: 2` trong `feature.yaml`) giữ `risk.yaml` cũ, không xếp lại.
 
 **Đổi mức (chỉ dev, terminal thật, gõ lại feature key như `approve`).**
 
 - `aisdlc risk set <mức> [--reason "…"]`: nâng thì lý do tùy chọn; **hạ thì bắt buộc** lý do (chính sách đặt `devLower: never` thì không cho hạ). Chạy được khi đã có `risk.yaml` và cổng Case chưa duyệt; cổng Case đã duyệt thì `aisdlc reopen cases` trước. Chính sách đã đổi kể từ lần phân loại thì lệnh dừng (exit 2) và nhắc chạy `aisdlc risk reclassify` trước.
-- `aisdlc risk reclassify`: tính lại theo chính sách hiện tại (bỏ mức đổi tay).
+- `aisdlc risk reclassify`: áp kết quả `risk-agent.json` mới (sau khi agent chạy lại subagent), bỏ mức đổi tay. Cổng Case đã duyệt thì lệnh báo sẽ mở lại cổng Case và hỏi xác nhận.
 
-Trên web, panel **Rủi ro** ở trang tính năng hiện mức, rule khớp, đánh giá của agent và trạng thái từng yêu cầu; bảng có pill mức trên thẻ tính năng. Đổi mức vẫn bằng lệnh ở terminal.
+Trên web, panel **Rủi ro** ở trang tính năng hiện mức, rule khớp và trạng thái từng yêu cầu; card cổng Thiết kế (luồng nhẹ: Case) có khối **Xếp loại LLM**: mức, từng rule khớp kèm câu trích, rule không khớp kèm lý do, `override` nếu có và tóm tắt. Subagent chọn mức khác mức tính từ rule thì card có cờ WARN `RISK_LLM_OVERRIDE`. Bảng có pill mức trên thẻ tính năng. Đổi mức vẫn bằng lệnh ở terminal.
 
 ### 7.1. Thư viện yêu cầu
 
@@ -570,25 +612,25 @@ Thiếu yêu cầu thì `submit cases` báo `RISK_REQ` (ví dụ `Mức high yê
 
 ### 7.2. Quy trình theo mức (tự duyệt)
 
-Khối `flow` quyết định cổng nào hệ thống **tự duyệt** khi nộp sạch (không có phát hiện), cổng nào để dev duyệt tay. Có 4 cổng khai được: `brd`, `design`, `cases`, `step` (accept bước), giá trị `auto` hoặc `manual`. Mẫu `generic` mới nhất:
+Khối `flow` quyết định cổng nào hệ thống **tự duyệt** khi nộp sạch (không có phát hiện), cổng nào để dev duyệt tay. Có 3 cổng khai được: `design`, `cases`, `step` (accept bước), giá trị `auto` hoặc `manual`. Mẫu `generic` mới nhất:
 
 ```yaml
 flow:
-  low:    { brd: auto,   design: auto,   cases: auto,   step: auto }
-  medium: { brd: manual, design: manual, cases: manual, step: auto }
-  high:   { brd: manual, design: manual, cases: manual, step: manual }
+  low:    { design: auto,   cases: auto,   step: auto }
+  medium: { design: manual, cases: manual, step: auto }
+  high:   { design: manual, cases: manual, step: manual }
 ```
 
 - Mức hay cổng không khai thì là `manual`. Repo chưa có chính sách (hoặc chưa kéo chính sách từ web) thì mọi cổng là `manual`.
-- **Review luôn duyệt tay**: khóa `flow.<mức>.review` làm chính sách không hợp lệ.
+- **BRD và Review luôn duyệt tay.** Mức chỉ có từ `submit design` nên cổng BRD không bao giờ tự duyệt; khóa `flow.<mức>.brd` cũ chỉ bị cảnh báo và bỏ qua. Khóa `flow.<mức>.review` làm chính sách không hợp lệ.
 - Tự duyệt in `Đã nộp cổng <GATE>, không có phát hiện: tự duyệt (mức low).`; `status` và web hiện `tự duyệt (mức low)`, người duyệt ghi là `auto`. Agent vẫn không duyệt được gì.
-- Cổng BRD dùng mức cao hơn trong mức tạm và `default`. Cờ đỏ HIGH trên review card thì luôn chờ dev, dù flow ghi `auto`.
-- **Nâng mức thì duyệt lại.** Khi mức tăng (`submit design` ra mức cao hơn, hoặc `aisdlc risk set`) mà flow của mức mới là `manual` cho cổng đã tự duyệt, bản tự duyệt đó bị thay thế: CLI in `Mức tăng low → high: cổng BRD, … cần dev duyệt lại.` và web hiện `đã thay thế`. Nội dung không đổi nên dev chỉ cần `aisdlc approve <cổng>`, không phải nộp lại.
+- Cờ đỏ HIGH trên review card thì luôn chờ dev, dù flow ghi `auto`. Cờ `RISK_LLM_OVERRIDE` (subagent chọn mức khác mức tính từ rule khớp) chỉ là WARN nên không chặn tự duyệt; lý do nằm trên card.
+- **Nâng mức thì duyệt lại.** Khi mức tăng (`aisdlc risk set`, hoặc `aisdlc risk reclassify` với kết quả mới) mà flow của mức mới là `manual` cho cổng đã tự duyệt, bản tự duyệt đó bị thay thế: CLI in `Mức tăng low → high: cổng DESIGN, … cần dev duyệt lại.` và web hiện `đã thay thế`. Nội dung không đổi nên dev chỉ cần `aisdlc approve <cổng>`, không phải nộp lại.
 - **CI: `GATE_AUTO`.** Mỗi cổng đang tự duyệt phải khớp `flow` đã chụp trong `risk.yaml`; không khớp (ví dụ sửa tay `gates.json`) thì check `GATE_AUTO:<cổng>` fail và chặn merge.
 
-Ví dụ `FEE-3` "Làm tròn phí tới đồng gần nhất" (mức `low`): `submit brd`, `submit design`, `submit cases` đều tự duyệt, `step finish S1` tự accept, `eval` ĐẠT; chỉ còn cổng Review chờ dev.
+Ví dụ `FEE-3` "Làm tròn phí tới đồng gần nhất" (mức `low`): dev duyệt BRD; sau đó `submit design`, `submit cases` đều tự duyệt, `step finish S1` tự accept, `eval` ĐẠT; chỉ còn cổng Review chờ dev.
 
-![Trang cổng BRD của FEE-3: tự duyệt (mức low)](images/web-tu-duyet.png)
+![Trang cổng của FEE-3: tự duyệt (mức low)](images/web-tu-duyet.png)
 
 ## 8. Mô hình an toàn
 
@@ -596,7 +638,7 @@ AISDLC giả định agent có thể nhầm lẫn, không giả định agent c�
 
 Hook `PreToolUse` chặn:
 
-- ghi file trạng thái (`.aisdlc/`, `gates.json`, `steps.json`, `scope-extra.json`, `risk.yaml`…), `aisdlc/config.yaml`, `aisdlc/risk-policy.yaml` và artifact đã duyệt;
+- ghi file trạng thái (`.aisdlc/`, `gates.json`, `steps.json`, `scope-extra.json`, `risk.yaml`…), `aisdlc/config.yaml`, `aisdlc/risk-policy.yaml` và artifact đã duyệt (agent được ghi `risk-agent.json` và `review-agent.json`, kết quả của subagent);
 - ghi ngoài phạm vi bước đang mở, hoặc sửa code khi cổng chưa mở;
 - mọi tool chạm `~/.config/aisdlc`, nơi lưu token và khóa ghim;
 - lệnh Bash nêu `AISDLC_WEB_TOKEN`, đọc `/proc/*/environ` hay in cả môi trường (`env`, `printenv` không đối số, `export -p`, `set`/`declare` không đối số);
@@ -656,6 +698,9 @@ Các giới hạn khác:
 | `CASES_SETUP_NEEDS_LATER_TABLE` | `reset_sql` dùng bảng tạo ở bước sau | Dọn bảng đó trong `given.sql` của case bước đó |
 | `RISK_REQ` khi `submit cases` | Mức rủi ro đòi case mà bộ case chưa có | Thêm case theo thông báo (`repeat`, `parallel`, bất biến) |
 | `submit design`/`submit cases` dừng, nhắc `aisdlc policy pull` | Cache chính sách thiếu hoặc sai chữ ký | Chạy `aisdlc policy pull` |
+| `RISK_AGENT_MISSING` / `RISK_AGENT_INVALID` ở `submit design` (luồng nhẹ: `submit cases`) | Chưa có `risk-agent.json`, hoặc kết quả đã cũ (`inputsHash` khác sau khi sửa tài liệu), thiếu rule, hoặc câu trích không có trong file | Chạy lại `aisdlc risk inputs` và subagent `aisdlc-risk-classifier`; không sửa tay JSON |
+| `Chính sách dùng schema 1 …`, exit 2 | Chính sách còn rule so khớp cũ (`kind`/`match`) | Chạy `aisdlc policy migrate` (in diff), rồi `--write` và đưa vào qua MR; chế độ web thì quản trị chuyển trên trang chính sách (**Chuyển sang schema 2**) |
+| `RISK_LLM` fail ở CI | Tài liệu hoặc chính sách đổi sau khi xếp loại | Mở lại cổng, chạy lại subagent, `aisdlc risk reclassify` hoặc nộp lại |
 | `Không nộp được lên web: …`, exit 2 | Chế độ web mà web không trả lời | Nộp lại khi web sống; `aisdlc web status` |
 | Web trả 401 | Token hết hiệu lực | Chạy lại `aisdlc web login` |
 | Web trả 403 | Sai loại token | CLI dùng token ingest, duyệt dùng token approve |
@@ -672,7 +717,7 @@ Các giới hạn khác:
 | `aisdlc step accept Sx` | Accept một bước |
 | `aisdlc scope allow <path>` | Cho phép một file ngoài scope |
 | `aisdlc risk set <mức> --reason "..."` | Đổi mức rủi ro (hạ mức bắt buộc lý do) |
-| `aisdlc risk reclassify` | Phân loại lại theo chính sách hiện tại |
+| `aisdlc risk reclassify` | Áp kết quả `risk-agent.json` mới (sau khi chạy lại subagent), bỏ mức đổi tay |
 | `aisdlc web login` / `aisdlc web approve-token` | Lưu token ingest / approve (chỉ terminal thật, không qua `sessionApprove`) |
 | `aisdlc web migrate` | Đưa bản duyệt cục bộ lên web (chờ chủ tính năng xác nhận) |
 
@@ -687,7 +732,8 @@ Các giới hạn khác:
 | `aisdlc status [--json]` | Trạng thái cổng, bước, tạm dừng từ web |
 | `aisdlc review <gate> [--json]` | In review card |
 | `aisdlc diff --by-step --patch` | Diff theo từng bước |
-| `aisdlc policy show` / `pull` / `diff-preset` | Xem chính sách / lấy từ web / so với mẫu mới |
+| `aisdlc policy show` / `pull` / `diff-preset` / `migrate [--write]` | Xem chính sách / lấy từ web / so với mẫu mới / chuyển schema 1 sang schema 2 |
+| `aisdlc risk inputs` | File đầu vào và `inputsHash` cho subagent `aisdlc-risk-classifier` |
 | `aisdlc web status` / `aisdlc web push` | Kiểm hàng đợi gửi web / gửi bù |
 | `aisdlc eval [--ci --base <ref>]` | Chạy eval (cần Docker) |
 

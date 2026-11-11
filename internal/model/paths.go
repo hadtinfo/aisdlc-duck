@@ -38,6 +38,7 @@ func (p FeaturePaths) Feedback() string       { return p.in("feedback.md") }
 func (p FeaturePaths) EvalDir() string        { return p.in("eval") }
 func (p FeaturePaths) ReviewAgent() string    { return p.in("review-agent.json") }
 func (p FeaturePaths) Risk() string           { return p.in("risk.yaml") }
+func (p FeaturePaths) RiskAgent() string      { return p.in("risk-agent.json") }
 
 // Rel là đường dẫn tương đối so với repo, dùng dấu "/".
 func (p FeaturePaths) Rel(path string) string {

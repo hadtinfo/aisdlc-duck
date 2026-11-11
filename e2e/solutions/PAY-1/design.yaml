@@ -14,7 +14,3 @@ invariants:
   - name: Số đã dùng không vượt hạn mức
     sql: "SELECT account_id FROM daily_limit WHERE used_amount < 0 OR used_amount > limit_amount"
     step: S2
-impact:
-  level: medium
-  labels: [schema-change]
-  reason: "Thêm bảng daily_limit; API chỉ đọc, không ghi số đã dùng."

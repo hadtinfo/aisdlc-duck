@@ -16,7 +16,7 @@ import (
 func webPolicyCI(t *testing.T) (*testRepo, *fakeweb.Server) {
 	r := evalCmdFx(t)
 	r.webModeConfig()
-	web := r.ciWeb(`{"mode":"local","pinned":true,"approvals":[]}`)
+	web := r.ciWeb(`{"mode":"web","pinned":true,"approvals":[]}`)
 	p, ok := r.llmPolicy()
 	if !ok {
 		t.Fatal("không có chính sách")
@@ -41,7 +41,7 @@ func webPolicyCI(t *testing.T) (*testRepo, *fakeweb.Server) {
 
 func TestEvalCiWebModeUsesWebPolicyForInputsHash(t *testing.T) {
 	r, web := webPolicyCI(t)
-	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 0)
+	r.run("eval", "--ci", "--base", "HEAD") // cổng web chưa duyệt nên có thể không đạt; chỉ xét RISK_LLM
 	notContains(t, r.out, "RISK_LLM | KHÔNG ĐẠT")
 	contains(t, r.out, "RISK_LLM | ĐẠT")
 	reqs := web.RequestsFor("GET", "/api/cli/policy")
@@ -54,7 +54,7 @@ func TestEvalCiWebModePolicyFetchFailsNoSilentFallback(t *testing.T) {
 	web.Update(func(s *fakeweb.Server) {
 		s.Override["GET /api/cli/policy"] = fakeweb.JSONResp(403, `{"error":"forbidden"}`)
 	})
-	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
+	r.run("eval", "--ci", "--base", "HEAD")
 	contains(t, r.out, "RISK_LLM | KHÔNG ĐẠT | không lấy được chính sách từ web: HTTP 403")
 	notContains(t, r.out, "inputsHash không khớp")
 	if strings.Contains(r.out+r.err, "ci-tok") {
@@ -69,4 +69,14 @@ func TestEvalCiInvalidPolicyFileSurfacesRealError(t *testing.T) {
 	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 1)
 	contains(t, r.out, "RISK_LLM | KHÔNG ĐẠT | không nạp được chính sách rủi ro:")
 	contains(t, r.out, RepoPolicyFile)
+}
+
+// Config nói web nhưng server ghim local: chính sách theo chế độ local (file repo), không gọi web lấy chính sách.
+func TestEvalCiServerPinnedLocalUsesRepoPolicy(t *testing.T) {
+	r := evalCmdFx(t)
+	r.webModeConfig()
+	web := r.ciWeb(`{"mode":"local","pinned":true,"approvals":[]}`)
+	eq(t, r.run("eval", "--ci", "--base", "HEAD"), 0)
+	contains(t, r.out, "RISK_LLM | ĐẠT")
+	eq(t, len(web.RequestsFor("GET", "/api/cli/policy")), 0)
 }

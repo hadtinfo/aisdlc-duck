@@ -59,6 +59,9 @@ type Service struct {
 	Policy *risk.RiskPolicy
 	// PolicyErr là lý do không có Policy (không nạp/lấy được); đi vào chi tiết RISK_LLM.
 	PolicyErr string
+	// WebPolicy lấy chính sách hiện hành từ web (CI, token CI); chỉ gọi khi chế độ web có hiệu lực, cùng quyết định với
+	// cổng approval (server ghim thì theo server, chưa ghim thì theo config). nil thì chế độ web không có chính sách.
+	WebPolicy func(ctx context.Context) (*risk.RiskPolicy, error)
 }
 
 // OutDir là thư mục kết quả của harness cho tính năng: <root>/.aisdlc/run/<KEY>.
@@ -187,7 +190,7 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 		}
 	}
 	if ci && rf != nil && s.Meta.RiskSchema >= 2 {
-		hard = append(hard, s.riskLLM(*rf))
+		hard = append(hard, s.riskLLM(ctx, *rf, webMode))
 	}
 	var covReq *risk.Requirement
 	if rf != nil {
@@ -236,12 +239,24 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 
 // riskLLM (CI, tính năng có dấu riskSchema): kết quả xếp loại LLM trong risk.yaml phải khớp chính sách và tài liệu
 // hiện tại. Không gọi LLM; tài liệu đã khóa theo hash cổng nên so trên file hiện tại không gây lỗi giả.
-func (s *Service) riskLLM(rf risk.RiskFile) HardCheck {
+func (s *Service) riskLLM(ctx context.Context, rf risk.RiskFile, webMode bool) HardCheck {
 	const id = "RISK_LLM"
 	if rf.LLM == nil {
 		return HardCheck{id, false, "thiếu kết quả xếp loại LLM"}
 	}
-	if s.Policy == nil {
+	policy := s.Policy
+	if webMode {
+		// chế độ web có hiệu lực: chỉ dùng chính sách từ web, không rơi về file/mẫu trong repo
+		const pre = "không lấy được chính sách từ web: "
+		if s.WebPolicy == nil {
+			return HardCheck{id, false, pre + "thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN"}
+		}
+		p, err := s.WebPolicy(ctx)
+		if err != nil {
+			return HardCheck{id, false, pre + err.Error()}
+		}
+		policy = p
+	} else if policy == nil {
 		if s.PolicyErr != "" {
 			return HardCheck{id, false, s.PolicyErr}
 		}
@@ -251,7 +266,7 @@ func (s *Service) riskLLM(rf risk.RiskFile) HardCheck {
 	if err != nil {
 		return HardCheck{id, false, "Không đọc được tài liệu đầu vào: " + err.Error()}
 	}
-	if rf.LLM.InputsHash != risk.InputsHash(*s.Policy, files) {
+	if rf.LLM.InputsHash != risk.InputsHash(*policy, files) {
 		return HardCheck{id, false, "inputsHash không khớp tài liệu hiện tại"}
 	}
 	return HardCheck{id, true, "kết quả xếp loại LLM khớp tài liệu và chính sách hiện tại"}

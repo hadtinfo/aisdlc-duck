@@ -15,7 +15,8 @@ const STATUS: Record<string, string> = { OK: "ĐẠT", MISSING: "THIẾU", LATER
 /**
  * Rủi ro trên trang tính năng: mức, nguồn và danh sách ĐẠT / THIẾU / SAU của review card. Đổi mức chạy ở terminal
  * (`aisdlc risk set` ghi risk.yaml trong repo và cần console thật) nên panel chỉ hiện lệnh.
- * Thẻ BRD chỉ có mức tạm (`riskPreview`).
+ * Thẻ BRD do CLI cũ nộp có mức tạm (`riskPreview`); CLI hiện tại không ghi nữa (cổng BRD không xếp loại) nhưng thẻ cũ
+ * vẫn lưu trên web, nên panel còn hiện được chúng.
  */
 export function RiskPanel({ card, repoId }: { card: ReviewCardData; repoId: string }) {
   const risk = card.risk;

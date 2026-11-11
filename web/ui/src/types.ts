@@ -51,7 +51,10 @@ export interface TablePart { name: string; status: "NEW" | "EXISTING" | "ALTERED
 export interface StepPart { id: string; title: string; scope: string[]; budget: { files: number; lines: number };
   matchedCount: number; matchedFiles: string[]; plannedFiles?: string[]; emptyGlobs?: string[] }
 export interface ApiRow { status: string; when: string; body: string }
-/** Rủi ro trên review card: `risk` ở thẻ DESIGN/CASES (từ risk.yaml), `riskRequirements` ở CASES, `riskPreview` ở BRD. */
+/**
+ * Rủi ro trên review card: `risk` ở thẻ DESIGN/CASES (từ risk.yaml), `riskRequirements` ở CASES. `riskPreview` (mức tạm
+ * ở thẻ BRD) CLI không còn ghi; chỉ giữ để hiện thẻ BRD đã lưu trên web từ bản CLI cũ.
+ */
 export interface RiskMatchData { rule: string; level: string; on: string }
 export interface RiskPartData {
   level: string; policyVersion: number; matched: RiskMatchData[];
@@ -68,7 +71,9 @@ export interface RiskLLMData {
 export interface RiskRequirementData { id: string; name: string; status: "OK" | "MISSING" | "LATER"; detail?: string | null }
 export interface ReviewCardData {
   gate: GateName; flags: ReviewFlag[]; assumptions?: Assumption[]; assumptionsSection?: boolean;
-  risk?: RiskPartData; riskLLM?: RiskLLMData; riskRequirements?: RiskRequirementData[]; riskPreview?: { level: string; matched: RiskMatchData[] };
+  risk?: RiskPartData; riskLLM?: RiskLLMData; riskRequirements?: RiskRequirementData[];
+  /** Chỉ có ở thẻ BRD cũ (trước xếp loại bằng subagent): web vẫn lưu và trả các thẻ đó, nên UI còn hiện được. */
+  riskPreview?: { level: string; matched: RiskMatchData[] };
   brd?: { rules: number; rulesWithId: number; acceptanceCriteria: number; outOfScope: string[]; answeredQuestions: string[] };
   design?: { steps: StepPart[]; apiLines: string[]; statusCodes: string[]; apiRows: ApiRow[];
     tables: TablePart[]; touchesExisting: { kind: string; table: string; text: string }[] };

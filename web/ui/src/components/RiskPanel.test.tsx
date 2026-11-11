@@ -24,3 +24,9 @@ test("RiskPanel: agent không có nhãn thì bỏ phần nhãn; không có đán
   const none = text({ gate: "DESIGN", flags: [], risk: { level: "high", policyVersion: 2, matched: [], agent: null } });
   expect(none).toContain("Agent: Không có đánh giá");
 });
+
+test("RiskPanel: thẻ BRD cũ (CLI trước đây ghi riskPreview) vẫn hiện mức tạm", () => {
+  const out = text({ gate: "BRD", flags: [], riskPreview: { level: "medium", matched: [{ rule: "R2", level: "medium", on: "ledger" }] } });
+  expect(out).toContain("Rủi ro tạm (BRD)");
+  expect(out).toContain("R2");
+});

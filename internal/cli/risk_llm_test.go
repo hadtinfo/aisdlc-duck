@@ -27,14 +27,25 @@ func classifies(args []string) bool {
 	return false
 }
 
-// llmPolicy là chính sách có hiệu lực như CLI đọc; false khi không đọc được hoặc không dùng được để xếp loại.
+// llmPolicy là chính sách có hiệu lực như lệnh của tính năng đọc (FeaturePolicy: nguồn theo chế độ duyệt có hiệu lực
+// trong cache, như policyFromWeb); false khi không đọc được hoặc không dùng được để xếp loại.
 func (r *testRepo) llmPolicy() (risk.RiskPolicy, bool) {
 	ctx := r.context(noConsole(), "", &bytes.Buffer{}, &bytes.Buffer{})
-	l, ok := TryLoadPolicy(ctx, r.root)
-	if !ok {
+	web := NewWebCache(ctx, r.root)
+	cfg, err := model.LoadRepoConfig(r.root)
+	if err != nil {
+		return risk.RiskPolicy{}, false
+	}
+	fromWeb := web.CachedMode(cfg) == gate.ModeWeb && web.PolicyWebMode()
+	try := func() (LoadedPolicy, bool) {
+		l, err := loadPolicy(ctx, r.root, fromWeb, true)
+		return l, err == nil
+	}
+	l, ok := try()
+	if !ok && fromWeb {
 		// chế độ web chưa có cache chính sách: lấy như lệnh submit sẽ lấy
-		NewWebCache(ctx, r.root).PolicyPullQuietly()
-		l, ok = TryLoadPolicy(ctx, r.root)
+		web.PolicyPullQuietly()
+		l, ok = try()
 	}
 	if !ok || l.Policy.Usable() != nil {
 		return risk.RiskPolicy{}, false

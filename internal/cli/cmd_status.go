@@ -262,7 +262,7 @@ func printRisk(ctx *Context, f *Feature) {
 		}
 		ctx.Println(line)
 	}
-	if !f.Web.PolicyWebMode() {
+	if !policyFromWeb(f) {
 		return
 	}
 	web, ok := f.Web.Policy()

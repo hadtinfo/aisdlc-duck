@@ -352,15 +352,15 @@ func (s *submission) review(f *Feature) (int, error) {
 	return s.submit(f, gate.REVIEW, findings, nil)
 }
 
-// policy là chính sách hiện tại; web chưa có cache trên máy này thì thử lấy một lần trước (lỗi → Abort như
-// LoadPolicy).
+// policy là chính sách hiện tại của tính năng (nguồn theo policyFromWeb); web chưa có cache trên máy này thì thử lấy
+// một lần trước (lỗi → Abort như FeaturePolicy).
 func (s *submission) policy(f *Feature) (LoadedPolicy, error) {
-	if f.Web.PolicyWebMode() {
+	if policyFromWeb(f) {
 		if _, ok := f.Web.Policy(); !ok {
 			f.Web.PolicyPullQuietly()
 		}
 	}
-	return LoadPolicy(s.ctx, f.Root, false)
+	return FeaturePolicy(s.ctx, f, false)
 }
 
 // reportRisk (chế độ web): đặt event RISK_CLASSIFIED của risk.yaml vừa ghi vào outbox, một lần; flush gửi ngay (lệnh

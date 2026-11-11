@@ -11,12 +11,12 @@ import (
 )
 
 // Nguồn chính sách cho eval để tính lại inputsHash. Chọn nguồn do eval.Service quyết, cùng quyết định chế độ hiệu
-// lực với cổng approval: local dùng chính sách như CLI (LoadPolicy: file/mẫu), web (CI) dùng webEvalPolicy (token CI),
+// lực với cổng approval: local dùng file/mẫu trong repo (RepoFilePolicy, như FeaturePolicy ở chế độ local), web (CI) dùng webEvalPolicy (token CI),
 // không bao giờ rơi về file/mẫu. Lỗi thành chuỗi cho chi tiết RISK_LLM.
 
 // localEvalPolicy là chính sách ở chế độ local.
 func localEvalPolicy(ctx *Context, f *Feature) (*risk.RiskPolicy, string) {
-	l, err := LoadPolicy(ctx, f.Root, true)
+	l, err := RepoFilePolicy(ctx, f.Root, true)
 	if err != nil {
 		return nil, "không nạp được chính sách rủi ro: " + oneLineErr(err)
 	}

@@ -70,14 +70,13 @@ func newRiskCmd(ctx *Context) *cobra.Command {
 }
 
 // riskInputsCmd: mỗi dòng một file đầu vào (tính từ gốc repo), rồi dòng `policy:` và `inputsHash:`. Agent chính truyền
-// nguyên các dòng này cho subagent aisdlc-risk-classifier.
+// nguyên các dòng này cho subagent aisdlc-risk-classifier. Chế độ web có hiệu lực: lấy lại chính sách mỗi lần (như
+// reclassify) để inputsHash khớp bản eval --ci sẽ lấy từ web.
 func riskInputsCmd(ctx *Context, f *Feature) (int, error) {
-	if f.Web.PolicyWebMode() {
-		if _, ok := f.Web.Policy(); !ok {
-			f.Web.PolicyPullQuietly()
-		}
+	if err := refreshWebPolicy(ctx, f); err != nil {
+		return 0, err
 	}
-	l, err := LoadPolicy(ctx, f.Root, false)
+	l, err := FeaturePolicy(ctx, f, false)
 	if err != nil {
 		return 0, err
 	}
@@ -115,7 +114,7 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 	if approved {
 		return 0, abort(2, "Cổng Case đã duyệt; mở lại cổng Case trước (`aisdlc reopen cases`).")
 	}
-	l, err := LoadPolicy(ctx, f.Root, false)
+	l, err := FeaturePolicy(ctx, f, false)
 	if err != nil {
 		return 0, err
 	}
@@ -183,8 +182,10 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 }
 
 func riskReclassify(ctx *Context, f *Feature) (int, error) {
-	f.Web.PolicyPullQuietly()
-	l, err := LoadPolicy(ctx, f.Root, false)
+	if policyFromWeb(f) {
+		f.Web.PolicyPullQuietly()
+	}
+	l, err := FeaturePolicy(ctx, f, false)
 	if err != nil {
 		return 0, err
 	}

@@ -84,7 +84,7 @@ func reconcile(ctx *Context, f *Feature) ([]gate.Gate, error) {
 		return nil, nil
 	}
 	var p *risk.RiskPolicy
-	if l, ok := TryLoadPolicy(ctx, f.Root); ok {
+	if l, ok := TryFeaturePolicy(ctx, f); ok {
 		p = &l.Policy
 	}
 	return supersede(ctx, f, p, "", rf)

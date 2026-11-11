@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"log"
 	"net"
 	"net/http"
@@ -28,7 +29,7 @@ func sessionIDFrom(ctx context.Context) string {
 // Middleware là AuthFilter. Mọi /api/** trừ /api/login cần xác thực: "Authorization: Bearer <token>" hoặc cookie
 // phiên AISDLC_SESSION. Rồi kiểm luật theo vùng và loại token:
 //   - /api/ingest/** → Bearer ingest|login
-//   - /api/cli/** → Bearer ingest
+//   - /api/cli/** → Bearer ingest (riêng GET /api/cli/policy cho phép thêm Bearer ci, chỉ đọc)
 //   - /api/ci/** → Bearer ci
 //   - POST /api/gates/** → phiên + CSRF, hoặc Bearer approve
 //   - /api/control/** → chỉ phiên + CSRF (Bearer mọi loại → 403)
@@ -90,9 +91,7 @@ func (s *Service) fail(w http.ResponseWriter, r *http.Request, err error) {
 // reject đọc bỏ thân request (như Tomcat max-swallow-size -1) để client nhận được 401/403 chứ không bị reset.
 func reject(w http.ResponseWriter, r *http.Request, status int, body string) {
 	httpx.Drain(w, r)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(body))
+	httpx.WriteJSON(w, status, json.RawMessage(body)) // body là JSON hằng, đã gọn nên byte không đổi
 }
 
 // rawPath là đường thô như getRequestURI của Servlet: RequestURI bỏ query; dạng tuyệt đối (http://host/p) bỏ scheme+host.
@@ -165,6 +164,11 @@ func (s *Service) allowed(r *http.Request, raw string, p httpx.Principal, sid st
 	case AreaIngest:
 		return p.Via == "ingest" || p.Via == "login", nil
 	case AreaCLI:
+		// ngoại lệ chỉ-đọc: CI (token ci) lấy chính sách hiện hành để tính lại inputsHash; không có khóa ghim ở CI
+		if p.Via == "ci" {
+			return r.Method == http.MethodGet && r.URL.Path == "/api/cli/policy" &&
+				(r.URL.RawPath == "" || r.URL.RawPath == r.URL.Path) && Normalize(raw) == r.URL.Path, nil
+		}
 		return p.Via == "ingest", nil
 	case AreaCI:
 		return p.Via == "ci", nil

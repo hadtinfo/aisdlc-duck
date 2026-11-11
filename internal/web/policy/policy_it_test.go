@@ -511,3 +511,20 @@ func regexpReplace(t *testing.T, s, re string) string {
 	t.Helper()
 	return regexp.MustCompile(re).ReplaceAllString(s, "")
 }
+
+// Token ci chỉ được đọc chính sách (GET /api/cli/policy); mọi đường /api/cli/** khác và POST vẫn bị chặn.
+func TestCliPolicyReadableByCIToken(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	f.seeded(t, repo)
+	ci := webtest.CliToken(t, f.e.Pool, "ci-token", "pl-ci")
+	if r := f.w.GetBearer("/api/cli/policy?repo="+enc(repo), ci); r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	if r := f.w.GetBearer("/api/cli/pubkey", ci); r.Status != 403 {
+		t.Fatal("ci không được đọc đường cli khác:", r.Status)
+	}
+	if r := f.w.PostBearer("/api/cli/policy/import", `{"repo":"`+repo+`","yaml":"x"}`, ci); r.Status != 403 {
+		t.Fatal("ci không được ghi chính sách:", r.Status)
+	}
+}

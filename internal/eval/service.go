@@ -57,6 +57,8 @@ type Service struct {
 	Now      func() time.Time
 	// Policy là chính sách rủi ro đang hiệu lực (CLI nạp); dùng để tính lại inputsHash ở CI. nil thì không kiểm được.
 	Policy *risk.RiskPolicy
+	// PolicyErr là lý do không có Policy (không nạp/lấy được); đi vào chi tiết RISK_LLM.
+	PolicyErr string
 }
 
 // OutDir là thư mục kết quả của harness cho tính năng: <root>/.aisdlc/run/<KEY>.
@@ -240,6 +242,9 @@ func (s *Service) riskLLM(rf risk.RiskFile) HardCheck {
 		return HardCheck{id, false, "thiếu kết quả xếp loại LLM"}
 	}
 	if s.Policy == nil {
+		if s.PolicyErr != "" {
+			return HardCheck{id, false, s.PolicyErr}
+		}
 		return HardCheck{id, false, "không có chính sách rủi ro để kiểm inputsHash"}
 	}
 	files, err := risk.InputFiles(s.Paths.RepoRoot, s.Paths, s.Meta.Flow)

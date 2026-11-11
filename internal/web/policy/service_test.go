@@ -86,3 +86,21 @@ func TestPresetRuleIDsFromBundledPresetVersionElseEmpty(t *testing.T) {
 	}
 	eq(presetRuleIDs(unknown))
 }
+
+func TestMigrateDraftPure(t *testing.T) {
+	y, _ := risk.PresetYAML("generic", "2")
+	p, err := risk.ParsePolicy(y)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pj, ch, err := migrateDraft(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pj, `"schema":2`) || len(ch) == 0 || ch[0].Kind != "SCHEMA_MIGRATED" {
+		t.Fatal(pj, ch)
+	}
+	if _, _, err := migrateDraft(genericWith(t, risk.PresetLatestVersion("generic"))); err == nil {
+		t.Fatal("schema 2 phải báo không cần chuyển")
+	}
+}

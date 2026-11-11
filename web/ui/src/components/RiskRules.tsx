@@ -1,50 +1,63 @@
 import { useState } from "react";
-import {
-  AGENT_LABEL, DEV_LOWER_LABEL, KINDS, type Policy, type PolicyRule, type RuleKind, nextRuleId, putRule, removeRule, sameRule,
-} from "../risk";
+import { DEV_LOWER_LABEL, KINDS, type Policy, type PolicyRule, nextRuleId, putRule, removeRule, sameRule } from "../risk";
 import { LevelPill } from "./RiskPanel";
 import { RiskDialog } from "./RiskDialog";
 
-/** Tab "Rule nhận diện": bảng rule, hộp thoại thêm/sửa, bật/tắt, khối nguồn phân loại khác. */
+/** Luật schema 1 (chỉ đọc) hiện theo kiểu cũ: loại, mẫu khớp và ghi chú. */
+function legacyText(r: PolicyRule): string {
+  const kind = r.kind ? KINDS[r.kind]?.name ?? r.kind : "";
+  return [r.note, [kind, ...(r.match ?? [])].filter(Boolean).join(": ")].filter(Boolean).join(" — ");
+}
+
+/**
+ * Tab "Rule nhận diện": rule mô tả bằng lời (schema 2) do subagent trong Claude Code xếp loại; bảng rule, hộp thoại
+ * thêm/sửa, bật/tắt. Chính sách schema 1 chỉ đọc (chuyển sang schema 2 bằng nút ở đầu trang).
+ */
 export function RiskRules({ policy, base, presetRuleIds, onChange }: {
   policy: Policy; base: Policy; presetRuleIds: string[]; onChange: (p: Policy) => void;
 }) {
   const [editing, setEditing] = useState<PolicyRule | "new" | null>(null);
   const presetName = policy.preset?.name ?? base.preset?.name ?? "";
   const baseRules = new Map(base.rules.map((r) => [r.id, r]));
+  const readOnly = policy.schema === 1;
   return (
     <div className="rk-stack">
       <div className="rk-note info"><div className="grow">
-        Mức rủi ro của tính năng = <b>mức cao nhất</b> trong: các rule khớp, đánh giá tác động của agent, mức dev đặt tay.
+        Mức rủi ro của tính năng = <b>mức cao nhất</b> trong: các rule mà subagent xác định là khớp, mức dev đặt tay.
+        Mỗi rule là một mô tả bằng lời; việc xếp loại làm trong phiên Claude Code, máy chủ không chạy LLM.
         Lõi AISDLC không biết nghiệp vụ; mọi rule ở đây là của dự án này.
       </div></div>
+      {readOnly && <div className="rk-note warn"><div className="grow">
+        Chính sách đang dùng <b>schema 1</b> (luật so khớp) nên chỉ xem được. Chuyển sang schema 2 để sửa và để phân loại hoạt động.
+      </div></div>}
       <section className="box">
-        <div className="rk-head"><h2>Rule nhận diện</h2><button type="button" onClick={() => setEditing("new")}>Thêm rule</button></div>
+        <div className="rk-head"><h2>Rule nhận diện</h2>
+          {!readOnly && <button type="button" onClick={() => setEditing("new")}>Thêm rule</button>}
+        </div>
         {policy.rules.length === 0 ? <p className="muted">Chưa có rule nào; mọi tính năng nhận mức mặc định <b>{policy.default}</b>.</p> : (
           <table className="grid">
-            <thead><tr><th>ID</th><th>Loại</th><th>Mẫu khớp</th><th>Mức</th><th>Nguồn</th><th /></tr></thead>
+            <thead><tr><th>ID</th><th>Mô tả</th><th>Mức</th><th>Bật</th><th>Nguồn</th>{!readOnly && <th />}</tr></thead>
             <tbody>
               {policy.rules.map((r) => {
                 const b = baseRules.get(r.id);
                 return (
                   <tr key={r.id} className={`${r.enabled ? "" : "off"} ${b && sameRule(b, r) ? "" : "changed"}`}>
                     <td className="mono">{r.id}</td>
-                    <td className="kind">{KINDS[r.kind]?.name ?? r.kind}</td>
-                    <td>
-                      {r.match.map((m, i) => <span key={i}>{i > 0 && " "}<code>{m}</code></span>)}
-                      {r.note && <div className="rk-desc">{r.note}</div>}
-                    </td>
+                    <td>{r.describe ?? legacyText(r)}</td>
                     <td><LevelPill level={r.level} levels={policy.levels} /></td>
+                    <td>{r.enabled ? "Bật" : "Tắt"}</td>
                     <td>{presetRuleIds.includes(r.id)
                       ? <span className="tag preset">mẫu {presetName}</span>
                       : <span className="tag">dự án</span>}</td>
-                    <td className="act">
-                      <button type="button" className="link" onClick={() => setEditing(r)}>Sửa</button>{" · "}
-                      <button type="button" className="link" onClick={() => onChange(putRule(policy, { ...r, enabled: !r.enabled }))}>
-                        {r.enabled ? "Tắt" : "Bật"}
-                      </button>
-                      {!b && <>{" · "}<button type="button" className="link" onClick={() => onChange(removeRule(policy, r.id))}>Xóa</button></>}
-                    </td>
+                    {!readOnly && (
+                      <td className="act">
+                        <button type="button" className="link" onClick={() => setEditing(r)}>Sửa</button>{" · "}
+                        <button type="button" className="link" onClick={() => onChange(putRule(policy, { ...r, enabled: !r.enabled }))}>
+                          {r.enabled ? "Tắt" : "Bật"}
+                        </button>
+                        {!b && <>{" · "}<button type="button" className="link" onClick={() => onChange(removeRule(policy, r.id))}>Xóa</button></>}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -55,25 +68,15 @@ export function RiskRules({ policy, base, presetRuleIds, onChange }: {
       <section className="box">
         <div className="rk-head"><h2>Nguồn phân loại khác</h2></div>
         <div className="rk-form">
-          <label className="rk-field"><span>Đánh giá tác động của agent</span>
-            <select value={policy.classification.agent}
-              onChange={(e) => onChange({ ...policy, classification: { ...policy.classification, agent: e.target.value as "raise" | "off" } })}>
-              {Object.entries(AGENT_LABEL).map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-            </select>
-          </label>
-          <label className="rk-field"><span>Dev hạ mức so với rule hoặc agent</span>
-            <select value={policy.classification.devLower}
+          <label className="rk-field"><span>Dev hạ mức so với rule</span>
+            <select value={policy.classification.devLower} disabled={readOnly}
               onChange={(e) => onChange({ ...policy, classification: { ...policy.classification, devLower: e.target.value as "reason" | "never" } })}>
               {Object.entries(DEV_LOWER_LABEL).map(([v, t]) => <option key={v} value={v}>{t}</option>)}
             </select>
           </label>
-          <p className="muted wide" style={{ fontSize: 12.5, margin: 0 }}>
-            Agent đánh giá ở bước thiết kế: ghi mức đề xuất, lý do và nhãn tác động (ví dụ <code>money-movement</code>).
-            Nhãn được dùng cho rule loại "Nhãn tác động".
-          </p>
         </div>
       </section>
-      {editing && (
+      {editing && !readOnly && (
         <RuleDialog policy={policy} rule={editing === "new" ? null : editing} onClose={() => setEditing(null)}
           onSave={(r, oldId) => { onChange(putRule(policy, r, oldId)); setEditing(null); }} />
       )}
@@ -85,41 +88,30 @@ function RuleDialog({ policy, rule, onClose, onSave }: {
   policy: Policy; rule: PolicyRule | null; onClose: () => void; onSave: (r: PolicyRule, oldId?: string) => void;
 }) {
   const [id, setId] = useState(rule?.id ?? nextRuleId(policy.rules));
-  const [kind, setKind] = useState<RuleKind>(rule?.kind ?? "keyword");
   const [level, setLevel] = useState(rule?.level ?? policy.levels[policy.levels.length - 1] ?? "");
-  const [match, setMatch] = useState((rule?.match ?? []).join("\n"));
-  const [note, setNote] = useState(rule?.note ?? "");
+  const [describe, setDescribe] = useState(rule?.describe ?? "");
   const [error, setError] = useState("");
 
   function save() {
-    const items = match.split("\n").map((x) => x.trim()).filter(Boolean);
     const newId = id.trim();
     if (!newId) return setError("Cần ID rule");
     if (newId !== rule?.id && policy.rules.some((r) => r.id === newId)) return setError(`ID ${newId} đã có`);
-    if (items.length === 0) return setError("Mẫu khớp không được để trống");
-    onSave({ id: newId, kind, level, match: items, note: note.trim() || null, enabled: rule?.enabled ?? true }, rule?.id);
+    if (!describe.trim()) return setError("Mô tả không được để trống");
+    onSave({ id: newId, level, describe: describe.trim(), enabled: rule?.enabled ?? true }, rule?.id);
   }
 
   return (
     <RiskDialog title={rule ? `Sửa rule ${rule.id}` : "Thêm rule"} onClose={onClose}>
       <div className="rk-form">
         {!rule && <label className="rk-field"><span>ID</span><input type="text" value={id} onChange={(e) => setId(e.target.value)} /></label>}
-        <label className="rk-field"><span>Loại</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value as RuleKind)}>
-            {Object.entries(KINDS).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
-          </select>
-        </label>
         <label className="rk-field"><span>Mức khi khớp</span>
           <select value={level} onChange={(e) => setLevel(e.target.value)}>
             {policy.levels.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
         </label>
-        <label className="rk-field wide"><span>Mẫu khớp (mỗi dòng một) · so với {KINDS[kind].where}</span>
-          <textarea className="mono" rows={3} value={match} placeholder={KINDS[kind].ph} autoFocus
-            onChange={(e) => setMatch(e.target.value)} />
-        </label>
-        <label className="rk-field wide"><span>Ghi chú cho người đọc</span>
-          <input type="text" value={note} onChange={(e) => setNote(e.target.value)} />
+        <label className="rk-field wide"><span>Mô tả bằng lời: khi nào tính năng thuộc rule này</span>
+          <textarea rows={3} value={describe} autoFocus placeholder="Ví dụ: có dòng tiền đi qua (chuyển tiền, hoàn tiền, trừ số dư)"
+            onChange={(e) => setDescribe(e.target.value)} />
         </label>
         {error && <p className="error wide" role="alert">{error}</p>}
         <div className="wide rk-row end">

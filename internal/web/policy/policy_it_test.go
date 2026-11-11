@@ -320,23 +320,122 @@ func TestPolicyValidateUsesGoRisk(t *testing.T) {
 	}
 }
 
-// Thử phân loại không còn hỗ trợ (server không có LLM): API trả lỗi rõ.
-func TestClassifyNoLongerSupported(t *testing.T) {
+// Thử phân loại đã bỏ hẳn: không còn route.
+func TestClassifyRouteRemoved(t *testing.T) {
+	f := newFixture(t)
+	r := f.w.PostSession("/api/policy/classify", `{}`, f.ownerS, f.ownerS.CSRF)
+	if r.Status != 404 && r.Status != 405 {
+		t.Fatal(r.Status, r.Body)
+	}
+}
+
+func schema1YAML(t *testing.T) string {
+	t.Helper()
+	y, err := risk.PresetYAML("generic", "2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return y
+}
+
+func (f *fixture) migrateDraft(repo string) webtest.Resp {
+	b, _ := json.Marshal(map[string]any{"repo": repo})
+	return f.w.PostSession("/api/policy/migrate-draft", string(b), f.ownerS, f.ownerS.CSRF)
+}
+
+func TestMigrateDraftFromSchema1(t *testing.T) {
 	f := newFixture(t)
 	repo := f.repo()
-	p := f.seeded(t, repo)
-	b, _ := json.Marshal(map[string]any{"policy": p, "inputs": map[string]any{"text": "chuyển tiền"}})
-	r := f.w.PostSession("/api/policy/classify", string(b), f.ownerS, f.ownerS.CSRF)
-	if r.Status != 400 || !strings.Contains(r.JSON(t)["error"].(string), "Thử phân loại không còn hỗ trợ") {
+	if r := f.importYaml(repo, schema1YAML(t)); r.Status != 201 {
 		t.Fatal(r.Status, r.Body)
+	}
+	if f.live(t, repo)["policy"].(map[string]any)["schema"] != 1.0 {
+		t.Fatal("chính sách sống phải là schema 1")
+	}
+	r := f.migrateDraft(repo)
+	if r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	m := r.JSON(t)
+	pol := m["policy"].(map[string]any)
+	if pol["schema"] != 2.0 || pol["preset"] != nil {
+		t.Fatal(pol)
+	}
+	for _, x := range arr(pol["rules"]) {
+		if x.(map[string]any)["describe"] == "" {
+			t.Fatal(x)
+		}
+	}
+	ch := arr(m["changes"])
+	if len(ch) == 0 || ch[0].(map[string]any)["kind"] != "SCHEMA_MIGRATED" {
+		t.Fatal(ch)
+	}
+	if u, has := f.live(t, repo)["presetUpdate"]; !has || u != nil { // schema 1 chỉ đọc: không đề nghị cập nhật mẫu
+		t.Fatal(u)
+	}
+	// không ghi gì vào DB
+	if f.count(t, repo) != 1 {
+		t.Fatal("migrate-draft không được tạo phiên bản")
+	}
+	// schema 2 thì không có gì để chuyển
+	repo2 := f.repo()
+	f.seeded(t, repo2)
+	if r := f.migrateDraft(repo2); r.Status != 400 {
+		t.Fatal(r.Status, r.Body)
+	}
+	if r := f.migrateDraft(f.repo()); r.Status != 404 {
+		t.Fatal(r.Status, r.Body)
+	}
+}
+
+func TestPublishRejectsSchema1(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	if r := f.importYaml(repo, schema1YAML(t)); r.Status != 201 {
+		t.Fatal(r.Status, r.Body)
+	}
+	p1 := f.live(t, repo)["policy"]
+	r := f.publish(repo, 1, p1, "x", false)
+	if r.Status != 400 || !strings.Contains(r.JSON(t)["error"].(string), "schema 1") {
+		t.Fatal(r.Status, r.Body)
+	}
+	if f.count(t, repo) != 1 {
+		t.Fatal("không được tạo phiên bản")
+	}
+	if errs := arr(f.validate(repo, p1)["errors"]); len(errs) == 0 {
+		t.Fatal("validate phải báo lỗi schema 1")
+	}
+}
+
+func TestVersionsShowSchemaMigrated(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	if r := f.importYaml(repo, schema1YAML(t)); r.Status != 201 {
+		t.Fatal(r.Status, r.Body)
+	}
+	pol := f.migrateDraft(repo).JSON(t)["policy"]
+	if r := f.publish(repo, 1, pol, "chuyển schema 2", false); r.Status != 201 {
+		t.Fatal(r.Status, r.Body)
+	}
+	r := f.w.GetSession("/api/policy/versions?repo="+enc(repo), f.ownerS)
+	if r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	var list []map[string]any
+	if err := json.Unmarshal([]byte(r.Body), &list); err != nil {
+		t.Fatal(err, r.Body)
+	}
+	ch := arr(list[0]["changes"])
+	if len(ch) == 0 || ch[0].(map[string]any)["kind"] != "SCHEMA_MIGRATED" {
+		t.Fatal(list[0])
 	}
 }
 
 func TestPresetUpdateWhenBundledNewer(t *testing.T) {
 	f := newFixture(t)
 	repo := f.repo()
-	y, _ := risk.PresetYAML("generic", "1")
-	old := regexpReplace(t, strings.Replace(y, `version: "1"`, `version: "0"`, 1), `(?m)^  - \{ id: G4.*\n`)
+	y := genericYAML(t)
+	old := regexpReplace(t, strings.Replace(y, `version: "`+risk.PresetLatestVersion("generic")+`"`, `version: "0"`, 1), `(?m)^  - \{ id: G4.*\n`)
 	if r := f.importYaml(repo, old); r.Status != 201 {
 		t.Fatal(r.Status, r.Body)
 	}

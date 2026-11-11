@@ -2,13 +2,17 @@
 import { ApiError, getJson, postJson } from "./api";
 
 export type RuleKind = "keyword" | "path" | "table" | "endpoint" | "label";
-export interface PolicyRule { id: string; kind: RuleKind; match: string[]; level: string; note?: string | null; enabled: boolean }
+/** Schema 2: `describe` (luật bằng lời cho subagent). Schema 1 (chỉ đọc): `kind`/`match`/`note`. */
+export interface PolicyRule {
+  id: string; level: string; enabled: boolean; describe?: string;
+  kind?: RuleKind; match?: string[]; note?: string | null;
+}
 /** Yêu cầu dạng phẳng như YAML: `{ id: coverage, min: 90 }`. */
 export interface PolicyReq { id: string; [param: string]: unknown }
 export interface Policy {
   schema: number; version: number; preset?: { name: string; version: string } | null;
   levels: string[]; default: string; rules: PolicyRule[];
-  classification: { agent: "raise" | "off"; devLower: "reason" | "never" };
+  classification: { agent?: "raise" | "off"; devLower: "reason" | "never" };
   requirements: Record<string, PolicyReq[]>;
   /** Quy trình theo mức: mức → cổng (brd|design|cases|step) → auto|manual. Vắng = mọi cổng manual. Review luôn duyệt tay. */
   flow?: Record<string, Partial<Record<FlowUnit, FlowMode>>>;
@@ -33,13 +37,6 @@ export interface PolicyVersion {
   createdAt: string; changes: PolicyChange[];
 }
 export interface RiskMatch { rule: string; level: string; on: string }
-export interface ClassifyInputs {
-  text: string; paths: string[]; tables: string[]; endpoints: string[]; labels: string[]; agentLevel: string | null;
-}
-export interface ClassifyResult {
-  result: { level: string; ruleLevel: string; matched: RiskMatch[]; agentLevel: string | null };
-  requirements: { id: string; name: string; params: Record<string, unknown> }[];
-}
 export interface Draft { baseVersion: number; policy: Policy; fromPreset?: boolean }
 
 // ---- API ----
@@ -60,8 +57,9 @@ export const publish = (repo: string, baseVersion: number, policy: Policy, reaso
     { repo, baseVersion, policy, reason, fromPreset });
 export const validate = (policy: Policy, repo?: string) =>
   postJson<{ errors: string[]; changes: PolicyChange[] }>("/api/policy/validate", repo ? { policy, repo } : { policy });
-export const classify = (policy: Policy, inputs: ClassifyInputs) =>
-  postJson<ClassifyResult>("/api/policy/classify", { policy, inputs });
+/** Bản nháp schema 2 dựng từ chính sách schema 1 đang hiệu lực (không ghi gì); người có quyền sửa xem lại rồi xuất bản. */
+export const migrateDraft = (repo: string) =>
+  postJson<{ policy: Policy; changes: PolicyChange[] }>("/api/policy/migrate-draft", { repo });
 
 // ---- Tên hiển thị ----
 
@@ -273,25 +271,31 @@ const s = (v: unknown) => (v == null ? "—" : String(v));
 /** So rule theo nội dung (bỏ qua thứ tự khóa JSON, note null/vắng). */
 export const sameRule = (a: PolicyRule, b: PolicyRule) =>
   a.kind === b.kind && a.level === b.level && a.enabled === b.enabled && (a.note ?? "") === (b.note ?? "")
-  && a.match.join("\n") === b.match.join("\n");
+  && (a.describe ?? "") === (b.describe ?? "") && (a.match ?? []).join("\n") === (b.match ?? []).join("\n");
+
+/** Đơn vị cổng có cột quy trình: schema 2 bỏ BRD (luôn duyệt tay). */
+export const flowUnits = (p: Policy) => FLOW_UNITS.filter((u) => !(p.schema >= 2 && u.id === "brd"));
 
 /** Mỗi dòng là một thay đổi giữa bản đang hiệu lực và nháp, để hiện trên thanh nháp và hộp thoại xuất bản. */
 export function draftChanges(base: Policy, draft: Policy): string[] {
   const out: string[] = [];
+  if (base.schema !== draft.schema) out.push(`Chuyển chính sách từ schema ${base.schema} sang schema ${draft.schema} (luật mô tả bằng lời)`);
   // rule
   const baseRules = new Map(base.rules.map((r) => [r.id, r]));
   const draftIds = new Set(draft.rules.map((r) => r.id));
   for (const r of draft.rules) {
     const b = baseRules.get(r.id);
     if (!b) {
-      out.push(`${r.id}: thêm (${KINDS[r.kind]?.name ?? r.kind} ${r.match.join(", ")} → ${r.level})`);
+      out.push(r.describe != null ? `${r.id}: thêm (${r.describe} → ${r.level})`
+        : `${r.id}: thêm (${(r.kind && KINDS[r.kind]?.name) ?? r.kind} ${(r.match ?? []).join(", ")} → ${r.level})`);
       continue;
     }
     if (sameRule(b, r)) continue;
     const parts: string[] = [];
     if (b.enabled !== r.enabled) parts.push(r.enabled ? "bật" : "tắt");
-    if (b.kind !== r.kind) parts.push(`loại ${KINDS[b.kind]?.name ?? b.kind} → ${KINDS[r.kind]?.name ?? r.kind}`);
-    if (b.match.join("\n") !== r.match.join("\n")) parts.push(`mẫu khớp ${b.match.join(", ")} → ${r.match.join(", ")}`);
+    if (b.kind !== r.kind) parts.push(`loại ${(b.kind && KINDS[b.kind]?.name) ?? b.kind} → ${(r.kind && KINDS[r.kind]?.name) ?? r.kind}`);
+    if ((b.match ?? []).join("\n") !== (r.match ?? []).join("\n")) parts.push(`mẫu khớp ${(b.match ?? []).join(", ")} → ${(r.match ?? []).join(", ")}`);
+    if ((b.describe ?? "") !== (r.describe ?? "")) parts.push("sửa mô tả");
     if (b.level !== r.level) parts.push(`mức ${b.level} → ${r.level}`);
     if ((b.note ?? "") !== (r.note ?? "")) parts.push("sửa ghi chú");
     out.push(`${r.id}: ${parts.join("; ")}`);
@@ -326,15 +330,16 @@ export function draftChanges(base: Policy, draft: Policy): string[] {
 
   // quy trình theo mức
   for (const level of new Set([...draft.levels, ...base.levels])) {
-    for (const u of FLOW_UNITS) {
+    for (const u of flowUnits(draft)) {
       const a = flowOf(base, level, u.id), b = flowOf(draft, level, u.id);
       if (a !== b) out.push(`Quy trình mức ${level}, cổng ${u.id}: ${a} → ${b}`);
     }
   }
 
   // phân loại và thang
-  if (base.classification.agent !== draft.classification.agent) {
-    out.push(`Đánh giá tác động của agent: ${AGENT_LABEL[base.classification.agent] ?? base.classification.agent} → ${AGENT_LABEL[draft.classification.agent] ?? draft.classification.agent}`);
+  if (draft.schema < 2 && base.classification.agent !== draft.classification.agent) {
+    const lab = (a?: string) => (a ? AGENT_LABEL[a] ?? a : "—");
+    out.push(`Đánh giá tác động của agent: ${lab(base.classification.agent)} → ${lab(draft.classification.agent)}`);
   }
   if (base.classification.devLower !== draft.classification.devLower) {
     out.push(`Dev hạ mức so với rule hoặc agent: ${DEV_LOWER_LABEL[base.classification.devLower] ?? base.classification.devLower} → ${DEV_LOWER_LABEL[draft.classification.devLower] ?? draft.classification.devLower}`);
@@ -398,6 +403,7 @@ export function changeText(c: PolicyChange): string {
     case "REMOVE_REQ": return `− yêu cầu ${c.key.split("/")[0]}/${c.before ?? c.key.split("/")[1]}`;
     case "CHANGE_CLASSIFICATION":
       return `${c.key === "default" ? "default" : `classification.${c.key}`}: ${v(c.before)} ⟶ ${v(c.after)}`;
+    case "SCHEMA_MIGRATED": return `chuyển schema ${v(c.before)} ⟶ ${v(c.after)}`;
     case "CHANGE_FLOW": return `flow ${c.key}: ${v(c.before)} ⟶ ${v(c.after)}`;
     default: return `${c.key}: ${v(c.before)} ⟶ ${v(c.after)}`;
   }

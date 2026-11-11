@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FLOW_UNITS, type FlowMode, type Policy, type PolicyReq, REQ_CATALOG, flowOf, setFlow, SQL_ZERO, reqKey, setReqParam, setRequirement } from "../risk";
+import { flowUnits, type FlowMode, type Policy, type PolicyReq, REQ_CATALOG, flowOf, setFlow, SQL_ZERO, reqKey, setReqParam, setRequirement } from "../risk";
 import { LevelPill } from "./RiskPanel";
 import { RiskDialog } from "./RiskDialog";
 
@@ -79,7 +79,7 @@ export function RiskRequirements({ policy, base, onChange }: { policy: Policy; b
         <table className="grid rk-matrix">
           <thead><tr><th>Cổng</th>{policy.levels.map((l) => <th key={l} className="lv"><LevelPill level={l} levels={policy.levels} /></th>)}</tr></thead>
           <tbody>
-            {FLOW_UNITS.map((u) => (
+            {flowUnits(policy).map((u) => (
               <tr key={u.id} className={policy.levels.some((l) => flowOf(policy, l, u.id) !== flowOf(base, l, u.id)) ? "changed" : ""}>
                 <td>{u.name} <span className="muted mono">{u.id}</span></td>
                 {policy.levels.map((l) => (

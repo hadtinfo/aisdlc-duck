@@ -38,10 +38,10 @@ export function parseRiskPath(splat: string): string {
   return splat.split("/").filter((s) => s !== "").map(decodeURIComponent).join("/");
 }
 
-export const RISK_TABS = ["rules", "levels", "try", "history"] as const;
+export const RISK_TABS = ["rules", "levels", "history"] as const;
 export type RiskTab = (typeof RISK_TABS)[number];
 
-/** Tab theo hash `#rules | #levels | #try | #history`; lạ hoặc trống thì `rules`. */
+/** Tab theo hash `#rules | #levels | #history`; lạ hoặc trống thì `rules`. */
 export function riskTab(hash: string): RiskTab {
   const h = hash.replace(/^#/, "");
   return (RISK_TABS as readonly string[]).includes(h) ? (h as RiskTab) : "rules";

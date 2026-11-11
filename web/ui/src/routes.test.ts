@@ -45,6 +45,7 @@ describe("riskHref / parseRiskPath", () => {
   it("tab theo hash, mặc định rules", () => {
     expect(riskTab("#levels")).toBe("levels");
     expect(riskTab("#history")).toBe("history");
+    expect(riskTab("#try")).toBe("rules"); // tab Thử phân loại đã bỏ
     expect(riskTab("")).toBe("rules");
     expect(riskTab("#feature")).toBe("rules");
   });

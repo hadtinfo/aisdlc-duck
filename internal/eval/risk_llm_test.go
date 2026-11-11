@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"os"
 	"testing"
 
 	"aisdlc/internal/model"
@@ -72,4 +73,49 @@ func TestEvalCIMarkerWithoutLLM(t *testing.T) {
 	if !ok || h.Passed || h.Detail != "thiếu kết quả xếp loại LLM" {
 		t.Fatalf("RISK_LLM phải hỏng: %+v ok=%v", h, ok)
 	}
+}
+
+// relevel đổi mức trong risk.yaml (ov: dev đổi tay) rồi duyệt lại cổng CASES (risk.yaml nằm trong hash).
+func relevel(e *evalEnv, level string, ov *risk.Override) {
+	rf, _, err := risk.ReadRiskFile(e.paths.Risk())
+	e.must(err)
+	rf.Level, rf.Override = level, ov
+	e.must(rf.Write(e.paths.Risk()))
+	e.approve("CASES")
+}
+
+func TestEvalCIRiskLevelMismatchLLM(t *testing.T) {
+	e, svc := llmEnv(t, true, func(h string) *risk.LLMSnapshot { return &risk.LLMSnapshot{Level: "low", InputsHash: h} })
+	relevel(e, "high", nil)
+	h, ok := runLLM(t, svc)
+	want := "mức high trong risk.yaml khác mức từ kết quả xếp loại LLM (low) mà không có đổi tay (override)"
+	if !ok || h.Passed || h.Detail != want {
+		t.Fatalf("RISK_LLM phải hỏng vì lệch mức: %+v ok=%v", h, ok)
+	}
+}
+
+func TestEvalCIRiskLevelDevOverrideAllowed(t *testing.T) {
+	e, svc := llmEnv(t, true, func(h string) *risk.LLMSnapshot { return &risk.LLMSnapshot{Level: "low", InputsHash: h} })
+	relevel(e, "high", &risk.Override{From: "low", To: "high", By: "dev", Reason: "thận trọng"})
+	if h, ok := runLLM(t, svc); !ok || !h.Passed {
+		t.Fatalf("dev đổi tay thì RISK_LLM vẫn đạt: %+v ok=%v", h, ok)
+	}
+}
+
+// luồng nhẹ có dấu riskSchema mà thiếu risk.yaml: lỗi RISK_FILE như luồng đầy đủ.
+func TestEvalCILiteMarkerWithoutRiskFile(t *testing.T) {
+	e, svc := llmEnv(t, true, func(h string) *risk.LLMSnapshot { return &risk.LLMSnapshot{Level: "low", InputsHash: h} })
+	e.must(os.Remove(e.paths.Risk()))
+	e.approve("CASES")
+	r, err := svc.Run(t.Context(), true, "HEAD", nil)
+	e.must(err)
+	for _, h := range r.Hard {
+		if h.ID == "RISK_FILE" {
+			if h.Passed {
+				t.Fatalf("RISK_FILE phải hỏng: %+v", h)
+			}
+			return
+		}
+	}
+	t.Fatalf("thiếu RISK_FILE: %+v", r.Hard)
 }

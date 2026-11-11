@@ -183,11 +183,10 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 		} else if ok {
 			rf = &f
 		}
-	} else if s.Meta.Flow == model.FlowFull {
-		// có dấu riskSchema hoặc design.yaml có impact: không phải tính năng cũ, thiếu risk.yaml không được miễn yêu cầu
-		if risk.RequiredFor(s.Meta, s.Paths.DesignYaml()) {
-			hard = append(hard, HardCheck{"RISK_FILE", false, "thiếu risk.yaml; chạy aisdlc submit cases"})
-		}
+	} else if risk.RequiredFor(s.Meta, s.Paths.DesignYaml()) {
+		// có dấu riskSchema (mọi luồng) hoặc design.yaml có impact: không phải tính năng cũ, thiếu risk.yaml không
+		// được miễn yêu cầu
+		hard = append(hard, HardCheck{"RISK_FILE", false, "thiếu risk.yaml; chạy aisdlc submit cases"})
 	}
 	if ci && rf != nil && s.Meta.RiskSchema >= 2 {
 		hard = append(hard, s.riskLLM(ctx, *rf, webMode))
@@ -268,6 +267,11 @@ func (s *Service) riskLLM(ctx context.Context, rf risk.RiskFile, webMode bool) H
 	}
 	if rf.LLM.InputsHash != risk.InputsHash(*policy, files) {
 		return HardCheck{id, false, "inputsHash không khớp tài liệu hiện tại"}
+	}
+	// mức trong risk.yaml phải là mức của subagent nâng lên mức mặc định (như risk.FromLLM), trừ khi dev đổi tay
+	if want := risk.Stricter(*policy, policy.DefaultLevel, rf.LLM.Level); rf.Override == nil && rf.Level != want {
+		return HardCheck{id, false, "mức " + rf.Level + " trong risk.yaml khác mức từ kết quả xếp loại LLM (" + want +
+			") mà không có đổi tay (override)"}
 	}
 	return HardCheck{id, true, "kết quả xếp loại LLM khớp tài liệu và chính sách hiện tại"}
 }

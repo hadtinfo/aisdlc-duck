@@ -723,3 +723,71 @@ func TestRiskFieldsOnDesignAndCasesCards(t *testing.T) {
 		t.Error("thẻ BRD không có risk")
 	}
 }
+
+func writeLLMRisk(t *testing.T, f fx, override *risk.LLMOverride) {
+	t.Helper()
+	rf := risk.RiskFile{
+		Level:   "high",
+		Policy:  risk.PolicyRef{Version: 3, Hash: "h"},
+		Matched: []risk.Match{{Rule: "R1", Level: "high", On: "“ghi số dư” (aisdlc/features/PAY-1/design.md)"}},
+		LLM:     &risk.LLMSnapshot{Level: "high", InputsHash: "abc", Summary: "Ghi tiền", Override: override},
+	}
+	if err := rf.Write(f.in.Paths.Risk()); err != nil {
+		t.Fatal(err)
+	}
+	f.write(f.in.Paths.RiskAgent(), `{"inputsHash":"abc","level":"high","matched":[{"rule":"R1","evidence":"ghi số dư","file":"aisdlc/features/PAY-1/design.md"}],`+
+		`"notMatched":[{"rule":"R2","reason":"không đổi lược đồ"}],"override":null,"summary":"Ghi tiền"}`)
+}
+
+func TestRiskLLMBlockOnDesignAndCases(t *testing.T) {
+	f := pay1(t)
+	writeLLMRisk(t, f, nil)
+	for _, g := range []gate.Gate{gate.DESIGN, gate.CASES} {
+		c := f.build(g)
+		b := c.RiskLLM
+		if b == nil {
+			t.Fatalf("%s: thiếu riskLLM", g)
+		}
+		eq(t, "level", b.Level, "high")
+		eq(t, "summary", b.Summary, "Ghi tiền")
+		eq(t, "matched", b.Matched, []review.RiskLLMMatch{{Rule: "R1", Level: "high", On: "“ghi số dư” (aisdlc/features/PAY-1/design.md)"}})
+		eq(t, "notMatched", b.NotMatched, []review.RiskLLMNotMatch{{Rule: "R2", Reason: "không đổi lược đồ"}})
+		if b.Override != nil {
+			t.Error("không có override")
+		}
+		noCode(t, c, string(g), "RISK_LLM_OVERRIDE")
+		if !strings.Contains(toJSON(t, c), `"riskLLM":{"level":"high"`) {
+			t.Errorf("JSON thiếu riskLLM: %s", toJSON(t, c))
+		}
+	}
+	if f.build(gate.BRD).RiskLLM != nil {
+		t.Error("thẻ BRD không có riskLLM")
+	}
+}
+
+func TestRiskLLMOverrideFlagsWarn(t *testing.T) {
+	f := pay1(t)
+	writeLLMRisk(t, f, &risk.LLMOverride{From: "medium", Reason: "luồng chỉ đọc"})
+	c := f.build(gate.DESIGN)
+	x := findFlag(c, "RISK_LLM_OVERRIDE")
+	if x == nil || x.Level != review.WARN || !strings.Contains(x.Message, "luồng chỉ đọc") {
+		t.Fatalf("cờ override: %+v", x)
+	}
+	eq(t, "override", *c.RiskLLM.Override, review.RiskLLMOverride{From: "medium", Reason: "luồng chỉ đọc"})
+}
+
+func TestRiskLLMNotMatchedIgnoredWhenAgentJsonStale(t *testing.T) {
+	f := pay1(t)
+	writeLLMRisk(t, f, nil)
+	f.write(f.in.Paths.RiskAgent(), `{"inputsHash":"zzz","level":"low","matched":[],"notMatched":[{"rule":"R9","reason":"x"}],"override":null,"summary":"s"}`)
+	c := f.build(gate.DESIGN)
+	eq(t, "notMatched", c.RiskLLM.NotMatched, []review.RiskLLMNotMatch{})
+}
+
+func TestRiskLLMAbsentForLegacyRiskYaml(t *testing.T) {
+	f := pay1(t)
+	writeRisk(t, f)
+	if f.build(gate.DESIGN).RiskLLM != nil {
+		t.Error("risk.yaml cũ không có llm")
+	}
+}

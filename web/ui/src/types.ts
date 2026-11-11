@@ -59,10 +59,16 @@ export interface RiskPartData {
   /** Đánh giá tác động của agent lúc phân loại (`impact` trong design.yaml/cases.yaml). */
   agent?: { level: string; labels: string[]; reason?: string | null } | null;
 }
+/** Khối "Xếp loại LLM" (subagent aisdlc-risk-classifier) ở thẻ DESIGN/CASES; `on` là "“câu trích” (file)". */
+export interface RiskLLMData {
+  level: string; summary: string;
+  matched: RiskMatchData[]; notMatched: { rule: string; reason: string }[];
+  override?: { from: string; reason: string } | null;
+}
 export interface RiskRequirementData { id: string; name: string; status: "OK" | "MISSING" | "LATER"; detail?: string | null }
 export interface ReviewCardData {
   gate: GateName; flags: ReviewFlag[]; assumptions?: Assumption[]; assumptionsSection?: boolean;
-  risk?: RiskPartData; riskRequirements?: RiskRequirementData[]; riskPreview?: { level: string; matched: RiskMatchData[] };
+  risk?: RiskPartData; riskLLM?: RiskLLMData; riskRequirements?: RiskRequirementData[]; riskPreview?: { level: string; matched: RiskMatchData[] };
   brd?: { rules: number; rulesWithId: number; acceptanceCriteria: number; outOfScope: string[]; answeredQuestions: string[] };
   design?: { steps: StepPart[]; apiLines: string[]; statusCodes: string[]; apiRows: ApiRow[];
     tables: TablePart[]; touchesExisting: { kind: string; table: string; text: string }[] };

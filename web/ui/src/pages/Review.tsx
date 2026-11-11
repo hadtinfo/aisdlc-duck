@@ -16,6 +16,7 @@ import { Resubmission } from "../components/Resubmission";
 import { Markdown } from "../components/Markdown";
 import { ReviewSummary } from "../components/ReviewSummary";
 import { RiskPanel } from "../components/RiskPanel";
+import { RiskLLM } from "../components/RiskLLM";
 import { StepMapView } from "../components/StepMapView";
 import { StepsTable } from "../components/StepsTable";
 import { UserMenu, useMe } from "../components/UserMenu";
@@ -195,6 +196,7 @@ function GateMain({ gate, snap, repoId }: { gate: GateData; snap: Snapshot; repo
     <>
       <ReviewSummary tiles={summaryTiles(card)} />
       <RiskPanel card={card} repoId={repoId} />
+      {card.riskLLM && <RiskLLM data={card.riskLLM} />}
       {gate.gate === "DESIGN" ? <DesignCard card={card} snap={snap} />
         : gate.gate === "CASES" ? (
           <>

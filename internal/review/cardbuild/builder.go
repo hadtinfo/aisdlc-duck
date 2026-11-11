@@ -151,6 +151,9 @@ func designCard(in ReviewInput, flags *flagList) review.ReviewCard {
 		}
 	}
 	calc := designCalc(in, files, flags)
+	rf := readRisk(in)
+	llm := riskLLMBlock(in, rf)
+	addRiskLLMFlag(llm, flags)
 	part := review.DesignPart{Steps: calc.stepParts, APILines: []string{}, StatusCodes: []string{},
 		APIRows: []review.ApiRow{}, Tables: calc.db.tables, TouchesExisting: calc.db.touches}
 	assumptions, section := []review.Assumption{}, false
@@ -165,7 +168,7 @@ func designCard(in ReviewInput, flags *flagList) review.ReviewCard {
 		section = doc.AssumptionsSection
 	}
 	return review.ReviewCard{Gate: "DESIGN", Flags: review.SortFlags(flags.items), Assumptions: assumptions,
-		AssumptionsSection: &section, Design: &part, Risk: riskPart(readRisk(in))}
+		AssumptionsSection: &section, Design: &part, Risk: riskPart(rf), RiskLLM: llm}
 }
 
 // designCalc là phần dùng chung của thẻ DESIGN và REVIEW: bước, SQL nháp và cờ scope/SQL (cộng cờ NA khi thiếu file).
@@ -536,6 +539,8 @@ func casesCard(in ReviewInput, flags *flagList) review.ReviewCard {
 		flags.add(na("CASES_FAILED", "Không dựng được bảng case: "+why(err)))
 	}
 	rf := readRisk(in)
+	llm := riskLLMBlock(in, rf)
+	addRiskLLMFlag(llm, flags)
 	var reqs []review.RiskRequirement
 	if rf != nil {
 		if err := try(func() {
@@ -565,7 +570,7 @@ func casesCard(in ReviewInput, flags *flagList) review.ReviewCard {
 		}
 	}
 	return review.ReviewCard{Gate: "CASES", Flags: review.SortFlags(flags.items), Cases: part,
-		Risk: riskPart(rf), RiskRequirements: reqs}
+		Risk: riskPart(rf), RiskRequirements: reqs, RiskLLM: llm}
 }
 
 // ---- rủi ro (risk.yaml); không có file thì mọi trường rủi ro là nil ----
@@ -599,6 +604,39 @@ func riskPart(r *risk.RiskFile) *review.RiskPart {
 		p.Agent = &review.RiskAgent{Level: a.Level, Labels: labels, Reason: a.Reason}
 	}
 	return p
+}
+
+// riskLLMBlock dựng khối "Xếp loại LLM" từ risk.yaml (mục llm, matched) và risk-agent.json (notMatched). Chỉ dùng
+// notMatched khi inputsHash của risk-agent.json khớp bản đã chụp trong risk.yaml (file cũ thì bỏ qua). Risk.yaml cũ
+// không có llm thì không có khối.
+func riskLLMBlock(in ReviewInput, r *risk.RiskFile) *review.RiskLLMBlock {
+	if r == nil || r.LLM == nil {
+		return nil
+	}
+	b := &review.RiskLLMBlock{Level: r.LLM.Level, Summary: r.LLM.Summary,
+		Matched: []review.RiskLLMMatch{}, NotMatched: []review.RiskLLMNotMatch{}}
+	for _, m := range r.Matched {
+		b.Matched = append(b.Matched, review.RiskLLMMatch{Rule: m.Rule, Level: m.Level, On: m.On})
+	}
+	if o := r.LLM.Override; o != nil {
+		b.Override = &review.RiskLLMOverride{From: o.From, Reason: o.Reason}
+	}
+	if raw, err := os.ReadFile(in.Paths.RiskAgent()); err == nil {
+		if res, err := risk.ParseLLMResult(string(raw)); err == nil && res.InputsHash == r.LLM.InputsHash {
+			for _, n := range res.NotMatched {
+				b.NotMatched = append(b.NotMatched, review.RiskLLMNotMatch{Rule: n.Rule, Reason: n.Reason})
+			}
+		}
+	}
+	return b
+}
+
+func addRiskLLMFlag(b *review.RiskLLMBlock, flags *flagList) {
+	if b == nil || b.Override == nil {
+		return
+	}
+	flags.add(review.NewFlag("RISK_LLM_OVERRIDE", review.WARN,
+		"Subagent xếp loại lệch mức tính từ rule ("+b.Override.From+" → "+b.Level+"): "+b.Override.Reason, "", nil))
 }
 
 func designSpec(in ReviewInput) *spec.DesignSpec {

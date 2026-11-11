@@ -137,3 +137,27 @@ func TestDiffManualToAutoIsLoosening(t *testing.T) {
 		t.Error("auto -> manual không phải nới")
 	}
 }
+
+func TestDiffSchemaMigrated(t *testing.T) {
+	from, err := LoadPreset("generic", "2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	to, err := ParsePolicy(schema2Base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := DiffPolicies(from, to)
+	if len(ch) == 0 || ch[0].Kind != "SCHEMA_MIGRATED" || ch[0].Before != "1" || ch[0].After != "2" {
+		t.Errorf("changes = %+v", ch)
+	}
+}
+
+func TestDiffDescribeChangeLoosens(t *testing.T) {
+	a, _ := ParsePolicy(schema2Base)
+	b, _ := ParsePolicy(strings.Replace(schema2Base, "Chạm sổ cái", "Chạm sổ cái và số dư", 1))
+	c := onlyKind(t, DiffPolicies(a, b), "CHANGE_RULE")
+	if !c.Loosening || !strings.Contains(c.After, "số dư") {
+		t.Errorf("c = %+v", c)
+	}
+}

@@ -14,19 +14,18 @@ func policyRepo(t *testing.T) *testRepo {
 	return r
 }
 
-func TestShowListsLabels(t *testing.T) {
+func TestShowListsDescribedRules(t *testing.T) {
 	r := policyRepo(t)
 	r.ok(noConsole(), "setup")
 	r.ok(noConsole(), "policy", "show")
-	contains(t, r.out, "low < medium < high", "money-movement", "schema-change", "auth", "external-api", "G1",
-		"idempotent", "(file)")
-	contains(t, r.out, "Chính sách v0 (file) — mẫu generic v2\n",
+	contains(t, r.out, "Chính sách v0 (file) — mẫu generic v3\n",
 		"Thang mức: low < medium < high (mặc định: low)\n",
-		"Phân loại: agent=raise, devLower=reason\n",
-		"Rule:\n  G1   label    money-movement → high — Có dòng tiền hoặc giá trị đi qua\n",
-		"Nhãn cho impact.labels (rule label): money-movement, schema-change, auth, external-api\n",
+		"Phân loại: devLower=reason\n",
+		"Rule:\n  G1   high   Có dòng tiền hoặc giá trị đi qua (chuyển tiền, thanh toán, hoàn tiền, trừ hoặc cộng số dư)\n",
+		"  G2   medium Đổi cấu trúc dữ liệu",
 		"Yêu cầu theo mức:\n  low: (không có)\n",
 		"  high: rule-pos-neg, boundary, idempotent, concurrent threads=8, invariant, coverage min=90\n")
+	notContains(t, r.out, "agent=", "Nhãn cho impact.labels")
 }
 
 func TestPullWithoutWebExit2(t *testing.T) {
@@ -51,7 +50,6 @@ func TestDiffPresetPrintsChanges(t *testing.T) {
 
 func TestDiffPresetUpToDate(t *testing.T) {
 	r := policyRepo(t)
-	r.presetV3 = true
 	r.ok(noConsole(), "setup")
 	r.ok(noConsole(), "policy", "diff-preset")
 	contains(t, r.out, "mới nhất")

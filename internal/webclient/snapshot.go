@@ -33,7 +33,6 @@ const (
 )
 
 // SnapshotInput là đầu vào dựng snapshot (SnapshotBuilder.SnapshotInput). Cases nil = chưa có cases.yaml.
-// CardHook (tùy chọn) đổi review card của một cổng, vd. CLI thêm mức rủi ro tạm vào thẻ BRD.
 type SnapshotInput struct {
 	Paths      model.FeaturePaths
 	Config     model.RepoConfig
@@ -52,7 +51,6 @@ type SnapshotInput struct {
 	CapturedAt time.Time
 	Sender     string
 	WebMode    bool
-	CardHook   func(gate.Gate, review.ReviewCard) review.ReviewCard
 }
 
 // FeatureSnapshot là trạng thái một tính năng, hợp đồng v1 giữa CLI và web (FeatureSnapshot.java).
@@ -321,9 +319,6 @@ func reviewCards(in SnapshotInput) *Ordered[review.ReviewCard] {
 			}
 			card, err = cardbuild.BuildCard(cardbuild.ReviewInput{Paths: in.Paths, Meta: in.Meta, Flow: in.Flow,
 				Config: in.Config, Git: in.Git, Adapter: in.Adapter}, g)
-			if err == nil && in.CardHook != nil {
-				card = in.CardHook(g, card)
-			}
 			return err
 		})
 		if err == nil {

@@ -45,7 +45,6 @@ func TestPolicyMigrateWebModeExit2(t *testing.T) {
 
 func TestShowSchema2(t *testing.T) {
 	r := policyRepo(t)
-	r.presetV3 = true
 	r.ok(noConsole(), "setup")
 	r.ok(noConsole(), "policy", "show")
 	contains(t, r.out, "Phân loại: devLower=reason\n",

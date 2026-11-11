@@ -320,39 +320,15 @@ func TestPolicyValidateUsesGoRisk(t *testing.T) {
 	}
 }
 
-func TestClassifyMatchesCore(t *testing.T) {
+// Thử phân loại không còn hỗ trợ (server không có LLM): API trả lỗi rõ.
+func TestClassifyNoLongerSupported(t *testing.T) {
 	f := newFixture(t)
 	repo := f.repo()
 	p := f.seeded(t, repo)
-	in := map[string]any{"text": "chuyển tiền", "paths": []string{"src/a.java"}, "tables": []string{}, "endpoints": []string{"POST /x"},
-		"labels": []string{"money-movement"}, "agentLevel": "low"}
-	b, _ := json.Marshal(map[string]any{"policy": p, "inputs": in})
+	b, _ := json.Marshal(map[string]any{"policy": p, "inputs": map[string]any{"text": "chuyển tiền"}})
 	r := f.w.PostSession("/api/policy/classify", string(b), f.ownerS, f.ownerS.CSRF)
-	if r.Status != 200 {
+	if r.Status != 400 || !strings.Contains(r.JSON(t)["error"].(string), "Thử phân loại không còn hỗ trợ") {
 		t.Fatal(r.Status, r.Body)
-	}
-	pj, _ := json.Marshal(p)
-	pol, err := risk.PolicyFromJSON(string(pj))
-	if err != nil {
-		t.Fatal(err)
-	}
-	expect := risk.Classify(pol, risk.RiskInputs{Text: "chuyển tiền", Paths: []string{"src/a.java"}, Endpoints: []string{"POST /x"},
-		Labels: []string{"money-movement"}, AgentLevel: "low"})
-	j := r.JSON(t)
-	res := j["result"].(map[string]any)
-	if res["level"] != expect.Level || expect.Level != "high" || len(arr(res["matched"])) != len(expect.Matched) ||
-		res["agentLevel"] != "low" || res["ruleLevel"] != expect.RuleLevel {
-		t.Fatal(r.Body)
-	}
-	reqs := arr(j["requirements"])
-	if len(reqs) != len(pol.RequirementsFor("high")) || reqs[0].(map[string]any)["name"] == nil || reqs[0].(map[string]any)["params"] == nil {
-		t.Fatal(r.Body)
-	}
-	// inputs sai kiểu → 400
-	bad, _ := json.Marshal(map[string]any{"policy": p, "inputs": map[string]any{"paths": "x"}})
-	if rb := f.w.PostSession("/api/policy/classify", string(bad), f.ownerS, f.ownerS.CSRF); rb.Status != 400 ||
-		!strings.HasPrefix(rb.JSON(t)["error"].(string), "inputs không hợp lệ: ") {
-		t.Fatal(rb.Status, rb.Body)
 	}
 }
 

@@ -52,9 +52,6 @@ func (t *cardText) card(key string, c ReviewCard, approval string) {
 			t.add("Agent: " + a.Level + reason + labels)
 		}
 	}
-	if c.RiskPreview != nil {
-		t.add("Rủi ro tạm (từ khóa): " + c.RiskPreview.Level)
-	}
 	t.flags(c.Flags)
 	t.assumptions(c)
 	if c.Brd != nil {

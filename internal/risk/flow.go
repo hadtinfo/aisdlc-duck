@@ -28,6 +28,9 @@ func AutoGate(p RiskPolicy, level string, g gate.Gate, hasHighFlag bool) (reason
 	if unit == "" {
 		return "Review luôn duyệt tay", true
 	}
+	if g == gate.BRD {
+		return "Cổng BRD luôn duyệt tay", true
+	}
 	if hasHighFlag {
 		return "Review card có cờ đỏ mức HIGH", true
 	}
@@ -35,17 +38,6 @@ func AutoGate(p RiskPolicy, level string, g gate.Gate, hasHighFlag bool) (reason
 		return "Mức " + level + ": cổng " + unit + " đặt duyệt tay", true
 	}
 	return "", false
-}
-
-// BrdLevel là mức áp cho cổng BRD: mức tạm, nâng lên mức mặc định của chính sách nếu thấp hơn.
-func BrdLevel(p RiskPolicy, previewLevel string) string {
-	if previewLevel == "" || p.Rank(previewLevel) < 0 {
-		return p.DefaultLevel
-	}
-	if p.Rank(previewLevel) >= p.Rank(p.DefaultLevel) {
-		return previewLevel
-	}
-	return p.DefaultLevel
 }
 
 // Stricter trả mức chặt hơn trong hai mức theo thang của p; "" bị bỏ qua. Mức không có trong thang thắng
@@ -69,17 +61,13 @@ func Stricter(p RiskPolicy, a, b string) string {
 	return a
 }
 
-// LevelForGate là mức áp cho cổng khi quyết định tự duyệt (CLI chế độ local và server chế độ web dùng chung):
-// BRD là BrdLevel của mức tạm, nâng lên riskLevel (mức trong risk.yaml) nếu chặt hơn; cổng khác là riskLevel.
-// Trả "" khi không có mức để áp (duyệt tay).
-func LevelForGate(p RiskPolicy, g gate.Gate, previewLevel, riskLevel string) string {
-	if g == gate.REVIEW {
+// LevelForGate là mức áp cho cổng khi quyết định tự duyệt (CLI chế độ local và server chế độ web dùng chung): mức
+// trong risk.yaml. BRD và Review luôn duyệt tay nên trả "" (không có mức để áp).
+func LevelForGate(p RiskPolicy, g gate.Gate, riskLevel string) string {
+	if g == gate.REVIEW || g == gate.BRD {
 		return ""
 	}
-	if g != gate.BRD {
-		return riskLevel
-	}
-	return Stricter(p, BrdLevel(p, previewLevel), riskLevel)
+	return riskLevel
 }
 
 // AutoStep: bước tự accept được không; flow.step chụp trong risk.yaml là auto; thiếu file/khóa là duyệt tay.

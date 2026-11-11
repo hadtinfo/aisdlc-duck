@@ -15,14 +15,14 @@ import (
 func newRiskCmd(ctx *Context) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "risk",
-		Short: "Chỉ dev: đổi mức rủi ro hoặc tính lại theo chính sách hiện tại (cần console thật).",
+		Short: "Đầu vào cho subagent xếp loại rủi ro; chỉ dev: đổi mức hoặc áp kết quả xếp loại mới (cần console thật).",
 		Args:  cobra.NoArgs,
 		RunE: Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
 			fmt.Fprint(ctx.Err(), cmd.UsageString())
 			return ExitUsage, nil
 		}),
 	}
-	var setFo, reFo FeatureOption
+	var setFo, reFo, inFo FeatureOption
 	var reason string
 	set := &cobra.Command{
 		Use:   "set <level>",
@@ -40,7 +40,7 @@ func newRiskCmd(ctx *Context) *cobra.Command {
 	})
 	reclassify := &cobra.Command{
 		Use:   "reclassify",
-		Short: "Chỉ dev: tính lại mức theo chính sách hiện tại, bỏ mức đổi tay.",
+		Short: "Chỉ dev: áp kết quả risk-agent.json mới (sau khi chạy lại subagent), bỏ mức đổi tay.",
 		Args:  cobra.NoArgs,
 	}
 	reFo.AddTo(reclassify)
@@ -51,8 +51,52 @@ func newRiskCmd(ctx *Context) *cobra.Command {
 		}
 		return riskReclassify(ctx, f)
 	})
-	c.AddCommand(set, reclassify)
+	inputs := &cobra.Command{
+		Use: "inputs",
+		Short: "In các file đầu vào và inputsHash cho subagent aisdlc-risk-classifier; ghi chính sách có hiệu lực ra " +
+			EffectivePolicyFile + ".",
+		Args: cobra.NoArgs,
+	}
+	inFo.AddTo(inputs)
+	inputs.RunE = Wrap(ctx, func(*cobra.Command, []string) (int, error) {
+		f, err := inFo.Feature(ctx)
+		if err != nil {
+			return 0, err
+		}
+		return riskInputsCmd(ctx, f)
+	})
+	c.AddCommand(inputs, set, reclassify)
 	return c
+}
+
+// riskInputsCmd: mỗi dòng một file đầu vào (tính từ gốc repo), rồi dòng `policy:` và `inputsHash:`. Agent chính truyền
+// nguyên các dòng này cho subagent aisdlc-risk-classifier.
+func riskInputsCmd(ctx *Context, f *Feature) (int, error) {
+	if f.Web.PolicyWebMode() {
+		if _, ok := f.Web.Policy(); !ok {
+			f.Web.PolicyPullQuietly()
+		}
+	}
+	l, err := LoadPolicy(ctx, f.Root, false)
+	if err != nil {
+		return 0, err
+	}
+	if err := usablePolicy(l); err != nil {
+		return 0, err
+	}
+	files, hash, err := riskInputs(l.Policy, f)
+	if err != nil {
+		return 0, err
+	}
+	if err := writeEffectivePolicy(f.Root, l.Policy); err != nil {
+		return 0, err
+	}
+	for _, x := range files {
+		ctx.Println(x.Rel)
+	}
+	ctx.Println("policy: " + EffectivePolicyFile)
+	ctx.Println("inputsHash: " + hash)
+	return ExitOK, nil
 }
 
 func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
@@ -144,6 +188,9 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if err := usablePolicy(l); err != nil {
+		return 0, err
+	}
 	p := l.Policy
 	old, hasOld, err := readRisk(f)
 	if err != nil {
@@ -159,9 +206,16 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 			return 0, err
 		}
 	}
-	fresh, err := classifyRisk(p, f)
+	fresh, findings, err := classifyRisk(p, f)
 	if err != nil {
 		return 0, err
+	}
+	if len(findings) > 0 {
+		ctx.Println(fmt.Sprintf("Không áp được kết quả xếp loại (%d phát hiện):", len(findings)))
+		for _, x := range findings {
+			ctx.Println("  - " + x.Code + ": " + x.Message)
+		}
+		return ExitFindings, nil
 	}
 	from, versions, reqs := "(chưa có)", "", ""
 	if hasOld {

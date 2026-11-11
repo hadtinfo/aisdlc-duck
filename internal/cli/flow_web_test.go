@@ -3,11 +3,14 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/risk"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/webclient"
 	"aisdlc/internal/webclient/fakeweb"
@@ -50,12 +53,11 @@ func noApproveRequest(t *testing.T, web *fakeweb.Server) {
 	}
 }
 
-// serverAutoBRD: server đã tự duyệt BRD (mức low) với bản nộp đầu.
-func serverAutoBRD(web *fakeweb.Server) {
+// serverApproveBRD: dev đã duyệt BRD trên web (BRD luôn duyệt tay) với bản nộp đầu.
+func serverApproveBRD(web *fakeweb.Server) {
 	web.Update(func(s *fakeweb.Server) {
 		h := s.State.Submissions[0].Hash
-		s.State.Approvals = []snapshot.Appr{{Gate: "BRD", Hash: h, Approver: "auto", At: fakeweb.T, Channel: "auto",
-			Rule: "flow:low"}}
+		s.State.Approvals = []snapshot.Appr{{Gate: "BRD", Hash: h, Approver: "dev", At: fakeweb.T, Channel: "web"}}
 	})
 }
 
@@ -80,12 +82,12 @@ func TestWebModeCliDoesNotAutoApprove(t *testing.T) {
 func TestWebModeSubmitSendsRiskLevelAndShowsServerAutoApproval(t *testing.T) {
 	r, web := flowWeb(t, true)
 	r.okRun("submit", "brd")
-	// BRD không gửi risk: server lấy mức tạm trong thẻ của snapshot
+	// BRD không gửi risk: cổng BRD luôn duyệt tay
 	_, has := submissionBody(t, web, 0)["risk"]
 	eq(t, has, false)
-	serverAutoBRD(web)
+	serverApproveBRD(web)
 	r.ok(noConsole(), "status")
-	matches(t, r.out, `BRD +APPROVED +tự duyệt \(mức low\)`)
+	matches(t, r.out, `BRD +APPROVED`)
 	r.okRun("submit", "design")
 	d := submissionBody(t, web, 1)
 	eq(t, d["gate"], any("DESIGN"))
@@ -95,10 +97,14 @@ func TestWebModeSubmitSendsRiskLevelAndShowsServerAutoApproval(t *testing.T) {
 
 func TestWebModeSubmitPrintsServerAutoApprovalInsteadOfAskingDev(t *testing.T) {
 	r, web := flowWeb(t, true)
-	web.Update(func(s *fakeweb.Server) { s.AutoLevel = "low" }) // phong bì trả về đã có bản tự duyệt của server
 	r.okRun("submit", "brd")
-	contains(t, r.out, "Đã nộp cổng BRD lên web, không có phát hiện: tự duyệt (mức low).")
-	notContains(t, r.out, "aisdlc approve brd")
+	contains(t, r.out, "aisdlc approve brd") // BRD luôn duyệt tay
+	serverApproveBRD(web)
+	r.ok(noConsole(), "status")
+	web.Update(func(s *fakeweb.Server) { s.AutoLevel = "low" }) // phong bì trả về đã có bản tự duyệt của server
+	r.okRun("submit", "design")
+	contains(t, r.out, "Đã nộp cổng DESIGN lên web, không có phát hiện: tự duyệt (mức low).")
+	notContains(t, r.out, "aisdlc approve design")
 	noApproveRequest(t, web)
 	eq(t, r.exists("aisdlc/features/PAY-1/gates.json"), false)
 }
@@ -107,12 +113,12 @@ func TestWebModeSubmitDesignRaiseSubmitsBeforeRiskEvent(t *testing.T) {
 	r, web := flowWeb(t, true)
 	web.Update(func(s *fakeweb.Server) { s.ServerRules = true })
 	r.okRun("submit", "brd")
-	serverAutoBRD(web)
+	serverApproveBRD(web)
 	r.ok(noConsole(), "status")
-	r.setDesignImpact(`{ level: high, labels: [money-movement], reason: "Chuyển tiền" }`)
+	r.llmLevel = "high"
 	r.okRun("submit", "design")
-	contains(t, r.out, "Rủi ro: high", "Đã nộp cổng DESIGN lên web", "Mức tăng low → high: cổng BRD cần dev duyệt lại.")
-	// bản nộp tới server trước event nâng mức: server giữ bản nộp, chỉ thay thế bản tự duyệt BRD
+	contains(t, r.out, "Rủi ro: high", "Đã nộp cổng DESIGN lên web")
+	// bản nộp tới server trước event nâng mức: server giữ bản nộp, chỉ thay thế bản tự duyệt
 	submitAt, riskAt := -1, -1
 	for i, q := range web.Requests() {
 		if q.Path == "/api/cli/submissions" && strings.Contains(q.Body, `"DESIGN"`) {
@@ -133,35 +139,37 @@ func TestWebModeSubmitDesignRaiseSubmitsBeforeRiskEvent(t *testing.T) {
 		apprs = len(s.State.Approvals)
 	})
 	contains(t, strings.Join(gates, ","), "DESIGN")
-	eq(t, apprs, 0)
-	eq(t, r.state(gate.BRD), "AWAITING_APPROVAL")
-	eq(t, r.state(gate.DESIGN), "LOCKED_BY_PREVIOUS") // đã nộp, chờ BRD được duyệt lại
+	eq(t, apprs, 1) // bản duyệt tay BRD giữ nguyên
+	eq(t, r.state(gate.BRD), "APPROVED")
+	eq(t, r.state(gate.DESIGN), "AWAITING_APPROVAL")
 }
 
-func TestWebModeResubmitBrdAfterRaiseSendsRiskLevel(t *testing.T) {
+// BRD luôn duyệt tay: bản nộp BRD không gửi mức, kể cả khi đã có risk.yaml.
+func TestWebModeBrdSubmissionNeverSendsRiskLevel(t *testing.T) {
 	r, web := flowWeb(t, true)
-	web.Update(func(s *fakeweb.Server) { s.AutoLevel = "low" }) // server tự duyệt BRD ở mức tạm low
 	r.okRun("submit", "brd")
-	web.Update(func(s *fakeweb.Server) { s.AutoLevel = "" })
-	r.setDesignImpact(`{ level: high, labels: [money-movement], reason: "Chuyển tiền" }`)
+	serverApproveBRD(web)
+	r.ok(noConsole(), "status")
+	r.llmLevel = "high"
 	r.okRun("submit", "design")
 	r.okRun("submit", "brd")
-	// server lấy mức chặt hơn của mức tạm (low) và mức risk.yaml (high): không tự duyệt lại BRD
 	b := submissionBody(t, web, 2)
 	eq(t, b["gate"], any("BRD"))
-	eq(t, b["risk"].(map[string]any)["level"], any("high"))
+	_, has := b["risk"]
+	eq(t, has, false)
 }
 
 func TestWebModeCasesRaiseThenHarnessFailsStillSendsRiskEvent(t *testing.T) {
 	r, web := flowWeb(t, true)
 	web.Update(func(s *fakeweb.Server) { s.AutoLevel = "low" })
 	r.okRun("submit", "brd")
+	serverApproveBRD(web)
+	r.ok(noConsole(), "status")
 	r.okRun("submit", "design")
-	web.Update(func(s *fakeweb.Server) {
-		s.AutoLevel = ""
-		s.PolicyYAML, s.PolicyVersion = raisingPolicy(s.PolicyYAML), 2
-	})
-	r.ok(noConsole(), "policy", "pull")
+	web.Update(func(s *fakeweb.Server) { s.AutoLevel = "" })
+	// chưa có risk.yaml lúc nộp Case: xếp loại từ risk-agent.json (subagent nay ra medium)
+	must(t, os.Remove(filepath.Join(r.root, riskFile)))
+	r.llmLevel = "medium"
 	before := len(web.RequestsFor("POST", "/api/ingest/events"))
 	r.runner.err = errors.New("harness chết giữa chừng")
 	if r.run("submit", "cases") == 0 {
@@ -205,12 +213,12 @@ func TestWebModeStatusShowsSupersededGate(t *testing.T) {
 func TestWebModeFailedSubmitStillReportsRiskLevel(t *testing.T) {
 	r, web := flowWeb(t, true)
 	r.okRun("submit", "brd")
-	serverAutoBRD(web)
+	serverApproveBRD(web)
 	r.ok(noConsole(), "status")
 	web.Update(func(s *fakeweb.Server) {
 		s.Override["POST /api/cli/submissions"] = fakeweb.JSONResp(500, `{"error":"hỏng"}`)
 	})
-	r.setDesignImpact(`{ level: high, labels: [money-movement], reason: "Chuyển tiền" }`)
+	r.llmLevel = "high"
 	eq(t, r.run("submit", "design"), 2)
 	found := false
 	for _, q := range web.RequestsFor("POST", "/api/ingest/events") {
@@ -224,7 +232,7 @@ func TestWebModeFailedSubmitStillReportsRiskLevel(t *testing.T) {
 func TestWebModeRiskSetSendsOverrideAndReclassifyNeedsApproveToken(t *testing.T) {
 	r, web := flowWeb(t, true)
 	r.okRun("submit", "brd")
-	serverAutoBRD(web)
+	serverApproveBRD(web)
 	r.okRun("submit", "design")
 	eq(t, r.risk().Level, "low")
 	if code := r.runC(typed("PAY-1"), "risk", "set", "high"); code != 0 {
@@ -252,7 +260,7 @@ func TestWebModeRiskSetSendsOverrideAndReclassifyNeedsApproveToken(t *testing.T)
 func TestWebModeReclassifyReopensCasesWithApproveToken(t *testing.T) {
 	r, web := flowWeb(t, true)
 	r.okRun("submit", "brd")
-	serverAutoBRD(web)
+	serverApproveBRD(web)
 	r.okRun("submit", "design")
 	web.Update(func(s *fakeweb.Server) {
 		s.State.Approvals = append(s.State.Approvals, snapshot.Appr{Gate: "CASES", Hash: "h", Approver: "dev",
@@ -290,4 +298,21 @@ func TestWebModeReclassifyReopensCasesWithApproveToken(t *testing.T) {
 	eq(t, qs[0].Field("channel"), "terminal")
 	notContains(t, r.out+r.err, "appr-tok")
 	eq(t, r.exists("aisdlc/features/PAY-1/risk.yaml"), true)
+}
+
+// Chế độ web, chính sách trên server còn schema 1: dev không tự sửa được, exit 2 chỉ sang quản trị.
+func TestWebModeSchema1PolicyAbortsClassification(t *testing.T) {
+	r, web := flowWeb(t, true)
+	y, err := risk.PresetYAML("generic", "2")
+	must(t, err)
+	web.Update(func(s *fakeweb.Server) { s.PolicyYAML, s.PolicyVersion = y, 2 })
+	r.ok(noConsole(), "policy", "pull")
+	eq(t, r.run("risk", "inputs"), 2)
+	contains(t, r.err, "Chính sách dùng schema 1 (luật so khớp); quản trị cần chuyển chính sách sang schema 2 trên web.")
+	r.okRun("submit", "brd")
+	serverApproveBRD(web)
+	r.ok(noConsole(), "status")
+	eq(t, r.run("submit", "design"), 2)
+	contains(t, r.err, "quản trị cần chuyển chính sách sang schema 2 trên web.")
+	eq(t, r.exists(riskFile), false)
 }

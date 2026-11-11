@@ -8,15 +8,14 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"aisdlc/internal/spec"
 )
 
 func highRisk(t *testing.T) (RiskPolicy, RiskFile) {
 	t.Helper()
-	p := mustPreset(t, "banking", "2")
-	r := Classify(p, RiskInputs{Text: "bút toán", AgentLevel: "high"})
-	return p, NewRiskFile(p, r, &spec.Impact{Level: "high", Labels: []string{"money-movement"}, Reason: "lý do"})
+	p := mustPreset(t, "banking", "3")
+	return p, FromLLM(p, LLMResult{InputsHash: "h", Level: "high",
+		Matched:  []LLMMatch{{Rule: "R1", Evidence: "bút toán", File: "aisdlc/features/PAY-1/brd.md"}},
+		Override: &LLMOverride{From: "high", Reason: "r"}, Summary: "s"})
 }
 
 func dumpOf(t *testing.T, f RiskFile) string {
@@ -52,8 +51,8 @@ func TestWriteReadRoundTrip(t *testing.T) {
 }
 
 func TestRoundTripWithoutOverrideOrAgent(t *testing.T) {
-	p := mustPreset(t, "banking", "2")
-	f := NewRiskFile(p, Classify(p, RiskInputs{}), nil)
+	p := mustPreset(t, "banking", "3")
+	f := FromLLM(p, LLMResult{InputsHash: "h", Level: "low", Summary: "s"})
 	file := filepath.Join(t.TempDir(), "risk.yaml")
 	if err := f.Write(file); err != nil {
 		t.Fatal(err)
@@ -73,9 +72,11 @@ func TestRoundTripWithoutOverrideOrAgent(t *testing.T) {
 // Byte của risk.yaml đi vào băm cổng CASES: ghi, đọc, ghi lại phải ra cùng byte.
 func TestRiskFileRoundTripStable(t *testing.T) {
 	p, h := highRisk(t)
-	pf := mustParse(t, "schema: 1\nlevels: [low, high]\ndefault: low\nflow:\n  low: { brd: auto, step: auto }\n  high: { step: manual }\n"+
+	pf := mustParse(t, "schema: 2\nlevels: [low, high]\ndefault: low\nflow:\n  low: { design: auto, step: auto }\n  high: { step: manual }\n"+
+		"rules:\n  - { id: R1, level: high, describe: \"x: y\" }\n"+
 		"requirements:\n  high:\n    - { id: coverage, min: 90 }\n    - { id: sql-zero, name: n, sql: \"select 1 where 1=0\" }\n")
-	pr := NewRiskFile(pf, RiskResult{Level: "high", Matched: []Match{{Rule: "R1", Level: "high", On: "x: y"}}}, nil)
+	pr := FromLLM(pf, LLMResult{InputsHash: "h", Level: "high", Summary: "tóm: tắt\nhai dòng",
+		Matched: []LLMMatch{{Rule: "R1", Evidence: "x: y", File: "a.md"}}})
 	for name, f := range map[string]RiskFile{
 		"banking":  h,
 		"override": h.WithOverride(p, "low", "dev", "r: có dấu hai chấm\nnhiều dòng", time.Date(2026, 11, 4, 1, 2, 3, 456, time.UTC)),
@@ -159,7 +160,7 @@ func TestRiskFileOldWithoutFlowReadsDefaults(t *testing.T) {
 
 func TestOfAndOverrideSnapshotFlowOfLevel(t *testing.T) {
 	p := mustParse(t, "schema: 1\nlevels: [low, high]\ndefault: low\nflow:\n  low: { brd: auto, step: auto }\n  high: { step: manual }\n")
-	f := NewRiskFile(p, RiskResult{Level: "low", RuleLevel: "low"}, nil)
+	f := FromLLM(p, LLMResult{Level: "low"})
 	if f.Flow["brd"] != "auto" || f.Flow["step"] != "auto" {
 		t.Errorf("flow = %v", f.Flow)
 	}
@@ -206,5 +207,40 @@ func TestWithOverrideStoresUTC(t *testing.T) {
 	d := dumpOf(t, f)
 	if strings.Contains(d, "+07:00") || !strings.Contains(d, "2026-11-04T01:02:03Z") {
 		t.Errorf("risk.yaml không phải UTC:\n%s", d)
+	}
+}
+
+func TestFromLLMRaisesToDefaultAndSnapshots(t *testing.T) {
+	p := mustParse(t, "schema: 2\nlevels: [low, medium, high]\ndefault: medium\n"+
+		"rules:\n  - { id: R1, level: high, describe: d }\n  - { id: R2, level: low, describe: d }\n")
+	f := FromLLM(p, LLMResult{InputsHash: "abc", Level: "low", Summary: "tóm tắt",
+		Matched:  []LLMMatch{{Rule: "R2", Evidence: "câu", File: "aisdlc/features/X-1/brd.md"}},
+		Override: &LLMOverride{From: "medium", Reason: "hạ"}})
+	if f.Level != "medium" {
+		t.Errorf("level = %s", f.Level)
+	}
+	if len(f.Matched) != 1 || f.Matched[0] != (Match{Rule: "R2", Level: "low", On: "“câu” (aisdlc/features/X-1/brd.md)"}) {
+		t.Errorf("matched = %+v", f.Matched)
+	}
+	if f.LLM == nil || f.LLM.Level != "low" || f.LLM.InputsHash != "abc" || f.LLM.Summary != "tóm tắt" ||
+		f.LLM.Override == nil || f.LLM.Override.Reason != "hạ" {
+		t.Errorf("llm = %+v", f.LLM)
+	}
+	if f.Agent != nil || strings.Contains(dumpOf(t, f), "agent:") {
+		t.Error("risk.yaml mới không ghi agent")
+	}
+	if f.Policy.Hash != p.Hash() || !reflect.DeepEqual(f.Requirements, p.RequirementsFor("medium")) {
+		t.Errorf("f = %+v", f)
+	}
+}
+
+// risk.yaml cũ (agent của agent chính, không có llm) vẫn đọc được.
+func TestLegacyRiskFileWithAgentReads(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "old.yaml")
+	os.WriteFile(file, []byte("level: high\npolicy: { version: 1, hash: h }\nmatched: []\n"+
+		"agent: { level: high, labels: [money-movement], reason: r }\noverride: null\nrequirements: []\n"), 0o644)
+	f, ok, err := ReadRiskFile(file)
+	if err != nil || !ok || f.Agent == nil || f.Agent.Level != "high" || f.LLM != nil {
+		t.Errorf("f=%+v ok=%v err=%v", f, ok, err)
 	}
 }

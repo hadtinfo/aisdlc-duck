@@ -14,7 +14,6 @@ import (
 
 func setupRepo(t *testing.T) *testRepo {
 	r := newTestRepo(t)
-	r.presetV3 = true   // kiểm đúng mẫu mới nhất (v3, schema 2) mà setup chép
 	r.presetFlow = true // kiểm đúng file mẫu setup chép vào repo
 	return r
 }

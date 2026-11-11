@@ -19,7 +19,6 @@ import (
 	"aisdlc/internal/eval"
 	"aisdlc/internal/gitx"
 	"aisdlc/internal/model"
-	"aisdlc/internal/risk"
 	"aisdlc/internal/run"
 	"aisdlc/internal/snapshot"
 )
@@ -150,9 +149,11 @@ type testRepo struct {
 	setupDone bool
 	// presetFlow false (mặc định): sau setup bỏ khối flow khỏi risk-policy.yaml để mọi cổng duyệt tay.
 	presetFlow bool
-	// presetV3 false (mặc định): sau setup thay mẫu v3 (schema 2) bằng v2 để test đường ống xếp loại cũ; test về
-	// schema 2 đặt true.
-	presetV3 bool
+	// llmLevel là mức trong risk-agent.json mà testRepo tự ghi (giả subagent) trước `submit design`, `submit cases`
+	// và `risk reclassify` khi file thiếu hoặc đã cũ; "" là mức mặc định của chính sách.
+	llmLevel string
+	// noAutoLLM: không tự ghi risk-agent.json (test về chính file đó).
+	noAutoLLM bool
 	// setupDefaultApprovals false (mặc định): setup không nêu --approvals thì thêm --approvals local.
 	setupDefaultApprovals bool
 	// git thay gitx.Repo của Context (nil = git thật).
@@ -241,11 +242,11 @@ func (r *testRepo) exec(console DevConsole, stdin string, args ...string) int {
 		!slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "--approvals") }) {
 		args = append(append([]string(nil), args...), "--approvals", "local")
 	}
+	if !r.noAutoLLM && classifies(args) {
+		r.autoLLM()
+	}
 	code := runWith(ctx, r.extra, args...)
 	if code == 0 && len(args) > 0 && args[0] == "setup" {
-		if !r.presetV3 {
-			r.legacyPolicy()
-		}
 		if !r.presetFlow {
 			r.dropFlow()
 		}
@@ -266,21 +267,6 @@ func (r *testRepo) dropFlow() {
 	if err := os.WriteFile(f, flowBlock.ReplaceAll(b, nil), 0o644); err != nil {
 		r.t.Fatal(err)
 	}
-}
-
-// legacyPolicy thay mẫu v3 (schema 2) mà setup vừa chép bằng mẫu v2 cùng tên (schema 1). Đường ống xếp loại hiện
-// tại vẫn là từ khóa; các test của nó cần luật cũ cho đến khi chuyển sang subagent. Gỡ khi bỏ classifier.
-func (r *testRepo) legacyPolicy() {
-	r.t.Helper()
-	cur, err := risk.ParsePolicy(r.read(policyFile))
-	if err != nil || cur.Schema != 2 || cur.Preset == nil || cur.Preset.Version != "3" {
-		return
-	}
-	y, err := risk.PresetYAML(cur.Preset.Name, "2")
-	if err != nil {
-		r.t.Fatal(err)
-	}
-	r.write(policyFile, y)
 }
 
 func (r *testRepo) write(rel, content string) {

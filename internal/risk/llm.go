@@ -28,8 +28,8 @@ type LLMNotMatch struct {
 
 // LLMOverride ghi việc subagent chủ động lệch khỏi mức tính từ luật.
 type LLMOverride struct {
-	From   string `json:"from"`
-	Reason string `json:"reason"`
+	From   string `yaml:"from" json:"from"`
+	Reason string `yaml:"reason" json:"reason"`
 }
 
 // LLMResult là nội dung risk-agent.json.

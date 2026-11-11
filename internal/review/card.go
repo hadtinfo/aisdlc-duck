@@ -24,19 +24,6 @@ type ReviewCard struct {
 	Cases              *CasesPart        `json:"cases"`
 	Risk               *RiskPart         `json:"risk"`
 	RiskRequirements   []RiskRequirement `json:"riskRequirements"`
-	RiskPreview        *RiskPreview      `json:"riskPreview"`
-}
-
-// WithRiskPreview trả bản sao của thẻ kèm mức rủi ro tạm (chỉ thẻ BRD; CLI tính theo chính sách hiện tại).
-func (c ReviewCard) WithRiskPreview(p RiskPreview) ReviewCard {
-	c.RiskPreview = &p
-	return c
-}
-
-// RiskPreview là mức rủi ro tạm lúc nộp BRD: chỉ rule keyword trên tiêu đề và brd.md; không ghi file.
-type RiskPreview struct {
-	Level   string      `json:"level"`
-	Matched []RiskMatch `json:"matched"`
 }
 
 // RiskPart là mức rủi ro từ risk.yaml; chỉ có ở thẻ DESIGN và CASES của tính năng có risk.yaml.

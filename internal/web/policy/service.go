@@ -442,55 +442,8 @@ func (s *Service) Validate(ctx context.Context, repo *string, policyJSON string)
 	return map[string]any{"errors": []string{}, "changes": changes(ch)}, nil
 }
 
-type inputsJSON struct {
-	Text       string   `json:"text"`
-	Paths      []string `json:"paths"`
-	Tables     []string `json:"tables"`
-	Endpoints  []string `json:"endpoints"`
-	Labels     []string `json:"labels"`
-	AgentLevel string   `json:"agentLevel"`
-}
-
-type matchJSON struct {
-	Rule  string `json:"rule"`
-	Level string `json:"level"`
-	On    string `json:"on"`
-}
-
-type resultJSON struct {
-	Level      string      `json:"level"`
-	RuleLevel  string      `json:"ruleLevel"`
-	Matched    []matchJSON `json:"matched"`
-	AgentLevel *string     `json:"agentLevel"`
-}
-
-// Classify phân loại thử bằng đúng bộ phân loại của risk.
+// Classify (thử phân loại trên văn bản mẫu) không còn hỗ trợ: luật nay mô tả bằng lời và chỉ subagent trong phiên
+// Claude Code xếp loại được, server không có LLM. Giữ hàm để API trả lỗi rõ cho đến khi bỏ hẳn cả API lẫn giao diện.
 func Classify(policyJSON, inputs string) (map[string]any, error) {
-	p, err := risk.PolicyFromJSON(policyJSON)
-	if err != nil {
-		return nil, err
-	}
-	var in inputsJSON
-	if err := json.Unmarshal([]byte(inputs), &in); err != nil {
-		return nil, &risk.PolicyError{Errors: []string{"inputs không hợp lệ: " + err.Error()}}
-	}
-	r := risk.Classify(p, risk.RiskInputs{Text: in.Text, Paths: in.Paths, Tables: in.Tables, Endpoints: in.Endpoints,
-		Labels: in.Labels, AgentLevel: in.AgentLevel})
-	res := resultJSON{Level: r.Level, RuleLevel: r.RuleLevel, Matched: []matchJSON{}}
-	for _, m := range r.Matched {
-		res.Matched = append(res.Matched, matchJSON{m.Rule, m.Level, m.On})
-	}
-	if r.AgentLevel != "" {
-		a := r.AgentLevel
-		res.AgentLevel = &a
-	}
-	reqs := []map[string]any{}
-	for _, q := range p.RequirementsFor(r.Level) {
-		params := q.Params
-		if params == nil {
-			params = map[string]any{}
-		}
-		reqs = append(reqs, map[string]any{"id": q.ID, "name": risk.RequirementDisplayName(q), "params": params})
-	}
-	return map[string]any{"result": res, "requirements": reqs}, nil
+	return nil, &risk.PolicyError{Errors: []string{"Thử phân loại không còn hỗ trợ"}}
 }

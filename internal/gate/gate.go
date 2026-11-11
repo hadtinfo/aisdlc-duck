@@ -3,7 +3,6 @@ package gate
 import (
 	"os"
 	"path/filepath"
-	"sort"
 
 	"aisdlc/internal/model"
 )
@@ -46,26 +45,6 @@ func Sequence(flow model.Flow) []Gate {
 	return []Gate{CASES, REVIEW}
 }
 
-func dbFiles(dir string) []string {
-	es, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, e := range es {
-		st, err := os.Stat(filepath.Join(dir, e.Name()))
-		if err == nil && st.Mode().IsRegular() {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-	out := make([]string, len(names))
-	for i, n := range names {
-		out[i] = filepath.Join(dir, n)
-	}
-	return out
-}
-
 // Artifacts là danh sách file tạo nên hash của cổng, theo thứ tự cố định. CASES chỉ gồm cases.yaml,
 // schema-expected.json (LITE) và risk.yaml khi file có; không còn file suite test.
 func (g Gate) Artifacts(p model.FeaturePaths, f model.Flow) []string {
@@ -75,7 +54,7 @@ func (g Gate) Artifacts(p model.FeaturePaths, f model.Flow) []string {
 		out = append(out, p.Brd())
 	case DESIGN:
 		out = append(out, p.DesignMd(), p.DesignYaml())
-		out = append(out, dbFiles(p.DbDrafts())...)
+		out = append(out, model.DbDraftFiles(p.DbDrafts())...)
 		out = append(out, p.SchemaExpected())
 	case CASES:
 		out = append(out, p.Cases())

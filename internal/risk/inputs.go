@@ -2,7 +2,6 @@ package risk
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,7 +11,8 @@ import (
 )
 
 // InputFiles là các file subagent aisdlc-risk-classifier đọc để xếp loại, sắp theo đường dẫn. Luồng đầy đủ: brd.md,
-// design.md, design.yaml và mọi file trong db/ (migration nháp); luồng nhẹ: feature.yaml (tiêu đề) và cases.yaml.
+// design.md, design.yaml và các file trong db/ (migration nháp, chọn như hash cổng DESIGN: model.DbDraftFiles);
+// luồng nhẹ: feature.yaml (tiêu đề) và cases.yaml.
 // File chưa có thì bỏ qua. Rel tính từ root, dùng dấu "/".
 func InputFiles(root string, paths model.FeaturePaths, flow model.Flow) ([]InputFile, error) {
 	var abs []string
@@ -20,21 +20,7 @@ func InputFiles(root string, paths model.FeaturePaths, flow model.Flow) ([]Input
 		abs = []string{paths.Meta(), paths.Cases()}
 	} else {
 		abs = []string{paths.Brd(), paths.DesignMd(), paths.DesignYaml()}
-		err := filepath.WalkDir(paths.DbDrafts(), func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				if os.IsNotExist(err) {
-					return nil
-				}
-				return err
-			}
-			if d.Type().IsRegular() {
-				abs = append(abs, p)
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("Không đọc được %s: %v", paths.DbDrafts(), err)
-		}
+		abs = append(abs, model.DbDraftFiles(paths.DbDrafts())...)
 	}
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {

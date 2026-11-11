@@ -98,7 +98,7 @@ aisdlc setup --preset generic
 git status --short
 ```
 
-(Use `--preset banking` for the banking risk policy template. If a file already exists, `setup` keeps it and prints `Giữ nguyên <file> (đã có).` (kept, already exists); running it again changes nothing.)
+(Use `--preset banking` for the banking risk policy template. If a file already exists, `setup` keeps it and prints `Giữ nguyên <file> (đã có).` (kept, already exists); running it again changes nothing. If the directory is not inside a git repository yet, `setup` runs `git init -b main` first and prints `Đã tạo git repo …` (git repo created); add the remote later with `git remote add origin <url>`.)
 
 The command creates `aisdlc/config.yaml`, `aisdlc/risk-policy.yaml`, `aisdlc/gitlab-ci.aisdlc.yml`, appends an AISDLC section to `CLAUDE.md` and adds `.aisdlc/` to `.gitignore`. It detects `service.main` (exactly one `cmd/*/main.go`) and the migration directory (`db/migrations`, `migrations`, `db/migration`, `sql/migrations`, in that order); if detection fails it prints a reminder to edit `aisdlc/config.yaml` yourself.
 

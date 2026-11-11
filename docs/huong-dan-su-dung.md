@@ -98,7 +98,7 @@ aisdlc setup --preset generic
 git status --short
 ```
 
-(Thêm `--preset banking` nếu muốn mẫu chính sách rủi ro ngân hàng. Repo đã có file nào thì `setup` giữ nguyên file đó và in `Giữ nguyên <file> (đã có).`; chạy lại không đổi gì.)
+(Thêm `--preset banking` nếu muốn mẫu chính sách rủi ro ngân hàng. Repo đã có file nào thì `setup` giữ nguyên file đó và in `Giữ nguyên <file> (đã có).`; chạy lại không đổi gì. Thư mục chưa nằm trong repo git nào thì `setup` chạy `git init -b main` trước và in `Đã tạo git repo …`; thêm remote sau bằng `git remote add origin <url>`.)
 
 Lệnh tạo `aisdlc/config.yaml`, `aisdlc/risk-policy.yaml`, `aisdlc/gitlab-ci.aisdlc.yml`, nối mục AISDLC vào `CLAUDE.md` và thêm `.aisdlc/` vào `.gitignore`. Nó dò `service.main` (đúng một `cmd/*/main.go`) và thư mục migration (`db/migrations`, `migrations`, `db/migration`, `sql/migrations`, theo thứ tự đó); dò không ra thì in lời nhắc để bạn tự sửa `aisdlc/config.yaml`.
 

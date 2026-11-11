@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - Project site on GitHub Pages (`site/`, English and Vietnamese) with a guided tour and screenshots, assembled by
   `make site` and published by the `Pages` workflow.
+- `aisdlc setup` creates a git repository (`git init -b main`) when the directory is not inside one yet, so
+  `aisdlc init` works right away in a new project; the remote can be added later.
 
 ## [0.1.0] - 2026-11-06
 

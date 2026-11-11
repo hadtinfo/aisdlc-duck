@@ -55,6 +55,8 @@ type Service struct {
 	Specs    []spec.StepSpec
 	Adapter  lang.Adapter
 	Now      func() time.Time
+	// Policy là chính sách rủi ro đang hiệu lực (CLI nạp); dùng để tính lại inputsHash ở CI. nil thì không kiểm được.
+	Policy *risk.RiskPolicy
 }
 
 // OutDir là thư mục kết quả của harness cho tính năng: <root>/.aisdlc/run/<KEY>.
@@ -182,6 +184,9 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 			hard = append(hard, HardCheck{"RISK_FILE", false, "thiếu risk.yaml; chạy aisdlc submit cases"})
 		}
 	}
+	if ci && rf != nil && s.Meta.RiskSchema >= 2 {
+		hard = append(hard, s.riskLLM(*rf))
+	}
 	var covReq *risk.Requirement
 	if rf != nil {
 		for i := range rf.Requirements {
@@ -225,6 +230,26 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 		return EvalReport{}, err
 	}
 	return report, nil
+}
+
+// riskLLM (CI, tính năng có dấu riskSchema): kết quả xếp loại LLM trong risk.yaml phải khớp chính sách và tài liệu
+// hiện tại. Không gọi LLM; tài liệu đã khóa theo hash cổng nên so trên file hiện tại không gây lỗi giả.
+func (s *Service) riskLLM(rf risk.RiskFile) HardCheck {
+	const id = "RISK_LLM"
+	if rf.LLM == nil {
+		return HardCheck{id, false, "thiếu kết quả xếp loại LLM"}
+	}
+	if s.Policy == nil {
+		return HardCheck{id, false, "không có chính sách rủi ro để kiểm inputsHash"}
+	}
+	files, err := risk.InputFiles(s.Paths.RepoRoot, s.Paths, s.Meta.Flow)
+	if err != nil {
+		return HardCheck{id, false, "Không đọc được tài liệu đầu vào: " + err.Error()}
+	}
+	if rf.LLM.InputsHash != risk.InputsHash(*s.Policy, files) {
+		return HardCheck{id, false, "inputsHash không khớp tài liệu hiện tại"}
+	}
+	return HardCheck{id, true, "kết quả xếp loại LLM khớp tài liệu và chính sách hiện tại"}
 }
 
 // webApprovals: web trả lời sai/không trả lời không bao giờ được bỏ qua ở chế độ web. Không có nguồn web mà config

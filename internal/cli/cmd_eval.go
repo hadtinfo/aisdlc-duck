@@ -148,6 +148,9 @@ func runEval(ctx *Context, f *Feature, ci bool, base string) (int, error) {
 	svc := &eval.Service{Paths: f.Paths, Meta: f.Meta, Config: f.Config, Git: f.Git(),
 		Verifier: ctx.Verifier(f.Root, f.Config), Gates: gates, Steps: f.Steps(), Specs: f.Specs(),
 		Adapter: f.Adapter, Now: ctx.Clock()}
+	if l, ok := TryLoadPolicy(ctx, f.Root); ok {
+		svc.Policy = &l.Policy // để CI tính lại inputsHash của kết quả xếp loại LLM
+	}
 	// thiếu biến thì web nil: CI chế độ web khi đó Service fail closed (GATE:WEB)
 	var web eval.CIApprovalSource
 	if ci {

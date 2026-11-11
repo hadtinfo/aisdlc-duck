@@ -15,7 +15,7 @@ func policyWith(t *testing.T, rules, classification string) RiskPolicy {
 }
 
 func TestKeywordMatchesUnicodeCaseInsensitive(t *testing.T) {
-	r := Classify(latest(t, "banking"), in("Ghi nhận BÚT TOÁN", nil, nil, ""))
+	r := Classify(mustPreset(t, "banking", "2"), in("Ghi nhận BÚT TOÁN", nil, nil, ""))
 	if r.Level != "high" {
 		t.Errorf("level = %s", r.Level)
 	}
@@ -29,7 +29,7 @@ func TestKeywordMatchesUnicodeCaseInsensitive(t *testing.T) {
 }
 
 func TestTableGlob(t *testing.T) {
-	r := Classify(latest(t, "banking"), in("", []string{"ledger_entry"}, nil, ""))
+	r := Classify(mustPreset(t, "banking", "2"), in("", []string{"ledger_entry"}, nil, ""))
 	found := false
 	for _, m := range r.Matched {
 		found = found || m.On == "bảng ledger_entry"
@@ -71,7 +71,7 @@ func TestEndpointGlobWithPathVariable(t *testing.T) {
 
 func TestPathRuleUsesScopes(t *testing.T) {
 	i := RiskInputs{Paths: []string{"src/main/java/**/accounting/*.java"}}
-	r := Classify(latest(t, "banking"), i)
+	r := Classify(mustPreset(t, "banking", "2"), i)
 	found := false
 	for _, m := range r.Matched {
 		found = found || (m.Rule == "R3" && m.On == "src/main/java/**/accounting/*.java")
@@ -82,7 +82,7 @@ func TestPathRuleUsesScopes(t *testing.T) {
 }
 
 func TestLabelRuleExact(t *testing.T) {
-	r := Classify(latest(t, "banking"), RiskInputs{Labels: []string{"money-movement"}})
+	r := Classify(mustPreset(t, "banking", "2"), RiskInputs{Labels: []string{"money-movement"}})
 	if r.Level != "high" || r.Matched[0].On != "agent gắn nhãn money-movement" {
 		t.Errorf("%+v", r)
 	}
@@ -104,14 +104,14 @@ func TestDisabledRuleIgnored(t *testing.T) {
 }
 
 func TestAgentRaises(t *testing.T) {
-	r := Classify(latest(t, "banking"), in("không liên quan", nil, nil, "high"))
+	r := Classify(mustPreset(t, "banking", "2"), in("không liên quan", nil, nil, "high"))
 	if r.Level != "high" || r.RuleLevel != "low" || r.AgentLevel != "high" {
 		t.Errorf("%+v", r)
 	}
 }
 
 func TestAgentCannotLower(t *testing.T) {
-	if r := Classify(latest(t, "banking"), in("bút toán", nil, nil, "low")); r.Level != "high" {
+	if r := Classify(mustPreset(t, "banking", "2"), in("bút toán", nil, nil, "low")); r.Level != "high" {
 		t.Errorf("%+v", r)
 	}
 }
@@ -124,13 +124,13 @@ func TestAgentOff(t *testing.T) {
 }
 
 func TestUnknownAgentLevelIgnored(t *testing.T) {
-	if r := Classify(latest(t, "banking"), in("", nil, nil, "critical")); r.Level != "low" {
+	if r := Classify(mustPreset(t, "banking", "2"), in("", nil, nil, "critical")); r.Level != "low" {
 		t.Errorf("%+v", r)
 	}
 }
 
 func TestClassify_matchedNeverNilShape(t *testing.T) {
-	r := Classify(latest(t, "banking"), in("", nil, nil, ""))
+	r := Classify(mustPreset(t, "banking", "2"), in("", nil, nil, ""))
 	if r.Matched == nil || !reflect.DeepEqual(r.Matched, []Match{}) {
 		t.Errorf("matched = %#v", r.Matched)
 	}

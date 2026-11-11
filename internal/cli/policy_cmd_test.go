@@ -39,18 +39,19 @@ func TestPullWithoutWebExit2(t *testing.T) {
 func TestDiffPresetPrintsChanges(t *testing.T) {
 	r := policyRepo(t)
 	r.ok(noConsole(), "setup")
-	// Java so với banking v3 chỉ có trong test resources; bản Go so v1 với bản mới nhất thật (v2: thêm flow)
+	// Java so với banking v3 chỉ có trong test resources; bản Go so v1 với bản mới nhất thật (v3: schema 2, thêm flow)
 	y, err := risk.PresetYAML("banking", "1")
 	must(t, err)
 	r.write(policyFile, y)
 	r.ok(noConsole(), "policy", "diff-preset")
-	contains(t, r.out, "Mẫu banking v1 → v2: ", " thay đổi\n",
-		"  CHANGE_FLOW low/brd: manual → auto (nới)\n",
+	contains(t, r.out, "Mẫu banking v1 → v3: ", " thay đổi\n",
+		"  SCHEMA_MIGRATED schema: 1 → 2\n", "  CHANGE_FLOW low/design: manual → auto (nới)\n",
 		"Không tự áp dụng: chọn mục cần lấy rồi sửa aisdlc/risk-policy.yaml qua MR")
 }
 
 func TestDiffPresetUpToDate(t *testing.T) {
 	r := policyRepo(t)
+	r.presetV3 = true
 	r.ok(noConsole(), "setup")
 	r.ok(noConsole(), "policy", "diff-preset")
 	contains(t, r.out, "mới nhất")

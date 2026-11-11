@@ -14,7 +14,7 @@ import (
 
 func highRisk(t *testing.T) (RiskPolicy, RiskFile) {
 	t.Helper()
-	p := latest(t, "banking")
+	p := mustPreset(t, "banking", "2")
 	r := Classify(p, RiskInputs{Text: "bút toán", AgentLevel: "high"})
 	return p, NewRiskFile(p, r, &spec.Impact{Level: "high", Labels: []string{"money-movement"}, Reason: "lý do"})
 }
@@ -52,7 +52,7 @@ func TestWriteReadRoundTrip(t *testing.T) {
 }
 
 func TestRoundTripWithoutOverrideOrAgent(t *testing.T) {
-	p := latest(t, "banking")
+	p := mustPreset(t, "banking", "2")
 	f := NewRiskFile(p, Classify(p, RiskInputs{}), nil)
 	file := filepath.Join(t.TempDir(), "risk.yaml")
 	if err := f.Write(file); err != nil {

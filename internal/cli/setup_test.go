@@ -14,6 +14,7 @@ import (
 
 func setupRepo(t *testing.T) *testRepo {
 	r := newTestRepo(t)
+	r.presetV3 = true   // kiểm đúng mẫu mới nhất (v3, schema 2) mà setup chép
 	r.presetFlow = true // kiểm đúng file mẫu setup chép vào repo
 	return r
 }
@@ -36,7 +37,9 @@ func TestDefaultPresetIsGeneric(t *testing.T) {
 	eq(t, r.read("aisdlc/risk-policy.yaml"), presetYAML(t, "generic"))
 	p, err := risk.ParsePolicy(r.read("aisdlc/risk-policy.yaml"))
 	must(t, err)
-	eq(t, p.FlowFor("low", "brd"), "auto")
+	eq(t, p.Schema, 2)
+	eq(t, p.FlowFor("low", "design"), "auto")
+	eq(t, p.FlowFor("low", "brd"), "manual") // cổng BRD luôn duyệt tay
 }
 
 func TestPresetBankingWritesPolicy(t *testing.T) {

@@ -1,0 +1,27 @@
+schema: 2
+preset: { name: generic, version: "3" }
+levels: [low, medium, high]
+default: low
+rules:
+  - { id: G1, describe: "Có dòng tiền hoặc giá trị đi qua (chuyển tiền, thanh toán, hoàn tiền, trừ hoặc cộng số dư)", level: high }
+  - { id: G2, describe: "Đổi cấu trúc dữ liệu (thêm, sửa, xóa bảng hoặc cột, đổi kiểu dữ liệu)", level: medium }
+  - { id: G3, describe: "Đổi xác thực hoặc phân quyền (đăng nhập, token, vai trò, quyền truy cập)", level: high }
+  - { id: G4, describe: "Gọi hoặc mở API ngoài (tích hợp hệ thống khác, endpoint công khai mới)", level: medium }
+classification:
+  devLower: reason
+requirements:
+  medium:
+    - { id: rule-pos-neg }
+    - { id: boundary }
+    - { id: coverage, min: 75 }
+  high:
+    - { id: rule-pos-neg }
+    - { id: boundary }
+    - { id: idempotent }
+    - { id: concurrent, threads: 8 }
+    - { id: invariant }
+    - { id: coverage, min: 90 }
+flow:
+  low:    { design: auto, cases: auto, step: auto }
+  medium: { design: manual, cases: manual, step: auto }
+  high:   { design: manual, cases: manual, step: manual }

@@ -558,8 +558,8 @@ func casesCard(in ReviewInput, flags *flagList) review.ReviewCard {
 		}
 	} else if !lite {
 		if _, err := os.Stat(in.Paths.Risk()); errors.Is(err, os.ErrNotExist) {
-			if req, _ := risk.RequiredByDesign(in.Paths.DesignYaml()); req {
-				// design.yaml có impact: không phải tính năng cũ, không được lặng lẽ miễn yêu cầu
+			if risk.RequiredFor(in.Meta, in.Paths.DesignYaml()) {
+				// có dấu riskSchema hoặc design.yaml có impact: không phải tính năng cũ, không được lặng lẽ miễn yêu cầu
 				flags.add(review.NewFlag("RISK_FILE", review.HIGH, "thiếu risk.yaml; chạy aisdlc submit cases", "", nil))
 			}
 		}

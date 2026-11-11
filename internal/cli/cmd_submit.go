@@ -115,9 +115,10 @@ func (s *submission) design(f *Feature) (int, error) {
 		findings = append(findings, spec.Finding{Code: "DESIGN_YAML_INVALID", Message: "design.yaml không đọc được: " + err.Error()})
 	} else {
 		d = &ds
+		s.warnImpact(ds.Impact)
 	}
 	if d != nil {
-		fs, err := guarded(func() ([]spec.Finding, error) { return spec.ValidateDesign(md, *d, l.Policy.Levels), nil })
+		fs, err := guarded(func() ([]spec.Finding, error) { return spec.ValidateDesign(md, *d), nil })
 		if err != nil {
 			fs = []spec.Finding{{Code: "DESIGN_YAML_INVALID", Message: "design.yaml thiếu trường bắt buộc: " + err.Error()}}
 		}
@@ -154,6 +155,7 @@ func (s *submission) cases(f *Feature) (int, error) {
 		findings = append(findings, spec.Finding{Code: "CASES_YAML_INVALID", Message: "cases.yaml không đọc được: " + err.Error()})
 	} else {
 		cs = &c
+		s.warnImpact(c.Impact)
 	}
 	if cs != nil {
 		fs, err := guarded(func() ([]spec.Finding, error) {
@@ -677,4 +679,11 @@ func (s *submission) submit(f *Feature, g gate.Gate, findings []spec.Finding, in
 	}
 	s.ctx.Println("Sửa rồi chạy lại `aisdlc submit " + name + "`.")
 	return ExitFindings, nil
+}
+
+// warnImpact in cảnh báo không chặn khi design.yaml/cases.yaml còn khối impact cũ.
+func (s *submission) warnImpact(i *spec.Impact) {
+	if w := spec.ImpactDeprecationWarning(i); w != "" {
+		s.ctx.Eprintln("Cảnh báo: " + w)
+	}
 }

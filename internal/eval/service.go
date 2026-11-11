@@ -177,8 +177,8 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 			rf = &f
 		}
 	} else if s.Meta.Flow == model.FlowFull {
-		// design.yaml có impact: không phải tính năng cũ, thiếu risk.yaml không được miễn yêu cầu
-		if required, _ := risk.RequiredByDesign(s.Paths.DesignYaml()); required {
+		// có dấu riskSchema hoặc design.yaml có impact: không phải tính năng cũ, thiếu risk.yaml không được miễn yêu cầu
+		if risk.RequiredFor(s.Meta, s.Paths.DesignYaml()) {
 			hard = append(hard, HardCheck{"RISK_FILE", false, "thiếu risk.yaml; chạy aisdlc submit cases"})
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/model"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/yamlx"
 )
@@ -114,17 +115,21 @@ func (f RiskFile) WithOverride(p RiskPolicy, to, by, reason string, at time.Time
 	return f
 }
 
-// RequiredByDesign: luồng FULL chỉ là "cũ" (không có risk.yaml vẫn hợp lệ) khi design.yaml không có impact.
-// design.yaml có impact thì risk.yaml bắt buộc từ cổng Case. File thiếu hoặc hỏng: false (cổng Thiết kế/Case báo lỗi riêng).
-func RequiredByDesign(designYaml string) (bool, error) {
+// RequiredFor: risk.yaml có bắt buộc cho tính năng này không (thiếu file thì cổng Case/eval/thẻ review phải báo).
+// Bắt buộc khi feature.yaml có dấu riskSchema >= 2 (xếp loại bằng subagent), hoặc tính năng cũ có design.yaml còn
+// khối impact. design.yaml thiếu hoặc hỏng thì với tính năng cũ là false (cổng Thiết kế/Case báo lỗi riêng).
+func RequiredFor(meta model.FeatureMeta, designYaml string) bool {
+	if meta.RiskSchema >= 2 {
+		return true
+	}
 	if _, err := os.Stat(designYaml); err != nil {
-		return false, nil
+		return false
 	}
 	d, err := spec.ReadDesign(designYaml)
 	if err != nil {
-		return false, nil
+		return false
 	}
-	return d.Impact != nil, nil
+	return d.Impact != nil
 }
 
 // ReadRiskFile đọc risk.yaml; ok=false khi file không có.

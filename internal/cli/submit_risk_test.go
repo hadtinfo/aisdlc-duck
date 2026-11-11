@@ -77,14 +77,22 @@ func TestSubmitBrdIgnoresBrokenPolicy(t *testing.T) {
 	notContains(t, r.out+r.err, "Thang mức", "Rủi ro")
 }
 
-func TestSubmitDesignMissingImpactBlocked(t *testing.T) {
+// design.yaml không có impact: không còn lỗi, không cảnh báo.
+func TestSubmitDesignWithoutImpactPasses(t *testing.T) {
 	r := bankingRepo(t)
 	r.brdApproved()
-	y := r.read(designFile)
-	r.write(designFile, y[:strings.Index(y, "impact:")])
-	eq(t, r.run("submit", "design"), 1)
-	contains(t, r.out, "IMPACT_MISSING")
-	eq(t, r.exists(riskFile), false)
+	r.ok(noConsole(), "submit", "design")
+	notContains(t, r.out+r.err, "IMPACT_")
+}
+
+// design.yaml còn impact cũ: cảnh báo IMPACT_DEPRECATED trên stderr nhưng không chặn.
+func TestSubmitDesignWithImpactWarnsNotBlocks(t *testing.T) {
+	r := bankingRepo(t)
+	r.brdApproved()
+	r.write(designFile, r.read(designFile)+"impact: { level: low, labels: [], reason: r }\n")
+	r.ok(noConsole(), "submit", "design")
+	contains(t, r.err, "Cảnh báo: IMPACT_DEPRECATED: Khối impact không còn dùng")
+	notContains(t, r.out, "IMPACT_MISSING")
 }
 
 func TestSubmitDesignBrokenPolicyExit2WithRuleID(t *testing.T) {
@@ -152,8 +160,6 @@ func TestNoRiskFileLegacyFeatureCasesUnchanged(t *testing.T) {
 	// impact, không risk.yaml
 	meta := "aisdlc/features/PAY-1/feature.yaml"
 	r.write(meta, strings.Replace(r.read(meta), "riskSchema: 2\n", "", 1))
-	y := r.read(designFile)
-	r.write(designFile, y[:strings.Index(y, "impact:")])
 	must(t, os.Remove(filepath.Join(r.root, riskFile)))
 	cfg, err := model.LoadRepoConfig(r.root)
 	must(t, err)

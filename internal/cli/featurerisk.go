@@ -25,10 +25,7 @@ const riskSchemaMarker = 2
 func llmRisk(f *Feature) bool { return f.Meta.RiskSchema >= riskSchemaMarker }
 
 // requiredByDesign: tính năng cũ luồng FULL chưa có risk.yaml chỉ phải xếp loại khi design.yaml có impact.
-func requiredByDesign(f *Feature) bool {
-	req, _ := risk.RequiredByDesign(f.Paths.DesignYaml())
-	return req
-}
+func requiredByDesign(f *Feature) bool { return risk.RequiredFor(f.Meta, f.Paths.DesignYaml()) }
 
 // usablePolicy: chính sách dùng được để xếp loại (schema 2); không thì exit 2. Chế độ web dev không tự sửa được
 // chính sách nên thông báo chỉ sang quản trị.

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"aisdlc/internal/model"
 )
 
 func highRisk(t *testing.T) (RiskPolicy, RiskFile) {
@@ -176,26 +178,29 @@ func TestOfAndOverrideSnapshotFlowOfLevel(t *testing.T) {
 	}
 }
 
-func TestRequiredByDesign(t *testing.T) {
+func TestRequiredFor(t *testing.T) {
 	dir := t.TempDir()
 	w := func(name, s string) string {
 		p := filepath.Join(dir, name)
 		os.WriteFile(p, []byte(s), 0o644)
 		return p
 	}
+	old, marked := model.FeatureMeta{}, model.FeatureMeta{RiskSchema: 2}
 	cases := []struct {
+		meta model.FeatureMeta
 		path string
 		want bool
 	}{
-		{filepath.Join(dir, "none.yaml"), false},
-		{w("with.yaml", "steps: []\nimpact: { level: high, labels: [], reason: r }\n"), true},
-		{w("without.yaml", "steps: []\n"), false},
-		{w("broken.yaml", "steps: [\n"), false},
+		{old, filepath.Join(dir, "none.yaml"), false},
+		{old, w("with.yaml", "steps: []\nimpact: { level: high, labels: [], reason: r }\n"), true},
+		{old, w("without.yaml", "steps: []\n"), false},
+		{old, w("broken.yaml", "steps: [\n"), false},
+		{marked, filepath.Join(dir, "none.yaml"), true},
+		{marked, w("without2.yaml", "steps: []\n"), true},
 	}
 	for _, c := range cases {
-		got, err := RequiredByDesign(c.path)
-		if err != nil || got != c.want {
-			t.Errorf("%s: got %v err %v", c.path, got, err)
+		if got := RequiredFor(c.meta, c.path); got != c.want {
+			t.Errorf("%s (schema %d): got %v", c.path, c.meta.RiskSchema, got)
 		}
 	}
 }

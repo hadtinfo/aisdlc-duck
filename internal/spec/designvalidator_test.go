@@ -12,10 +12,10 @@ func dstep(id string, scope []string, b *Budget) StepSpec {
 	return StepSpec{ID: id, Title: "t", Scope: scope, Budget: b}
 }
 
-func dcodes(md string, d DesignSpec) []string { return codesOf(ValidateDesign(md, d, nil)) }
+func dcodes(md string, d DesignSpec) []string { return codesOf(ValidateDesign(md, d)) }
 
 func TestDesignTemplatesAreValid(t *testing.T) {
-	if f := ValidateDesign(tmplText(t, "design.md"), spec2(t), nil); len(f) != 0 {
+	if f := ValidateDesign(tmplText(t, "design.md"), spec2(t)); len(f) != 0 {
 		t.Fatalf("%v", f)
 	}
 }
@@ -82,7 +82,7 @@ func TestDesignDuplicateStep(t *testing.T) {
 
 func TestDesignOpenQuestion(t *testing.T) {
 	md := tmplText(t, "design.md")
-	f := ValidateDesign(md+"\n- [ ] Có cần idempotency key không?\n", spec2(t), nil)
+	f := ValidateDesign(md+"\n- [ ] Có cần idempotency key không?\n", spec2(t))
 	if len(f) != 1 || f[0].Code != "DESIGN_OPEN_QUESTION" || !strings.Contains(f[0].Message, "idempotency") {
 		t.Fatalf("%v", f)
 	}
@@ -101,7 +101,7 @@ invariants:
 		t.Fatal(err)
 	}
 	found := false
-	for _, f := range ValidateDesign(tmplText(t, "design.md"), d, nil) {
+	for _, f := range ValidateDesign(tmplText(t, "design.md"), d) {
 		if f.Code == "DESIGN_INVARIANT_STEP" && strings.Contains(f.Message, "S9") {
 			found = true
 		}
@@ -111,28 +111,22 @@ invariants:
 	}
 }
 
-func TestDesignImpactRequiredWhenLevelsGiven(t *testing.T) {
+func TestDesignImpactNoLongerValidated(t *testing.T) {
 	md := tmplText(t, "design.md")
-	none := DesignSpec{}
-	bad := DesignSpec{Impact: &Impact{Level: "urgent", Reason: "r"}}
-	levels := []string{"low", "high"}
-	c := func(d DesignSpec, l []string) []string { return codesOf(ValidateDesign(md, d, l)) }
-	if !contains(c(none, levels), "IMPACT_MISSING") {
-		t.Fatal("IMPACT_MISSING")
-	}
-	got := c(bad, levels)
-	if !contains(got, "IMPACT_LEVEL") || contains(got, "IMPACT_MISSING") {
-		t.Fatalf("%v", got)
-	}
-	for _, d := range []DesignSpec{none, bad} {
-		g := c(d, nil)
+	for _, d := range []DesignSpec{{}, {Impact: &Impact{Level: "urgent", Reason: "r"}}} {
+		g := codesOf(ValidateDesign(md, d))
 		if contains(g, "IMPACT_MISSING") || contains(g, "IMPACT_LEVEL") {
 			t.Fatalf("%v", g)
 		}
 	}
-	for _, f := range ValidateDesign(md, bad, levels) {
-		if f.Code == "IMPACT_LEVEL" && f.Message != `impact.level "urgent" không thuộc các mức hợp lệ [low, high].` {
-			t.Fatal(f.Message)
-		}
+}
+
+func TestImpactDeprecationWarning(t *testing.T) {
+	if got := ImpactDeprecationWarning(nil); got != "" {
+		t.Fatalf("không có impact thì không cảnh báo: %q", got)
+	}
+	want := "IMPACT_DEPRECATED: Khối impact không còn dùng: subagent aisdlc-risk-classifier xếp loại rủi ro; xóa khối này."
+	if got := ImpactDeprecationWarning(&Impact{Level: "low"}); got != want {
+		t.Fatalf("%q", got)
 	}
 }

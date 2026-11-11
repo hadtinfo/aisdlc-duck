@@ -10,7 +10,7 @@ Tài liệu của tính năng nằm ở `aisdlc/features/<JIRA-KEY>/`; mỗi c�
 - Làm từng bước: `aisdlc step start Sx`, chỉ sửa file trong phạm vi bước, xong chạy `aisdlc step finish Sx`, báo kết quả rồi dừng chờ dev.
 - Cần sửa file ngoài phạm vi: nhờ dev chạy `aisdlc scope allow <path>`.
 - Bị trả lại ở cổng nào: đọc `feedback.md` và làm theo ở lượt kế tiếp.
-- Rủi ro: ở bước thiết kế chạy `aisdlc policy show` rồi điền `impact` trong `design.yaml` (lite: `cases.yaml`). `risk.yaml` và `aisdlc/risk-policy.yaml` chỉ đọc; viết đủ case theo `requirements` trong `risk.yaml`.
+- Rủi ro: không điền `impact` trong `design.yaml`/`cases.yaml` nữa; subagent `aisdlc-risk-classifier` xếp loại (xem `aisdlc risk inputs`). `risk.yaml` và `aisdlc/risk-policy.yaml` chỉ đọc; viết đủ case theo `requirements` trong `risk.yaml`.
 - Chỉ dev chạy (trong terminal của mình): `approve`, `reject`, `reopen`, `scope allow`, `step accept`, `risk set`, `risk reclassify`.
 
 - Dịch vụ Go: mã nằm ở `cmd/` (main) và `internal/`; migration theo goose, tên `NNNNN_ten.sql`, có `-- +goose Up`, thư mục chính `db/migrations/`. Bản nháp của tính năng đặt ở `aisdlc/features/<KEY>/db/`.

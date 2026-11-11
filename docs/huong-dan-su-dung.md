@@ -440,8 +440,8 @@ Eval ghi `eval/report.md`, dòng đầu là `Eval <KEY>: ĐẠT` hoặc `KHÔNG 
 | `SCOPE` | Cứng | Mọi file đổi so với lúc `init` nằm trong scope các bước (cộng `scope allow`) |
 | `CHECK:<tên>` | Cứng | Lệnh khai trong `checks` của `config.yaml` (ví dụ `go vet ./...`) |
 | `RISK_COVERAGE` | Cứng | Coverage dòng mới ≥ `min` khi mức rủi ro yêu cầu `coverage` |
-| `RISK_FILE` | Cứng | `risk.yaml` hỏng, hoặc thiếu ở tính năng FULL cần có (tạo với `riskSchema: 2`, hoặc tính năng cũ có `design.yaml` còn `impact`) |
-| `RISK_LLM` | Cứng, chỉ CI | Tính năng có `riskSchema: 2`: `llm.inputsHash` trong `risk.yaml` khớp tài liệu và chính sách có hiệu lực hiện tại (chế độ web: chính sách lấy trực tiếp từ web bằng token CI). Không gọi LLM |
+| `RISK_FILE` | Cứng | `risk.yaml` hỏng, hoặc thiếu ở tính năng cần có (tạo với `riskSchema: 2`, FULL hay LITE, hoặc tính năng FULL cũ có `design.yaml` còn `impact`) |
+| `RISK_LLM` | Cứng, chỉ CI | Tính năng có `riskSchema: 2`: `llm.inputsHash` trong `risk.yaml` khớp tài liệu và chính sách có hiệu lực hiện tại (chế độ web: chính sách lấy trực tiếp từ web bằng token CI), và `level` bằng `llm.level` nâng lên `default`, trừ khi dev đổi mức tay (`override`). Không gọi LLM |
 | `GATE_AUTO:<cổng>` | Cứng | Cổng tự duyệt phải khớp `flow` đã chụp trong `risk.yaml` (mục 7.2) |
 | `BUDGET:Sx` | Mềm | Vượt 1,5 lần ngân sách bước |
 | `COVERAGE_CHANGED_LINES` | Mềm | Coverage dòng mới dưới 80% (`coverageWarn`), khi mức rủi ro không yêu cầu `coverage` |
@@ -571,13 +571,14 @@ rules:
 
 - Chưa `aisdlc web login`: nguồn là `aisdlc/risk-policy.yaml`. Sửa file và đưa vào qua MR như mọi file khác. `aisdlc policy show` in `(file)`.
 - Đã `aisdlc web login`: nguồn là web, trang `/risk/<repo>` (mở từ `/repos` hay link "Xem chính sách" trên trang tính năng). Lần đầu CLI kéo chính sách (`aisdlc policy pull`, hoặc tự động khi `submit`, `status`) mà web chưa có thì web nhập file trong repo làm **v1**. Trang có 3 tab: **Rule nhận diện** (`#rules`, hiện mô tả từng rule), **Yêu cầu theo mức** (`#levels`), **Phiên bản** (`#history`). Không có ô "thử phân loại": server không có LLM. Chính sách schema 1 chỉ xem được cho tới khi chuyển. Sửa nằm trong nháp tới khi bấm **Xuất bản** (bắt ghi lý do; đổi `describe` của một rule được coi là có thể nới lỏng, nới yêu cầu thì hộp xác nhận liệt kê phần bị nới). CLI lưu bản đã ký vào `.aisdlc/web/policy.json`; hook và validator chỉ đọc cache. Cache thiếu hay sai chữ ký thì `submit design`/`submit cases` dừng và nhắc `aisdlc policy pull`.
+- Lệnh trên một tính năng (`risk inputs`, `submit`, `risk set`, `risk reclassify`, `status`) theo chế độ duyệt có hiệu lực của tính năng, cùng quyết định với cổng và `eval --ci`: chỉ dùng chính sách web khi chế độ là web (server đã ghim, hoặc chưa ghim mà `approvals: web`) và máy đã đăng nhập; `approvals: local` (hoặc server ghim local) thì dùng `aisdlc/risk-policy.yaml` dù đã `aisdlc web login`.
 - `aisdlc policy show` in thang mức, rule và yêu cầu theo mức. `aisdlc policy diff-preset` so chính sách với bản mới nhất của mẫu gốc (không tự áp dụng).
 
 ![Trang chính sách rủi ro, tab Yêu cầu theo mức](images/web-chinh-sach-rui-ro.png)
 
 **Subagent xếp loại.** Mức được xếp **một lần, lúc `submit design`** (luồng nhẹ: `submit cases`), khi đã có đủ BRD, thiết kế và migration nháp. `submit brd` không có mức tạm, và cổng BRD luôn do dev duyệt.
 
-1. Agent chạy `aisdlc risk inputs`. Lệnh in các file đầu vào (FULL: `brd.md`, `design.md`, `design.yaml`, migration nháp trong `db/`; LITE: `feature.yaml` có tiêu đề, và `cases.yaml`), dòng `policy: .aisdlc/risk/policy-effective.yaml` (chính sách có hiệu lực, kể cả khi lấy từ web) và `inputsHash`, băm của chính sách đã chuẩn hóa và nội dung các file.
+1. Agent chạy `aisdlc risk inputs`. Lệnh in các file đầu vào (FULL: `brd.md`, `design.md`, `design.yaml`, migration nháp trong `db/`; LITE: `feature.yaml` có tiêu đề, và `cases.yaml`), dòng `policy: .aisdlc/risk/policy-effective.yaml` (chính sách có hiệu lực, kể cả khi lấy từ web) và `inputsHash`, băm của chính sách đã chuẩn hóa và nội dung các file. Chế độ web thì mỗi lần chạy đều lấy lại chính sách; không kết nối được web thì dùng bản đã ký trên máy và in cảnh báo.
 2. Agent gọi subagent `aisdlc-risk-classifier` (chỉ có `Read`, `Grep`, `Glob`) với đúng các đường dẫn và băm đó. Với mỗi rule đang bật, subagent quyết định theo nghĩa rule có khớp không. Mức đề xuất là mức cao nhất trong các rule khớp (hoặc `default`); subagent được chọn mức khác, nâng hoặc hạ, nhưng phải ghi `override: {from, reason}`.
 3. Agent ghi nguyên văn JSON vào `aisdlc/features/<KEY>/risk-agent.json`: `inputsHash`, `level`, `matched` (rule, câu trích nguyên văn `evidence`, `file`), `notMatched` (rule, `reason`), `override`, `summary`.
 4. `submit design` chặn với `RISK_AGENT_MISSING` (thiếu file) hoặc `RISK_AGENT_INVALID` khi JSON sai, `inputsHash` khác tài liệu và chính sách hiện tại, mức không có trong thang, rule lạ, rule đang bật bị thiếu hay lặp, câu trích không có trong file, hoặc `override` thiếu hay không khớp. Sửa tài liệu sau khi xếp loại thì chạy lại bước 1–3; không sửa tay JSON.

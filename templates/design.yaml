@@ -7,9 +7,6 @@ steps:
     title: Tính hạn mức và ghi nhận
     scope: ["internal/limit/service/**", "db/migrations/**"]
     budget: { files: 4, lines: 200 }
-# Đánh giá tác động (bắt buộc): chạy `aisdlc policy show` để xem thang mức và nhãn mà chính sách dùng.
-# level: một mức trong thang; labels: nhãn khớp rule label (vd. money-movement); reason: một câu, sai thì hậu quả gì.
-impact: { level: low, labels: [], reason: "Thay đổi nhỏ, không ghi dữ liệu tiền hay trạng thái." }
 # Bất biến DB kiểm sau case (khai khi tính năng ghi dữ liệu tiền hoặc trạng thái). Mỗi mục là một câu SELECT
 # trả về các dòng VI PHẠM (đúng thì 0 dòng). Không có `step`: kiểm sau mọi case; `step: Sx`: chỉ kiểm sau case của
 # bước Sx và các bước sau (dùng khi bảng chỉ có từ bước Sx), ví dụ:

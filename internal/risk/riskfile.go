@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/model"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/yamlx"
 )
@@ -14,6 +15,22 @@ import (
 type PolicyRef struct {
 	Version int    `yaml:"version" json:"version"`
 	Hash    string `yaml:"hash" json:"hash"`
+}
+
+// Match là một luật đã khớp. On: bằng chứng (để hiện cho dev); risk.yaml mới ghi "“câu trích” (file)".
+type Match struct {
+	Rule  string `yaml:"rule" json:"rule"`
+	Level string `yaml:"level" json:"level"`
+	On    string `yaml:"on" json:"on"`
+}
+
+// LLMSnapshot chụp kết quả của subagent aisdlc-risk-classifier đã dùng để xếp loại. InputsHash gắn kết quả với đúng
+// chính sách và tài liệu đã đọc; Level là mức subagent đưa ra (trước khi nâng lên mức mặc định).
+type LLMSnapshot struct {
+	Level      string       `yaml:"level" json:"level"`
+	InputsHash string       `yaml:"inputsHash" json:"inputsHash"`
+	Summary    string       `yaml:"summary" json:"summary"`
+	Override   *LLMOverride `yaml:"override" json:"override"`
 }
 
 // Override là lần dev đổi mức tay.
@@ -28,10 +45,12 @@ type Override struct {
 // RiskFile là bản chụp risk.yaml: validator, harness và eval đọc Requirements ở đây, không đọc chính sách.
 // Byte của file đi vào băm cổng CASES nên ghi phải ổn định (khóa map sắp theo bảng chữ cái, thứ tự field cố định).
 type RiskFile struct {
-	Level        string            `yaml:"level" json:"level"`
-	Policy       PolicyRef         `yaml:"policy" json:"policy"`
-	Matched      []Match           `yaml:"matched" json:"matched"`
-	Agent        *spec.Impact      `yaml:"agent" json:"agent"`
+	Level   string    `yaml:"level" json:"level"`
+	Policy  PolicyRef `yaml:"policy" json:"policy"`
+	Matched []Match   `yaml:"matched" json:"matched"`
+	// Agent chỉ còn để đọc risk.yaml cũ (đánh giá impact của agent chính); risk.yaml mới không ghi.
+	Agent        *spec.Impact      `yaml:"agent,omitempty" json:"agent,omitempty"`
+	LLM          *LLMSnapshot      `yaml:"llm,omitempty" json:"llm,omitempty"`
 	Override     *Override         `yaml:"override" json:"override"`
 	Requirements []Requirement     `yaml:"requirements" json:"requirements"`
 	Flow         map[string]string `yaml:"flow,omitempty" json:"flow,omitempty"`
@@ -53,15 +72,33 @@ func reqsOf(p RiskPolicy, level string) []Requirement {
 	return append([]Requirement(nil), p.RequirementsFor(level)...)
 }
 
-// NewRiskFile tạo risk.yaml từ kết quả phân loại (RiskFile.of).
-func NewRiskFile(p RiskPolicy, r RiskResult, agent *spec.Impact) RiskFile {
+// FromLLM tạo risk.yaml từ kết quả subagent đã kiểm (ValidateLLMResult): mức của subagent, nâng lên mức mặc định
+// nếu thấp hơn; mỗi luật khớp mang mức của luật và câu trích.
+func FromLLM(p RiskPolicy, r LLMResult) RiskFile {
+	level := Stricter(p, p.DefaultLevel, r.Level)
+	matched := make([]Match, 0, len(r.Matched))
+	for _, m := range r.Matched {
+		ruleLevel := ""
+		for _, rule := range p.Rules {
+			if rule.ID == m.Rule {
+				ruleLevel = rule.Level
+				break
+			}
+		}
+		matched = append(matched, Match{Rule: m.Rule, Level: ruleLevel, On: "“" + m.Evidence + "” (" + m.File + ")"})
+	}
+	var ov *LLMOverride
+	if r.Override != nil {
+		o := *r.Override
+		ov = &o
+	}
 	return RiskFile{
-		Level:        r.Level,
+		Level:        level,
 		Policy:       PolicyRef{Version: p.Version, Hash: p.Hash()},
-		Matched:      append([]Match(nil), r.Matched...),
-		Agent:        agent,
-		Requirements: reqsOf(p, r.Level),
-		Flow:         FlowOf(p, r.Level),
+		Matched:      matched,
+		LLM:          &LLMSnapshot{Level: r.Level, InputsHash: r.InputsHash, Summary: r.Summary, Override: ov},
+		Requirements: reqsOf(p, level),
+		Flow:         FlowOf(p, level),
 	}
 }
 
@@ -78,17 +115,21 @@ func (f RiskFile) WithOverride(p RiskPolicy, to, by, reason string, at time.Time
 	return f
 }
 
-// RequiredByDesign: luồng FULL chỉ là "cũ" (không có risk.yaml vẫn hợp lệ) khi design.yaml không có impact.
-// design.yaml có impact thì risk.yaml bắt buộc từ cổng Case. File thiếu hoặc hỏng: false (cổng Thiết kế/Case báo lỗi riêng).
-func RequiredByDesign(designYaml string) (bool, error) {
+// RequiredFor: risk.yaml có bắt buộc cho tính năng này không (thiếu file thì cổng Case/eval/thẻ review phải báo).
+// Bắt buộc khi feature.yaml có dấu riskSchema >= 2 (xếp loại bằng subagent), hoặc tính năng cũ có design.yaml còn
+// khối impact. design.yaml thiếu hoặc hỏng thì với tính năng cũ là false (cổng Thiết kế/Case báo lỗi riêng).
+func RequiredFor(meta model.FeatureMeta, designYaml string) bool {
+	if meta.RiskSchema >= 2 {
+		return true
+	}
 	if _, err := os.Stat(designYaml); err != nil {
-		return false, nil
+		return false
 	}
 	d, err := spec.ReadDesign(designYaml)
 	if err != nil {
-		return false, nil
+		return false
 	}
-	return d.Impact != nil, nil
+	return d.Impact != nil
 }
 
 // ReadRiskFile đọc risk.yaml; ok=false khi file không có.

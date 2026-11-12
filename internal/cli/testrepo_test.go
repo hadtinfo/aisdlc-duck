@@ -149,6 +149,11 @@ type testRepo struct {
 	setupDone bool
 	// presetFlow false (mặc định): sau setup bỏ khối flow khỏi risk-policy.yaml để mọi cổng duyệt tay.
 	presetFlow bool
+	// llmLevel là mức trong risk-agent.json mà testRepo tự ghi (giả subagent) trước `submit design`, `submit cases`
+	// và `risk reclassify` khi file thiếu hoặc đã cũ; "" là mức mặc định của chính sách.
+	llmLevel string
+	// noAutoLLM: không tự ghi risk-agent.json (test về chính file đó).
+	noAutoLLM bool
 	// setupDefaultApprovals false (mặc định): setup không nêu --approvals thì thêm --approvals local.
 	setupDefaultApprovals bool
 	// git thay gitx.Repo của Context (nil = git thật).
@@ -237,9 +242,14 @@ func (r *testRepo) exec(console DevConsole, stdin string, args ...string) int {
 		!slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "--approvals") }) {
 		args = append(append([]string(nil), args...), "--approvals", "local")
 	}
+	if !r.noAutoLLM && classifies(args) {
+		r.autoLLM()
+	}
 	code := runWith(ctx, r.extra, args...)
-	if code == 0 && !r.presetFlow && len(args) > 0 && args[0] == "setup" {
-		r.dropFlow()
+	if code == 0 && len(args) > 0 && args[0] == "setup" {
+		if !r.presetFlow {
+			r.dropFlow()
+		}
 	}
 	r.out, r.err = o.String(), e.String()
 	return code

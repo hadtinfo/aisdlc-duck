@@ -22,8 +22,9 @@ BRD ──▶ Thiết kế ──▶ Case ──▶ Code từng bước S1…Sn 
   chạy lại trên MR.
 - **Review card:** mỗi cổng có thẻ tóm tắt kèm cờ đỏ (scope chồng lấn, glob chạm migration cũ, đổi bảng có sẵn, case
   thiếu…), bản đồ bước, ER diff, bảng API và giả định của agent.
-- **Rủi ro:** chính sách rủi ro của repo xếp mỗi tính năng vào một mức; mức càng cao thì bộ case càng phải chặt. Mức
-  thấp có thể để hệ thống tự duyệt các cổng nộp sạch (Review luôn duyệt tay).
+- **Rủi ro:** chính sách rủi ro của repo mô tả rule bằng lời; một subagent độc lập đọc tài liệu của tính năng ở cổng
+  Thiết kế và xếp mức, kèm câu trích cho mỗi rule khớp. Mức càng cao thì bộ case càng phải chặt. Mức thấp có thể để hệ
+  thống tự duyệt các cổng Thiết kế, Case và bước khi nộp sạch (BRD và Review luôn duyệt tay).
 - **Web (tùy chọn):** bảng theo dõi tính năng, xem agent chạy trực tiếp, duyệt cổng trên web, tạm dừng agent, gửi chỉ
   dẫn, accept bước / cho phép file từ trình duyệt.
 

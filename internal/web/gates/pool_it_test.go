@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -76,8 +77,12 @@ func TestGateActionsDoNotStarveSmallPool(t *testing.T) {
 // qua tx. Nộp đồng thời (tự duyệt) xen với sự kiện rủi ro (thay thế) trên cùng tính năng, pool 2 kết nối: không treo.
 func TestAutoHooksDoNotStarveSmallPool(t *testing.T) {
 	fx := newGfx(t, "pa")
-	a := fx.autoFeat(t, "r/pa-a", "K-1", genericPolicy(t), cards("low", "[]"))
-	a.submitOk("BRD") // tự duyệt ở low: các lần thay thế sau có bản để thu hồi
+	a := fx.autoFeat(t, "r/pa-a", "K-1", genericPolicy(t), cards("[]"))
+	a.openGates("BRD")
+	// Thiết kế tự duyệt ở low: các lần thay thế sau có bản để thu hồi
+	if r := a.submitWithRisk("DESIGN", "low"); r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
 	if c := fx.count(t, "SELECT count(*) FROM approvals WHERE repo_id = 'r/pa-a' AND channel = 'auto'"); c != 1 {
 		t.Fatal(c)
 	}
@@ -106,7 +111,9 @@ func TestAutoHooksDoNotStarveSmallPool(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			res[i] = postTo(ctx, srv.URL, "/api/cli/submissions", a.submissionBody("BRD", "[]"), bearerHdr(fx.ingest))
+			b := a.submissionBody("DESIGN", "[]")
+			b = b[:strings.LastIndex(b, "}")] + `,"risk":{"level":"low"}}`
+			res[i] = postTo(ctx, srv.URL, "/api/cli/submissions", b, bearerHdr(fx.ingest))
 		}(i)
 		go func(i int) {
 			defer wg.Done()
@@ -125,7 +132,7 @@ func TestAutoHooksDoNotStarveSmallPool(t *testing.T) {
 			t.Fatalf("request %d sau %v: %d %v %s", i, time.Since(began), r.status, r.err, r.body)
 		}
 	}
-	if c := fx.count(t, "SELECT count(*) FROM approvals WHERE repo_id = 'r/pa-a' AND revoked_at IS NULL"); c > 1 {
+	if c := fx.count(t, "SELECT count(*) FROM approvals WHERE repo_id = 'r/pa-a' AND channel = 'auto' AND revoked_at IS NULL"); c > 1 {
 		t.Fatal("nhiều bản tự duyệt còn hiệu lực:", c)
 	}
 }

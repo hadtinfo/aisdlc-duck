@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -126,7 +127,7 @@ func TestImportCreatesV1OnceOnly(t *testing.T) {
 	if got := f.str(t, "SELECT source || '|' || author || '|' || reason FROM risk_policy_versions WHERE repo_id = $1 AND version = 1", repo); got != "import|"+f.owner+"|Nhập từ aisdlc/risk-policy.yaml" {
 		t.Fatal(got)
 	}
-	banking, _ := risk.PresetYAML("banking", "1")
+	banking, _ := risk.PresetYAML("banking", risk.PresetLatestVersion("banking"))
 	if r := f.importYaml(repo, banking); r.Status != 200 || r.JSON(t)["version"] != 1.0 {
 		t.Fatal(r.Status, r.Body)
 	}
@@ -320,47 +321,153 @@ func TestPolicyValidateUsesGoRisk(t *testing.T) {
 	}
 }
 
-func TestClassifyMatchesCore(t *testing.T) {
+// Thử phân loại đã bỏ hẳn: không còn route.
+func TestClassifyRouteRemoved(t *testing.T) {
 	f := newFixture(t)
-	repo := f.repo()
-	p := f.seeded(t, repo)
-	in := map[string]any{"text": "chuyển tiền", "paths": []string{"src/a.java"}, "tables": []string{}, "endpoints": []string{"POST /x"},
-		"labels": []string{"money-movement"}, "agentLevel": "low"}
-	b, _ := json.Marshal(map[string]any{"policy": p, "inputs": in})
-	r := f.w.PostSession("/api/policy/classify", string(b), f.ownerS, f.ownerS.CSRF)
-	if r.Status != 200 {
+	r := f.w.PostSession("/api/policy/classify", `{}`, f.ownerS, f.ownerS.CSRF)
+	if r.Status != 404 && r.Status != 405 {
 		t.Fatal(r.Status, r.Body)
 	}
-	pj, _ := json.Marshal(p)
-	pol, err := risk.PolicyFromJSON(string(pj))
+}
+
+func schema1YAML(t *testing.T) string {
+	t.Helper()
+	y, err := risk.PresetYAML("generic", "2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	expect := risk.Classify(pol, risk.RiskInputs{Text: "chuyển tiền", Paths: []string{"src/a.java"}, Endpoints: []string{"POST /x"},
-		Labels: []string{"money-movement"}, AgentLevel: "low"})
-	j := r.JSON(t)
-	res := j["result"].(map[string]any)
-	if res["level"] != expect.Level || expect.Level != "high" || len(arr(res["matched"])) != len(expect.Matched) ||
-		res["agentLevel"] != "low" || res["ruleLevel"] != expect.RuleLevel {
-		t.Fatal(r.Body)
+	return y
+}
+
+// seedSchema1: repo có phiên bản 1 schema 1 (nhập trước khi web từ chối schema 1), ghi thẳng vào DB.
+func (f *fixture) seedSchema1(t *testing.T, repo string) {
+	t.Helper()
+	p, err := risk.ParsePolicy(schema1YAML(t))
+	if err != nil {
+		t.Fatal(err)
 	}
-	reqs := arr(j["requirements"])
-	if len(reqs) != len(pol.RequirementsFor("high")) || reqs[0].(map[string]any)["name"] == nil || reqs[0].(map[string]any)["params"] == nil {
-		t.Fatal(r.Body)
+	p.Version = 1
+	y, err := p.ToYAML()
+	if err != nil {
+		t.Fatal(err)
 	}
-	// inputs sai kiểu → 400
-	bad, _ := json.Marshal(map[string]any{"policy": p, "inputs": map[string]any{"paths": "x"}})
-	if rb := f.w.PostSession("/api/policy/classify", string(bad), f.ownerS, f.ownerS.CSRF); rb.Status != 400 ||
-		!strings.HasPrefix(rb.JSON(t)["error"].(string), "inputs không hợp lệ: ") {
-		t.Fatal(rb.Status, rb.Body)
+	if _, err := f.e.Pool.Exec(t.Context(), "INSERT INTO risk_policy_versions(repo_id, version, body, hash, author, reason, source) "+
+		"VALUES ($1, 1, $2, $3, $4, 'import', 'import')", repo, y, p.Hash(), f.owner); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Nhập lần đầu chính sách schema 1: 400 với đúng thông điệp Usable (nhắc `aisdlc policy migrate`), không tạo phiên bản.
+func TestImportRejectsSchema1(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	r := f.importYaml(repo, schema1YAML(t))
+	p, _ := risk.ParsePolicy(schema1YAML(t))
+	var pe *risk.PolicyError
+	if !errors.As(p.Usable(), &pe) {
+		t.Fatal("Usable phải trả *risk.PolicyError")
+	}
+	want := pe.Errors[0]
+	if r.Status != 400 || r.JSON(t)["error"] != want || !strings.Contains(want, "aisdlc policy migrate") {
+		t.Fatal(r.Status, r.Body)
+	}
+	if f.count(t, repo) != 0 {
+		t.Fatal("không được tạo phiên bản")
+	}
+}
+
+func (f *fixture) migrateDraft(repo string) webtest.Resp {
+	b, _ := json.Marshal(map[string]any{"repo": repo})
+	return f.w.PostSession("/api/policy/migrate-draft", string(b), f.ownerS, f.ownerS.CSRF)
+}
+
+func TestMigrateDraftFromSchema1(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	f.seedSchema1(t, repo)
+	if f.live(t, repo)["policy"].(map[string]any)["schema"] != 1.0 {
+		t.Fatal("chính sách sống phải là schema 1")
+	}
+	r := f.migrateDraft(repo)
+	if r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	m := r.JSON(t)
+	pol := m["policy"].(map[string]any)
+	if pol["schema"] != 2.0 || pol["preset"] != nil {
+		t.Fatal(pol)
+	}
+	for _, x := range arr(pol["rules"]) {
+		if x.(map[string]any)["describe"] == "" {
+			t.Fatal(x)
+		}
+	}
+	ch := arr(m["changes"])
+	if len(ch) == 0 || ch[0].(map[string]any)["kind"] != "SCHEMA_MIGRATED" {
+		t.Fatal(ch)
+	}
+	if u, has := f.live(t, repo)["presetUpdate"]; !has || u != nil { // schema 1 chỉ đọc: không đề nghị cập nhật mẫu
+		t.Fatal(u)
+	}
+	// không ghi gì vào DB
+	if f.count(t, repo) != 1 {
+		t.Fatal("migrate-draft không được tạo phiên bản")
+	}
+	// schema 2 thì không có gì để chuyển
+	repo2 := f.repo()
+	f.seeded(t, repo2)
+	if r := f.migrateDraft(repo2); r.Status != 400 {
+		t.Fatal(r.Status, r.Body)
+	}
+	if r := f.migrateDraft(f.repo()); r.Status != 404 {
+		t.Fatal(r.Status, r.Body)
+	}
+}
+
+func TestPublishRejectsSchema1(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	f.seedSchema1(t, repo)
+	p1 := f.live(t, repo)["policy"]
+	r := f.publish(repo, 1, p1, "x", false)
+	if r.Status != 400 || !strings.Contains(r.JSON(t)["error"].(string), "schema 1") {
+		t.Fatal(r.Status, r.Body)
+	}
+	if f.count(t, repo) != 1 {
+		t.Fatal("không được tạo phiên bản")
+	}
+	if errs := arr(f.validate(repo, p1)["errors"]); len(errs) == 0 {
+		t.Fatal("validate phải báo lỗi schema 1")
+	}
+}
+
+func TestVersionsShowSchemaMigrated(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	f.seedSchema1(t, repo)
+	pol := f.migrateDraft(repo).JSON(t)["policy"]
+	if r := f.publish(repo, 1, pol, "chuyển schema 2", false); r.Status != 201 {
+		t.Fatal(r.Status, r.Body)
+	}
+	r := f.w.GetSession("/api/policy/versions?repo="+enc(repo), f.ownerS)
+	if r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	var list []map[string]any
+	if err := json.Unmarshal([]byte(r.Body), &list); err != nil {
+		t.Fatal(err, r.Body)
+	}
+	ch := arr(list[0]["changes"])
+	if len(ch) == 0 || ch[0].(map[string]any)["kind"] != "SCHEMA_MIGRATED" {
+		t.Fatal(list[0])
 	}
 }
 
 func TestPresetUpdateWhenBundledNewer(t *testing.T) {
 	f := newFixture(t)
 	repo := f.repo()
-	y, _ := risk.PresetYAML("generic", "1")
-	old := regexpReplace(t, strings.Replace(y, `version: "1"`, `version: "0"`, 1), `(?m)^  - \{ id: G4.*\n`)
+	y := genericYAML(t)
+	old := regexpReplace(t, strings.Replace(y, `version: "`+risk.PresetLatestVersion("generic")+`"`, `version: "0"`, 1), `(?m)^  - \{ id: G4.*\n`)
 	if r := f.importYaml(repo, old); r.Status != 201 {
 		t.Fatal(r.Status, r.Body)
 	}
@@ -534,4 +641,21 @@ func TestPolicyBodyLimitAndShape(t *testing.T) {
 func regexpReplace(t *testing.T, s, re string) string {
 	t.Helper()
 	return regexp.MustCompile(re).ReplaceAllString(s, "")
+}
+
+// Token ci chỉ được đọc chính sách (GET /api/cli/policy); mọi đường /api/cli/** khác và POST vẫn bị chặn.
+func TestCliPolicyReadableByCIToken(t *testing.T) {
+	f := newFixture(t)
+	repo := f.repo()
+	f.seeded(t, repo)
+	ci := webtest.CliToken(t, f.e.Pool, "ci-token", "pl-ci")
+	if r := f.w.GetBearer("/api/cli/policy?repo="+enc(repo), ci); r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	if r := f.w.GetBearer("/api/cli/pubkey", ci); r.Status != 403 {
+		t.Fatal("ci không được đọc đường cli khác:", r.Status)
+	}
+	if r := f.w.PostBearer("/api/cli/policy/import", `{"repo":"`+repo+`","yaml":"x"}`, ci); r.Status != 403 {
+		t.Fatal("ci không được ghi chính sách:", r.Status)
+	}
 }

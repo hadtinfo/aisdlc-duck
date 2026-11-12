@@ -76,3 +76,11 @@ func TestClaudeTemplateDescribesGoFlow(t *testing.T) {
 		}
 	}
 }
+
+func TestTemplatesHaveNoImpactBlock(t *testing.T) {
+	for _, n := range []string{"design.yaml", "cases.full.yaml", "cases.lite.yaml"} {
+		if strings.Contains(read(t, n), "impact:") {
+			t.Errorf("%s còn khối impact", n)
+		}
+	}
+}

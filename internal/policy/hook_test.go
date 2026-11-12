@@ -170,6 +170,15 @@ func TestDenyWriteRiskYaml(t *testing.T) {
 	assertDeny(t, PreToolUse(ToolCall{ToolName: "Write", FilePath: "aisdlc/features/PAY-123/risk.yaml"}, s), "aisdlc")
 }
 
+func TestAgentMayWriteRiskAgentJsonButNotRiskYaml(t *testing.T) {
+	e := newEnv(t)
+	for _, s := range []PolicyState{e.active(model.FlowLite), e.active(model.FlowFull), e.codeReadyLite()} {
+		assertAllow(t, wr(s, "aisdlc/features/PAY-123/risk-agent.json"), "risk-agent.json")
+		assertDeny(t, wr(s, "aisdlc/features/PAY-123/risk.yaml"), "aisdlc")
+		assertDeny(t, wr(s, "aisdlc/risk-policy.yaml"), "Chính sách rủi ro")
+	}
+}
+
 func TestDenyWriteRiskPolicyYaml(t *testing.T) {
 	e := newEnv(t)
 	s := e.codeReadyLite()

@@ -1,24 +1,23 @@
-# Chính sách rủi ro của repo flow-service (E2E quy trình theo mức): mẫu generic v2 (có flow) cộng rule T1 (bảng
-# daily_limit → high). Không có rule từ khóa nên BRD nào cũng ở mức tạm low: BRD tự duyệt, PAY-1 nâng mức ở
-# `submit design` (thiết kế chạm daily_limit). Mức high chỉ yêu cầu idempotent và invariant như fixture.
-schema: 1
-preset: { name: generic, version: "2" }
+# Chính sách rủi ro của repo flow-service (E2E quy trình theo mức): cùng luật với fixture (generic v3 cộng E1 "hạn
+# mức" → high) để dùng chung e2e/solutions/<KEY>/risk-agent.json, thêm khối flow: low tự duyệt Thiết kế, Case và
+# bước; cổng BRD luôn duyệt tay. FEE-3 (không luật nào khớp) ở low; PAY-1 (E1, G2) ở high nên mọi cổng duyệt tay.
+schema: 2
+preset: { name: generic, version: "3" }
 levels: [low, medium, high]
 default: low
 rules:
-  - { id: G1, kind: label, match: money-movement, level: high, note: Có dòng tiền hoặc giá trị đi qua }
-  - { id: G2, kind: label, match: schema-change, level: medium, note: Đổi cấu trúc dữ liệu }
-  - { id: G3, kind: label, match: auth, level: high, note: Đổi xác thực hoặc phân quyền }
-  - { id: G4, kind: label, match: external-api, level: medium, note: Gọi hoặc mở API ngoài }
-  - { id: T1, kind: table, match: daily_limit, level: high, note: Bảng hạn mức ngày (E2E) }
+  - { id: G1, describe: "Có dòng tiền hoặc giá trị đi qua (chuyển tiền, thanh toán, hoàn tiền, trừ hoặc cộng số dư)", level: high }
+  - { id: G2, describe: "Đổi cấu trúc dữ liệu (thêm, sửa, xóa bảng hoặc cột, đổi kiểu dữ liệu)", level: medium }
+  - { id: G3, describe: "Đổi xác thực hoặc phân quyền (đăng nhập, token, vai trò, quyền truy cập)", level: high }
+  - { id: G4, describe: "Gọi hoặc mở API ngoài (tích hợp hệ thống khác, endpoint công khai mới)", level: medium }
+  - { id: E1, describe: "Chặn giao dịch theo hạn mức (E2E)", level: high }
 classification:
-  agent: raise
   devLower: reason
 requirements:
   high:
     - { id: idempotent }
     - { id: invariant }
 flow:
-  low:    { brd: auto, design: auto, cases: auto, step: auto }
-  medium: { brd: manual, design: manual, cases: manual, step: auto }
-  high:   { brd: manual, design: manual, cases: manual, step: manual }
+  low:    { design: auto, cases: auto, step: auto }
+  medium: { design: manual, cases: manual, step: auto }
+  high:   { design: manual, cases: manual, step: manual }

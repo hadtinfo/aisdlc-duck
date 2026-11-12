@@ -1,0 +1,14 @@
+{
+  "inputsHash": "<thay bằng inputsHash của aisdlc risk inputs>",
+  "level": "low",
+  "matched": [],
+  "notMatched": [
+    {"rule": "G1", "reason": "Chỉ sửa làm tròn phí trả về từ GET /api/v1/fees, không chuyển tiền hay đổi số dư."},
+    {"rule": "G2", "reason": "Scope chỉ internal/fee/**, không có migration."},
+    {"rule": "G3", "reason": "Không đổi xác thực hay phân quyền."},
+    {"rule": "G4", "reason": "Không gọi hệ thống ngoài, không mở endpoint mới."},
+    {"rule": "E1", "reason": "Không chặn giao dịch theo hạn mức."}
+  ],
+  "override": null,
+  "summary": "Sửa lỗi làm tròn phí trong internal/fee: không luật nào khớp, mức low."
+}

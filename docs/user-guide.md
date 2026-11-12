@@ -2,7 +2,7 @@
 
 > Tiếng Việt: [huong-dan-su-dung.md](huong-dan-su-dung.md).
 
-Updated: 2026-11-06
+Updated: 2026-11-11
 
 ## 1. What AISDLC is
 
@@ -11,7 +11,7 @@ AISDLC lets a Claude Code agent write the documents, cases and code while the de
 A feature passes through 5 gates. Each gate must be approved before the next one opens:
 
 1. **BRD**: business requirements, rules `BR-n`.
-2. **Design**: `design.md` (Mermaid sequence with S1…Sn, API table, assumptions), `design.yaml` (scope and budget per step, impact assessment), draft goose migrations in `db/`.
+2. **Design**: `design.md` (Mermaid sequence with S1…Sn, API table, assumptions), `design.yaml` (scope and budget per step, invariants), draft goose migrations in `db/`.
 3. **Cases**: `cases.yaml` (HTTP, DB, message, stub). At submission, the case set must contain cases that fail because the code does not exist yet.
 4. **Code, step by step S1…Sn**: the agent can only write files in the step's scope; the dev accepts each step.
 5. **Review**: eval must PASS and include an independent subagent review; the dev approves, then opens the MR.
@@ -26,19 +26,19 @@ Each arrow to the right is one agent submission; the agent moves on to the next 
 
 | | Agent (Claude Code) | Dev |
 | --- | --- | --- |
-| Writes | `brd.md`, `design.md`, `design.yaml`, migrations, `cases.yaml`, code, `review-agent.json` (via subagent) | Nothing required; reads the review card, diff, report |
-| Commands | `init`, `submit`, `step start`, `step finish`, `eval`, `review`, `status`, `diff`, `policy show` | `approve`, `reject`, `reopen`, `step accept`, `scope allow`, `risk set`, `risk reclassify`, `web login` |
+| Writes | `brd.md`, `design.md`, `design.yaml`, migrations, `cases.yaml`, code, `risk-agent.json` and `review-agent.json` (via subagents) | Nothing required; reads the review card, diff, report |
+| Commands | `init`, `submit`, `step start`, `step finish`, `eval`, `review`, `status`, `diff`, `policy show`, `risk inputs` | `approve`, `reject`, `reopen`, `step accept`, `scope allow`, `risk set`, `risk reclassify`, `web login` |
 | Cannot | Approve, accept steps, allow out-of-scope files, edit state files or approved artifacts | (no limits; dev commands require a real console or the Yes/No dialog in Claude Code) |
 
 **Full and lite flow.** FULL (default) goes through all 5 gates and is meant for changes touching the DB, APIs or money movement. LITE (`aisdlc init <KEY> --lite`) is for bug fixes or small changes that do not alter the DB/API: it skips BRD and Design, leaving Cases → S1 → Review (section 3.3).
 
-**Risk level.** Each repo has a risk policy (`aisdlc/risk-policy.yaml` or on the web). Each feature is assigned a level (default `low < medium < high`). The higher the level, the stricter the case set must be, and the policy can let low levels **auto-approve** the BRD, Design and Cases gates and step acceptance when a submission is clean. Review is always approved by the dev. Details: section 7.
+**Risk level.** Each repo has a risk policy (`aisdlc/risk-policy.yaml` or on the web). Each feature is assigned a level (default `low < medium < high`). The rules are written in plain words, and an independent subagent (`aisdlc-risk-classifier`) decides which ones apply by reading the feature's documents at `submit design` (lite flow: `submit cases`). The higher the level, the stricter the case set must be, and the policy can let low levels **auto-approve** the Design and Cases gates and step acceptance when a submission is clean. BRD and Review are always approved by the dev. Details: section 7.
 
 Components the dev deals with:
 
 | Component | Role |
 | --- | --- |
-| Claude Code plugin (`plugin/`) | Slash commands `/aisdlc:*`, hooks, subagent `aisdlc-reviewer` |
+| Claude Code plugin (`plugin/`) | Slash commands `/aisdlc:*`, hooks, subagents `aisdlc-reviewer` and `aisdlc-risk-classifier` |
 | CLI `aisdlc` | A single Go binary: agent and dev commands; also the program that runs the hooks |
 | Harness `aisdlc-harness` | A second binary that `aisdlc` calls when running cases (`submit design`/`submit cases`, `step finish`) and `eval`: it starts Postgres/Kafka in Docker (testcontainers) and runs the service and `cases.yaml` as a black box. Kept separate so hooks start fast |
 | Web `aisdlc-web` (optional) | Board, gate approval and agent control on the web |
@@ -49,11 +49,12 @@ A feature's state lives in the repo, under `aisdlc/features/<KEY>/`:
 
 | File | Written by | Contents |
 | --- | --- | --- |
-| `feature.yaml` | CLI (`init`) | Key, title, flow, base commit |
+| `feature.yaml` | CLI (`init`) | Key, title, flow, base commit, `riskSchema: 2` (risk classified by the subagent) |
 | `brd.md`, `design.md`, `design.yaml`, `db/*.sql`, `cases.yaml` | Agent | Gate artifacts |
 | `gates.json` | CLI | Submission and approval records per gate (`local` mode) |
 | `steps.json`, `scope-extra.json` | CLI | Step state, files allowed outside scope |
-| `risk.yaml` | CLI | Risk level, policy used, level requirements |
+| `risk-agent.json` | Subagent `aisdlc-risk-classifier` | Risk classification: level, matched rules with quotes, unmatched rules with reasons, `inputsHash` of the documents read |
+| `risk.yaml` | CLI | Risk level, policy used, the applied classification (`llm`), level requirements |
 | `feedback.md` | CLI | Feedback when the dev rejects a gate |
 | `review-agent.json` | Subagent `aisdlc-reviewer` | Independent review result |
 | `eval/report.md`, `eval/report.json`, `eval/diff-by-step.md` | CLI (`eval`) | Eval results |
@@ -198,7 +199,7 @@ Each Claude Code session remembers its own feature: the SessionStart hook sets `
 
 **FULL** (default): BRD → Design → Cases → Code step by step → Review, as in section 3. A complete example is in section 3.4.
 
-**LITE** (`--lite`): for bug fixes or small changes that do not alter the DB or API. It skips BRD and Design, leaving three gates: CASES → code → REVIEW. `cases.yaml` declares its own `scope`, `budget` (plus `impact` and `invariants` when the repo has a risk policy) and has exactly one step `S1`. Template: `templates/cases.lite.yaml`; real example: `e2e/solutions/FIX-2/cases.yaml`.
+**LITE** (`--lite`): for bug fixes or small changes that do not alter the DB or API. It skips BRD and Design, leaving three gates: CASES → code → REVIEW. `cases.yaml` declares its own `scope`, `budget` (plus `invariants` when the repo has a risk policy) and has exactly one step `S1`. Template: `templates/cases.lite.yaml`; real example: `e2e/solutions/FIX-2/cases.yaml`.
 
 ```bash
 # runnable
@@ -208,7 +209,7 @@ aisdlc status
 
 `status` after the commands above: gate `CASES` is `NOT_SUBMITTED`, `REVIEW` is `LOCKED_BY_PREVIOUS`, step `S1` is `NOT_STARTED`. Continuing a LITE feature end to end:
 
-1. `/aisdlc:cases`: the agent edits `aisdlc/features/DOC-1/cases.yaml` (Go scope such as `internal/fee/**`, budget, `impact`, real cases) and runs `aisdlc submit cases`. Submit runs the case set against the current service, so at least one case must fail.
+1. `/aisdlc:cases`: the agent edits `aisdlc/features/DOC-1/cases.yaml` (Go scope such as `internal/fee/**`, budget, real cases), has the subagent `aisdlc-risk-classifier` classify the risk from the title and `cases.yaml` (writes `risk-agent.json`, section 7) and runs `aisdlc submit cases`. Submit runs the case set against the current service, so at least one case must fail.
 2. The dev runs `aisdlc approve cases`. From now on `cases.yaml` is locked.
 3. `/aisdlc:step S1`: the agent codes within scope; `aisdlc step finish S1` runs the step's cases. The dev runs `aisdlc step accept S1`.
 4. `/aisdlc:review`: eval, independent review, `aisdlc submit review`. The dev runs `aisdlc approve review`, then opens the MR.
@@ -223,7 +224,7 @@ echo '{"tool_name":"Write","tool_input":{"file_path":"'"$PWD"'/internal/fee/fee.
 
 ### 3.4. End-to-end example: PAY-1 "Kiểm tra hạn mức ngày" (daily limit check)
 
-This example follows the same scenario the E2E test runs (`e2e/run-e2e.sh`) on the sample service `e2e/fixture-service`; all artifacts are in `e2e/solutions/PAY-1/`. The sample service has an `account` table and a risk policy `aisdlc/risk-policy.yaml` with rule `E1`: keyword `hạn mức` (limit) → level `high`; level `high` requires a duplicate-request case (`idempotent`) and a DB invariant (`invariant`).
+This example follows the same scenario the E2E test runs (`e2e/run-e2e.sh`) on the sample service `e2e/fixture-service`; all artifacts are in `e2e/solutions/PAY-1/`. The sample service has an `account` table and a risk policy `aisdlc/risk-policy.yaml` (schema 2) with rule `E1`, described as `Chặn giao dịch theo hạn mức (E2E)` (blocking transactions by a limit) → level `high`; level `high` requires a duplicate-request case (`idempotent`) and a DB invariant (`invariant`).
 
 **Initialize.** In Claude Code, the dev types `/aisdlc:init PAY-1`; the agent proposes the FULL flow and runs:
 
@@ -240,7 +241,7 @@ Tiếp theo: soạn brd.md rồi chạy `aisdlc submit brd`.
 
 `aisdlc status` at this point: `BRD NOT_SUBMITTED`, the next three gates `LOCKED_BY_PREVIOUS`, steps `NOT_STARTED`, and the last line `Cổng kế tiếp cần xử lý: BRD` (next gate to handle: BRD).
 
-**BRD.** `/aisdlc:brd`: the agent writes `brd.md` (goals, in/out of scope, business rules, acceptance criteria, open questions) and submits. `submit brd` also prints a provisional risk level from the keyword rules (`Rủi ro tạm (từ khóa): …`, "provisional risk (keywords)"; here it is `high` because the BRD contains the words "hạn mức"):
+**BRD.** `/aisdlc:brd`: the agent writes `brd.md` (goals, in/out of scope, business rules, acceptance criteria, open questions) and submits. `submit brd` does not compute a risk level (the level is classified once, at `submit design`), and the BRD gate always waits for the dev:
 
 ```
 $ aisdlc submit brd
@@ -281,13 +282,32 @@ invariants:
   - name: Số đã dùng không vượt hạn mức
     sql: "SELECT account_id FROM daily_limit WHERE used_amount < 0 OR used_amount > limit_amount"
     step: S2
-impact:
-  level: medium
-  labels: [schema-change]
-  reason: "Thêm bảng daily_limit; API chỉ đọc, không ghi số đã dùng."
 ```
 
-`aisdlc submit design` test-runs the main migrations plus the draft migration on a real Postgres, writes `schema-expected.json` (the schema eval will compare against), computes the full risk level and writes `risk.yaml`: here it prints `Rủi ro: high` (risk: high; rule `E1` matches the keyword in the BRD, higher than the `medium` the agent assessed). `aisdlc review design` shows the flags `SCOPE_OVERLAP` (HIGH: S1 and S2 both touch `internal/limit/web/**`) and `SCOPE_MATCHES_OLD_MIGRATION` (WARN: S2's glob `db/migrations/**` also matches old migrations). The dev reads the card, then runs `aisdlc approve design` (flags do not block).
+Before submitting, the agent asks for the classifier's inputs:
+
+```
+$ aisdlc risk inputs
+[PAY-1]
+aisdlc/features/PAY-1/brd.md
+aisdlc/features/PAY-1/db/00002_daily_limit.sql
+aisdlc/features/PAY-1/design.md
+aisdlc/features/PAY-1/design.yaml
+policy: .aisdlc/risk/policy-effective.yaml
+inputsHash: 5c0e…
+```
+
+It passes these paths and the `inputsHash` to the subagent `aisdlc-risk-classifier` (read-only), which decides rule by rule and returns JSON; the agent writes it verbatim to `risk-agent.json` (`e2e/solutions/PAY-1/risk-agent.json`):
+
+```json
+{"inputsHash": "5c0e…", "level": "high",
+ "matched": [{"rule": "E1", "evidence": "App chặn sớm giao dịch chuyển tiền vượt hạn mức ngày của tài khoản", "file": "aisdlc/features/PAY-1/brd.md"},
+             {"rule": "G2", "evidence": "CREATE TABLE daily_limit (", "file": "aisdlc/features/PAY-1/db/00002_daily_limit.sql"}],
+ "notMatched": [{"rule": "G1", "reason": "API chỉ kiểm tra hạn mức, không chuyển tiền …"}, …],
+ "override": null, "summary": "…"}
+```
+
+`aisdlc submit design` test-runs the main migrations plus the draft migration on a real Postgres, writes `schema-expected.json` (the schema eval will compare against), checks `risk-agent.json` (the hash must match the current documents and policy, every enabled rule must appear once, each quote must exist in its file) and writes `risk.yaml`: here it prints `Rủi ro: high …` (risk: high; rules `E1` and `G2` match). Without a valid `risk-agent.json` the submission is blocked (`RISK_AGENT_MISSING`, `RISK_AGENT_INVALID`); if the agent edits a document afterwards, the hash no longer matches and the subagent must run again. `aisdlc review design` shows the flags `SCOPE_OVERLAP` (HIGH: S1 and S2 both touch `internal/limit/web/**`) and `SCOPE_MATCHES_OLD_MIGRATION` (WARN: S2's glob `db/migrations/**` also matches old migrations). The dev reads the card, then runs `aisdlc approve design` (flags do not block).
 
 **Cases.** `/aisdlc:cases`: the agent writes `cases.yaml` (C1–C2 for S1, C3–C7 for S2). The first version lacks a duplicate-request case, so it is blocked under level `high`:
 
@@ -305,9 +325,9 @@ The agent adds C7 (`when.repeat: 2`, checks that `used_amount` does not change) 
 
 **Eval and review.** `/aisdlc:review`: the agent runs `aisdlc eval` (writes `eval/report.md`, first line `Eval PAY-1: ĐẠT` (PASS), with a `## Rủi ro` (Risk) section), calls the subagent `aisdlc-reviewer` to write `review-agent.json` (5 criteria: sequence, error-handling, over-engineering, naming, security), then `aisdlc submit review` (updates the `AGENT_REVIEW` line in the report). The dev runs `aisdlc approve review`: the command also prints `Agent review: …` and any `high` issues.
 
-**MR.** Commit everything (code, migrations, `aisdlc/features/PAY-1/`) and open the MR. The CI job runs `aisdlc eval --ci --base origin/<target branch>` and prints `Eval PAY-1: ĐẠT`. If someone edits `cases.yaml` after approval, eval fails at `CASES_LOCKED`.
+**MR.** Commit everything (code, migrations, `aisdlc/features/PAY-1/`) and open the MR. The CI job runs `aisdlc eval --ci --base origin/<target branch>` and prints `Eval PAY-1: ĐẠT`, including `RISK_LLM` (the classification in `risk.yaml` still matches the current documents and policy; CI never calls an LLM). If someone edits `cases.yaml` after approval, eval fails at `CASES_LOCKED`.
 
-On the same service, `FIX-2` (LITE, `e2e/solutions/FIX-2/`) goes Cases → S1 (`3/3 pass`) → Review, while `FEE-3` (`e2e/solutions/FEE-3/`) is a `low` level feature that runs straight through thanks to auto-approve (section 7.2).
+On the same service, `FIX-2` (LITE, `e2e/solutions/FIX-2/`) goes Cases → S1 (`3/3 pass`) → Review, while `FEE-3` (`e2e/solutions/FEE-3/`) is a `low` level feature that, once the dev approves its BRD, runs straight through thanks to auto-approve (section 7.2).
 
 ### 3.5. Other common commands
 
@@ -316,6 +336,7 @@ On the same service, `FIX-2` (LITE, `e2e/solutions/FIX-2/`) goes Cases → S1 (`
 - `--feature <KEY>` (`-f`): choose the feature for one command without changing the current feature.
 - `aisdlc review cases`: preview a gate's review card.
 - `aisdlc policy show`: risk level scale, rules and requirements per level.
+- `aisdlc risk inputs`: the input files and `inputsHash` for the risk classifier subagent.
 - `aisdlc diff --by-step --patch`: diff per step.
 - `aisdlc reopen <gate>`: reopen a gate to change an approved artifact (removes the submission and approval). Editing directly makes the gate STALE and the later gates count as closed.
 
@@ -419,7 +440,8 @@ Eval writes `eval/report.md`, whose first line is `Eval <KEY>: ĐẠT` (PASS) or
 | `SCOPE` | Hard | Every file changed since `init` is within the steps' scopes (plus `scope allow`) |
 | `CHECK:<name>` | Hard | Commands declared in `checks` in `config.yaml` (e.g. `go vet ./...`) |
 | `RISK_COVERAGE` | Hard | New-line coverage ≥ `min` when the risk level requires `coverage` |
-| `RISK_FILE` | Hard | `risk.yaml` is broken, or missing while `design.yaml` has `impact` |
+| `RISK_FILE` | Hard | `risk.yaml` is broken, or missing in a feature that needs one (created with `riskSchema: 2`, FULL or LITE, or an older FULL feature whose `design.yaml` still has `impact`) |
+| `RISK_LLM` | Hard, CI only | Features with `riskSchema: 2`: `llm.inputsHash` in `risk.yaml` matches the current documents and the effective policy (in web mode, the live policy fetched with the CI token), and `level` equals `llm.level` raised to `default` unless the dev changed it by hand (`override`). No LLM call |
 | `GATE_AUTO:<gate>` | Hard | An auto-approved gate must match the `flow` snapshotted in `risk.yaml` (section 7.2) |
 | `BUDGET:Sx` | Soft | Step budget exceeded by 1.5× |
 | `COVERAGE_CHANGED_LINES` | Soft | New-line coverage below 80% (`coverageWarn`), when the risk level does not require `coverage` |
@@ -442,7 +464,7 @@ The job (image `golang:1.26`, runs for merge requests) runs `aisdlc eval --ci --
 
 - Changes to `aisdlc/config.yaml` must be in a separate MR; eval always fails changes bundled with config edits. A config MR needs tech lead approval and is merged under the team's exception process.
 - An MR that changes code not belonging to any feature (e.g. a dependency bump) fails: create a `--lite` feature, or set `ciRequireFeature: false` in a separate MR.
-- Web approval mode additionally needs `AISDLC_WEB_URL` and `AISDLC_CI_TOKEN` (section 6.3).
+- Web approval mode additionally needs `AISDLC_WEB_URL` and `AISDLC_CI_TOKEN` (section 6.3). The CI token can also read the live risk policy (`GET /api/cli/policy`) for `RISK_LLM`.
 
 ## 6. Web (optional)
 
@@ -506,7 +528,7 @@ Enable with `approvals: web` in `aisdlc/config.yaml` (separate config MR; `aisdl
 - From the second submission on, the gate page has a **Thay đổi so với lần nộp trước** (Changes since previous submission) section with a diff and the status of each piece of feedback (`có thay đổi liên quan` (related changes), `chưa thấy thay đổi` (no changes yet)…). Mention the exact section name (`## API`) or file name in the rejection reason so the web can match it.
 - The hook does not call the network: it reads the signed gate state in `.aisdlc/web/gates/<KEY>.json`. A cache that has been edited or copied from elsewhere counts as not approved; `aisdlc status` fetches the correct one again. Rejects / reopens on the web are written to `feedback.md` when the cache refreshes.
 - Repo currently on `local`: run `aisdlc web migrate` (sends the approvals in `gates.json` that still match the content to the web as pending confirmation), then click **Xác nhận** (Confirm) on the feature page **in gate order** (out of order, the web reports `Xác nhận cổng trước trước` (confirm the earlier gate first)). The REVIEW gate cannot be imported: submit and approve it again on the web. `gates.json` is not modified.
-- Risk policy in web mode: `aisdlc policy pull` fetches the policy from the web (the first time, the web imports `aisdlc/risk-policy.yaml` as v1); `submit design`/`submit cases` stop and point to this command when the policy cache is missing or has a bad signature (section 7).
+- Risk policy in web mode: `aisdlc policy pull` fetches the policy from the web (the first time, the web imports `aisdlc/risk-policy.yaml` as v1; it must be schema 2); `submit design`/`submit cases` stop and point to this command when the policy cache is missing or has a bad signature (section 7).
 - CI: add the variables `AISDLC_WEB_URL` and `AISDLC_CI_TOKEN` (Masked, Protected); the CI token is issued by an admin with `user ci-token <name>`. CI FAILs when a gate is not approved, content does not match the hash, code changed after REVIEW approval (`REVIEW đã đổi sau duyệt …`), a variable is missing, or the web does not respond.
 
 ![Confirm approval dialog for the Design gate: HIGH/WARN flags, 2 assumptions not yet seen, submitted files; above it, changes since the previous submission](images/web-xac-nhan-duyet.png)
@@ -527,30 +549,51 @@ Works in both approval modes, as long as the dev machine has run `aisdlc web log
 
 ## 7. Risk policy and level-based process
 
-Each repo has a **risk policy**: a level scale (default `low < medium < high`), **rules** that identify risky features, **case requirements per level** and a `flow` block (which gates auto-approve at which level). The AISDLC core has no business knowledge: keywords, paths and table names are all declared by the project.
+Each repo has a **risk policy**: a level scale (default `low < medium < high`), **rules** that identify risky features, **case requirements per level** and a `flow` block (which gates auto-approve at which level). The AISDLC core has no business knowledge: every rule is written by the project, in plain words.
 
-**Initialization.** `aisdlc setup --preset <generic|banking>` copies a template into `aisdlc/risk-policy.yaml` (default `generic`; rerunning does not overwrite an existing file). `generic` has rules based on impact labels (`money-movement`, `schema-change`, `auth`, `external-api`); `banking` adds banking business rules.
+**Initialization.** `aisdlc setup --preset <generic|banking>` copies a template into `aisdlc/risk-policy.yaml` (default `generic`; rerunning does not overwrite an existing file). `generic` has 4 rules (money movement, data structure changes, authentication/authorization, external APIs); `banking` adds banking business rules (ledger, fees, accounting code, ledger tables).
+
+**Rules (policy `schema: 2`).** Each rule is an id, a level and a `describe` sentence, in any language:
+
+```yaml
+schema: 2
+default: low
+rules:
+  - { id: G1, level: high, describe: "Có dòng tiền hoặc giá trị đi qua (chuyển tiền, thanh toán, hoàn tiền, trừ hoặc cộng số dư)" }
+  - { id: E1, level: high, describe: "Chặn giao dịch theo hạn mức (E2E)" }
+```
+
+`describe` is required; `enabled: false` turns a rule off. There is no `kind`/`match` any more: the old `keyword`, `path`, `table`, `endpoint` and `label` rules matched text without understanding it (false hits such as "no fee" matching a fee rule, misses such as an English BRD saying "ledger posting"). `default` is the floor: a classification below it is raised to `default`.
+
+**Migrating a schema 1 policy.** A policy that still has `schema: 1` stops every command that classifies or publishes (exit 2, `Chính sách dùng schema 1 …; chạy aisdlc policy migrate …`). `aisdlc policy migrate` turns each old rule into a `describe` made of its note plus a hint from the old pattern (e.g. `"Chặn giao dịch theo hạn mức (từ khóa cũ: hạn mức)"`), drops `classification.agent` and the `flow.<level>.brd` keys, and prints the diff without writing; `aisdlc policy migrate --write` writes the file. Review the wording, then merge it through an MR like any policy change. In web mode the policy lives on the server: an admin opens the policy page, clicks **Chuyển sang schema 2** (Migrate to schema 2) to load a draft built by the same rules, reviews it and publishes it as a new version. Old versions stay readable on the web (history, comparison).
 
 **Where to edit the policy.**
 
 - Without `aisdlc web login`: the source is `aisdlc/risk-policy.yaml`. Edit the file and merge it through an MR like any other file. `aisdlc policy show` prints `(file)`.
-- With `aisdlc web login`: the source is the web, page `/risk/<repo>` (opened from `/repos` or the "Xem chính sách" (View policy) link on the feature page). The first time the CLI pulls the policy (`aisdlc policy pull`, or automatically on `submit`, `status`) and the web has none, the web imports the repo file as **v1**. The page has 4 tabs: **Rule nhận diện** (Detection rules, `#rules`), **Yêu cầu theo mức** (Requirements by level, `#levels`), **Thử phân loại** (Try classification, `#try`), **Phiên bản** (Versions, `#history`). Edits stay in a draft until you click **Xuất bản** (Publish), which requires a reason; when requirements are relaxed, the confirmation dialog lists what was relaxed. The CLI stores the signed version in `.aisdlc/web/policy.json`; hooks and validators only read the cache. If the cache is missing or has a bad signature, `submit design`/`submit cases` stop and point to `aisdlc policy pull`.
-- `aisdlc policy show` prints the level scale, rules, the labels used by `label` rules and requirements per level (the agent uses it to fill in `impact`). `aisdlc policy diff-preset` compares the policy with the latest version of the original template (does not apply anything).
+- With `aisdlc web login`: the source is the web, page `/risk/<repo>` (opened from `/repos` or the "Xem chính sách" (View policy) link on the feature page). The first time the CLI pulls the policy (`aisdlc policy pull`, or automatically on `submit`, `status`) and the web has none, the web imports the repo file as **v1**. The page has 3 tabs: **Rule nhận diện** (Detection rules, `#rules`, showing each rule's description), **Yêu cầu theo mức** (Requirements by level, `#levels`), **Phiên bản** (Versions, `#history`). There is no "try classification" box: the server has no LLM. A schema 1 policy is read-only until migrated. Edits stay in a draft until you click **Xuất bản** (Publish), which requires a reason; changing a rule's `describe` counts as possibly relaxing it, and when requirements are relaxed the confirmation dialog lists what was relaxed. The CLI stores the signed version in `.aisdlc/web/policy.json`; hooks and validators only read the cache. If the cache is missing or has a bad signature, `submit design`/`submit cases` stop and point to `aisdlc policy pull`.
+- Commands on a feature (`risk inputs`, `submit`, `risk set`, `risk reclassify`, `status`) follow the feature's effective approval mode, the same decision as the gates and `eval --ci`: the web policy only when the mode is web (pinned on the server, or `approvals: web` when not pinned) and this machine is logged in; with `approvals: local` (or pinned local) they use `aisdlc/risk-policy.yaml` even after `aisdlc web login`.
+- `aisdlc policy show` prints the level scale, rules and requirements per level. `aisdlc policy diff-preset` compares the policy with the latest version of the original template (does not apply anything).
 
 ![Risk policy page, Requirements by level tab](images/web-chinh-sach-rui-ro.png)
 
-**Rules** come in 5 types: `keyword` (regex, matched against the title, `brd.md`, `design.md`), `path` (glob, matched against the steps' `scope`), `table` (glob on table/column names in new migrations), `endpoint` (`METHOD /path/**` in the API table of `design.md`), `label` (labels the agent writes in `impact`). The lite flow only uses `keyword` (title and case `title`s), `path` and `label`.
+**Classification by a subagent.** The level is classified **once, at `submit design`** (lite flow: `submit cases`), when the BRD, design and draft migrations all exist. There is no provisional level at `submit brd`, and the BRD gate is always approved by the dev.
 
-**Agent impact assessment.** In the design step the agent writes `impact` (level, labels, reason) and `invariants` into `design.yaml` (example in section 3.4); the lite flow writes them into `cases.yaml`. With a policy present, a missing `impact` (or an unknown `level`) is an error at `submit design` (lite flow: `IMPACT_LEVEL` at `submit cases`). An invariant is a query that must return 0 rows; without `step` it runs after every case, with `step: Sx` it only runs after the cases of Sx and later steps (a nonexistent step is the error `DESIGN_INVARIANT_STEP`). A violation makes that case FAIL, with the invariant name and up to 5 violating rows.
+1. The agent runs `aisdlc risk inputs`. It prints the input files (FULL: `brd.md`, `design.md`, `design.yaml`, the draft migrations in `db/`; LITE: `feature.yaml` with the title, and `cases.yaml`), the line `policy: .aisdlc/risk/policy-effective.yaml` (the effective policy, also when it comes from the web) and `inputsHash`, a hash of the normalized policy and the files' contents. In web mode it fetches the policy again on every run; if the web cannot be reached it uses the signed copy on this machine and prints a warning.
+2. The agent calls the subagent `aisdlc-risk-classifier` (tools `Read`, `Grep`, `Glob` only) with exactly those paths and that hash. For each enabled rule the subagent decides, by meaning, whether it applies. The suggested level is the highest matched rule (or `default`); the subagent may choose another level, raising or lowering, only with an `override: {from, reason}`.
+3. The agent writes the JSON verbatim to `aisdlc/features/<KEY>/risk-agent.json`: `inputsHash`, `level`, `matched` (rule, `evidence` quoted verbatim, `file`), `notMatched` (rule, `reason`), `override`, `summary`.
+4. `submit design` blocks with `RISK_AGENT_MISSING` (no file) or `RISK_AGENT_INVALID` when the JSON is malformed, `inputsHash` differs from the current documents and policy, the level is not on the scale, a rule is unknown, an enabled rule is missing or listed twice, a quote is not found in its file, or an override is missing or inconsistent. If a document is edited after classification, rerun step 1–3; never fix the JSON by hand.
+5. The CLI writes `risk.yaml`: `level`, `policy`, `matched` (rule, level, quote) and `llm` (`level`, `override`, `summary`, `inputsHash`). A manual level change by the dev (`override`) is kept.
 
-**Classification.** Level = the highest of: `default`, the enabled rules that match, the agent's `impact.level` (when `classification.agent: raise`), and the level manually raised by the dev. The agent can only raise, never lower. `submit brd` prints a provisional level (`keyword` rules only, e.g. `Rủi ro tạm (từ khóa): low`). `submit design` computes the full level and writes `aisdlc/features/<KEY>/risk.yaml`. `submit cases` recomputes it if the policy or design has changed. Approving the Cases gate locks `risk.yaml` by the gate hash: policy changes after that do not change the requirements of the feature in progress. Only the CLI writes `risk.yaml`; the hook blocks the agent from writing this file, `.aisdlc/web/policy.json` and `aisdlc/risk-policy.yaml`.
+The `impact` block in `design.yaml` (lite flow: `cases.yaml`) is no longer used: the validator only warns when it is still present. Invariants stay in `design.yaml` (lite flow: `cases.yaml`): an invariant is a query that must return 0 rows; without `step` it runs after every case, with `step: Sx` it only runs after the cases of Sx and later steps (a nonexistent step is the error `DESIGN_INVARIANT_STEP`). A violation makes that case FAIL, with the invariant name and up to 5 violating rows.
+
+`submit cases` (FULL) checks that the classification in `risk.yaml` still matches the current policy and documents, otherwise it reports `RISK_STALE` (rerun the subagent, then `aisdlc risk reclassify`). Approving the Cases gate locks `risk.yaml` by the gate hash: policy changes after that do not change the requirements of the feature in progress. Only the CLI writes `risk.yaml`; the hook blocks the agent from writing this file, `.aisdlc/web/policy.json` and `aisdlc/risk-policy.yaml`. In CI, `eval --ci` checks `RISK_LLM`: `llm.inputsHash` must match the current documents and policy (in web mode the policy is fetched live with the CI token). CI never calls an LLM. The result is written by the agent's side, so the real safeguards remain the dev reading the card, manual gates and the MR. Features created before this change (no `riskSchema: 2` in `feature.yaml`) keep their old `risk.yaml` and are not reclassified.
 
 **Changing the level (dev only, real terminal, retype the feature key as with `approve`).**
 
 - `aisdlc risk set <level> [--reason "…"]`: when raising, the reason is optional; **when lowering, a reason is required** (if the policy sets `devLower: never`, lowering is not allowed). Runs once `risk.yaml` exists and the Cases gate is not approved; if the Cases gate is approved, run `aisdlc reopen cases` first. If the policy has changed since the last classification, the command stops (exit 2) and tells you to run `aisdlc risk reclassify` first.
-- `aisdlc risk reclassify`: recompute with the current policy (drops the manual level change).
+- `aisdlc risk reclassify`: apply a new `risk-agent.json` (after the agent reran the subagent) and drop the manual level change. If the Cases gate is already approved, the command says it will reopen it and asks for confirmation.
 
-On the web, the **Rủi ro** (Risk) panel on the feature page shows the level, matching rules, the agent's assessment and the status of each requirement; the board shows a level pill on the feature card. Changing the level is still done by terminal command.
+On the web, the **Rủi ro** (Risk) panel on the feature page shows the level, matching rules and the status of each requirement; the Design gate card (lite flow: Cases) has a **Xếp loại LLM** (LLM classification) block with the level, each matched rule with its quote, the unmatched rules with their reasons, the override if any and the summary. When the subagent overrides the rule-based level, the card shows the WARN flag `RISK_LLM_OVERRIDE`. The board shows a level pill on the feature card. Changing the level is still done by terminal command.
 
 ### 7.1. Requirement library
 
@@ -570,25 +613,25 @@ Missing requirements make `submit cases` report `RISK_REQ` (e.g. `Mức high yê
 
 ### 7.2. Level-based process (auto-approve)
 
-The `flow` block decides which gates the system **auto-approves** on a clean submission (no findings) and which the dev approves manually. There are 4 configurable gates: `brd`, `design`, `cases`, `step` (step acceptance), with value `auto` or `manual`. The latest `generic` template:
+The `flow` block decides which gates the system **auto-approves** on a clean submission (no findings) and which the dev approves manually. There are 3 configurable gates: `design`, `cases`, `step` (step acceptance), with value `auto` or `manual`. The latest `generic` template:
 
 ```yaml
 flow:
-  low:    { brd: auto,   design: auto,   cases: auto,   step: auto }
-  medium: { brd: manual, design: manual, cases: manual, step: auto }
-  high:   { brd: manual, design: manual, cases: manual, step: manual }
+  low:    { design: auto,   cases: auto,   step: auto }
+  medium: { design: manual, cases: manual, step: auto }
+  high:   { design: manual, cases: manual, step: manual }
 ```
 
 - An undeclared level or gate is `manual`. If the repo has no policy (or has not pulled it from the web), every gate is `manual`.
-- **Review is always manual**: a `flow.<level>.review` key makes the policy invalid.
+- **BRD and Review are always manual.** The level is only known at `submit design`, so the BRD gate is never auto-approved; an old `flow.<level>.brd` key only produces a warning and is ignored. A `flow.<level>.review` key makes the policy invalid.
 - Auto-approval prints `Đã nộp cổng <GATE>, không có phát hiện: tự duyệt (mức low).` (submitted, no findings: auto-approved, level low); `status` and the web show `tự duyệt (mức low)`, and the approver is recorded as `auto`. The agent still cannot approve anything.
-- The BRD gate uses the higher of the provisional level and `default`. A HIGH red flag on the review card always waits for the dev, even if the flow says `auto`.
-- **Raising the level means re-approval.** When the level rises (`submit design` yields a higher level, or `aisdlc risk set`) and the new level's flow is `manual` for a gate that was auto-approved, that auto-approval is superseded: the CLI prints `Mức tăng low → high: cổng BRD, … cần dev duyệt lại.` (level raised: gates need dev re-approval) and the web shows `đã thay thế` (superseded). The content has not changed, so the dev only needs `aisdlc approve <gate>`, without resubmitting.
+- A HIGH red flag on the review card always waits for the dev, even if the flow says `auto`. The `RISK_LLM_OVERRIDE` flag (the subagent chose a level other than the one computed from the matched rules) is WARN only, so it does not block auto-approval; the reason is on the card.
+- **Raising the level means re-approval.** When the level rises (`aisdlc risk set`, or `aisdlc risk reclassify` with a new result) and the new level's flow is `manual` for a gate that was auto-approved, that auto-approval is superseded: the CLI prints `Mức tăng low → high: cổng DESIGN, … cần dev duyệt lại.` (level raised: gates need dev re-approval) and the web shows `đã thay thế` (superseded). The content has not changed, so the dev only needs `aisdlc approve <gate>`, without resubmitting.
 - **CI: `GATE_AUTO`.** Every auto-approved gate must match the `flow` snapshotted in `risk.yaml`; if not (e.g. `gates.json` edited by hand), the check `GATE_AUTO:<gate>` fails and blocks the merge.
 
-Example `FEE-3` "Làm tròn phí tới đồng gần nhất" (round fees to the nearest dong, level `low`): `submit brd`, `submit design`, `submit cases` all auto-approve, `step finish S1` auto-accepts, `eval` PASSes; only the Review gate waits for the dev.
+Example `FEE-3` "Làm tròn phí tới đồng gần nhất" (round fees to the nearest dong, level `low`): the dev approves the BRD; then `submit design` and `submit cases` auto-approve, `step finish S1` auto-accepts, `eval` PASSes; only the Review gate waits for the dev.
 
-![BRD gate page of FEE-3: auto-approved (level low)](images/web-tu-duyet.png)
+![Gate page of FEE-3: auto-approved (level low)](images/web-tu-duyet.png)
 
 ## 8. Security model
 
@@ -596,7 +639,7 @@ AISDLC assumes the agent can make mistakes, not that it is deliberately maliciou
 
 The `PreToolUse` hook blocks:
 
-- writes to state files (`.aisdlc/`, `gates.json`, `steps.json`, `scope-extra.json`, `risk.yaml`…), `aisdlc/config.yaml`, `aisdlc/risk-policy.yaml` and approved artifacts;
+- writes to state files (`.aisdlc/`, `gates.json`, `steps.json`, `scope-extra.json`, `risk.yaml`…), `aisdlc/config.yaml`, `aisdlc/risk-policy.yaml` and approved artifacts (the agent may write `risk-agent.json` and `review-agent.json`, the subagents' results);
 - writes outside the scope of the open step, or code edits while the gate is not open;
 - any tool touching `~/.config/aisdlc`, where tokens and pinned keys are stored;
 - Bash commands that mention `AISDLC_WEB_TOKEN`, read `/proc/*/environ` or dump the whole environment (`env`, `printenv` without arguments, `export -p`, `set`/`declare` without arguments);
@@ -656,6 +699,9 @@ Other limitations:
 | `CASES_SETUP_NEEDS_LATER_TABLE` | `reset_sql` uses a table created in a later step | Clean that table in `given.sql` of that step's cases |
 | `RISK_REQ` on `submit cases` | The risk level requires cases the case set does not have | Add cases as the message says (`repeat`, `parallel`, invariants) |
 | `submit design`/`submit cases` stops, suggests `aisdlc policy pull` | Policy cache missing or bad signature | Run `aisdlc policy pull` |
+| `RISK_AGENT_MISSING` / `RISK_AGENT_INVALID` on `submit design` (lite: `submit cases`) | No `risk-agent.json`, or it is stale (`inputsHash` differs after a document edit), misses a rule, or quotes text not in the file | Run `aisdlc risk inputs` and the subagent `aisdlc-risk-classifier` again; never edit the JSON by hand |
+| `Chính sách dùng schema 1 …`, exit 2 | The policy still uses the old matching rules (`kind`/`match`) | Run `aisdlc policy migrate` (prints the diff), then `--write` and merge through an MR; in web mode an admin migrates on the policy page (**Chuyển sang schema 2**) |
+| `RISK_LLM` fails in CI | A document or the policy changed after classification | Reopen the gate, rerun the subagent, `aisdlc risk reclassify` or resubmit |
 | `Không nộp được lên web: …`, exit 2 | Web mode and the web does not respond | Resubmit when the web is back; `aisdlc web status` |
 | Web returns 401 | Token expired | Rerun `aisdlc web login` |
 | Web returns 403 | Wrong token type | CLI uses the ingest token, approvals use the approve token |
@@ -672,7 +718,7 @@ Other limitations:
 | `aisdlc step accept Sx` | Accept a step |
 | `aisdlc scope allow <path>` | Allow one file outside scope |
 | `aisdlc risk set <level> --reason "..."` | Change the risk level (lowering requires a reason) |
-| `aisdlc risk reclassify` | Reclassify under the current policy |
+| `aisdlc risk reclassify` | Apply a new `risk-agent.json` (after rerunning the subagent); drops the manual level change |
 | `aisdlc web login` / `aisdlc web approve-token` | Store the ingest / approve token (real terminal only, not via `sessionApprove`) |
 | `aisdlc web migrate` | Move local approvals to the web (pending confirmation by the feature owner) |
 
@@ -687,7 +733,8 @@ Other limitations:
 | `aisdlc status [--json]` | Gate state, steps, pause from the web |
 | `aisdlc review <gate> [--json]` | Print the review card |
 | `aisdlc diff --by-step --patch` | Diff per step |
-| `aisdlc policy show` / `pull` / `diff-preset` | Show the policy / fetch from the web / compare with the latest template |
+| `aisdlc policy show` / `pull` / `diff-preset` / `migrate [--write]` | Show the policy / fetch from the web / compare with the latest template / convert schema 1 to schema 2 |
+| `aisdlc risk inputs` | Input files and `inputsHash` for the subagent `aisdlc-risk-classifier` |
 | `aisdlc web status` / `aisdlc web push` | Check the web send queue / resend |
 | `aisdlc eval [--ci --base <ref>]` | Run eval (requires Docker) |
 

@@ -79,7 +79,6 @@ func (s *submission) brd(f *Feature) (int, error) {
 		}
 		findings = append(findings, spec.ValidateBRD(string(b))...)
 	}
-	s.brdRiskPreview(f)
 	return s.submit(f, gate.BRD, findings, nil)
 }
 
@@ -91,6 +90,13 @@ func (s *submission) design(f *Feature) (int, error) {
 	l, err := s.policy(f)
 	if err != nil {
 		return 0, err
+	}
+	// tính năng cũ (không có dấu riskSchema) đã có risk.yaml: giữ nguyên, không xếp loại lại
+	classify := llmRisk(f) || !exists(f.Paths.Risk())
+	if classify {
+		if err := usablePolicy(l); err != nil {
+			return 0, err
+		}
 	}
 	var findings []spec.Finding
 	md := ""
@@ -109,9 +115,10 @@ func (s *submission) design(f *Feature) (int, error) {
 		findings = append(findings, spec.Finding{Code: "DESIGN_YAML_INVALID", Message: "design.yaml không đọc được: " + err.Error()})
 	} else {
 		d = &ds
+		s.warnImpact(ds.Impact)
 	}
 	if d != nil {
-		fs, err := guarded(func() ([]spec.Finding, error) { return spec.ValidateDesign(md, *d, l.Policy.Levels), nil })
+		fs, err := guarded(func() ([]spec.Finding, error) { return spec.ValidateDesign(md, *d), nil })
 		if err != nil {
 			fs = []spec.Finding{{Code: "DESIGN_YAML_INVALID", Message: "design.yaml thiếu trường bắt buộc: " + err.Error()}}
 		}
@@ -126,10 +133,12 @@ func (s *submission) design(f *Feature) (int, error) {
 			findings = append(findings, *x)
 		}
 	}
-	if len(findings) == 0 {
-		if _, err := s.classify(f, l.Policy, true); err != nil {
+	if len(findings) == 0 && classify {
+		_, fs, err := s.classify(f, l.Policy, true)
+		if err != nil {
 			return 0, err
 		}
+		findings = append(findings, fs...)
 	}
 	return s.submit(f, gate.DESIGN, findings, nil)
 }
@@ -146,6 +155,7 @@ func (s *submission) cases(f *Feature) (int, error) {
 		findings = append(findings, spec.Finding{Code: "CASES_YAML_INVALID", Message: "cases.yaml không đọc được: " + err.Error()})
 	} else {
 		cs = &c
+		s.warnImpact(c.Impact)
 	}
 	if cs != nil {
 		fs, err := guarded(func() ([]spec.Finding, error) {
@@ -155,21 +165,11 @@ func (s *submission) cases(f *Feature) (int, error) {
 			fs = []spec.Finding{{Code: "CASES_YAML_INVALID", Message: "cases.yaml thiếu trường bắt buộc: " + err.Error()}}
 		}
 		findings = append(findings, fs...)
-		var bad *spec.Finding
-		if f.Flow() == model.FlowLite {
-			if bad, err = s.liteImpactLevel(f, *cs); err != nil {
-				return 0, err
-			}
+		reqs, err := s.riskRequirements(f, *cs)
+		if err != nil {
+			return 0, err
 		}
-		if bad != nil {
-			findings = append(findings, *bad) // không phân loại theo impact sai
-		} else {
-			reqs, err := s.riskRequirements(f, *cs)
-			if err != nil {
-				return 0, err
-			}
-			findings = append(findings, reqs...)
-		}
+		findings = append(findings, reqs...)
 	}
 	if len(findings) == 0 && f.Flow() == model.FlowLite {
 		x, err := s.migrationCheck(f, "CASES_MIGRATION_INVALID")
@@ -352,15 +352,15 @@ func (s *submission) review(f *Feature) (int, error) {
 	return s.submit(f, gate.REVIEW, findings, nil)
 }
 
-// policy là chính sách hiện tại; web chưa có cache trên máy này thì thử lấy một lần trước (lỗi → Abort như
-// LoadPolicy).
+// policy là chính sách hiện tại của tính năng (nguồn theo policyFromWeb); web chưa có cache trên máy này thì thử lấy
+// một lần trước (lỗi → Abort như FeaturePolicy).
 func (s *submission) policy(f *Feature) (LoadedPolicy, error) {
-	if f.Web.PolicyWebMode() {
+	if policyFromWeb(f) {
 		if _, ok := f.Web.Policy(); !ok {
 			f.Web.PolicyPullQuietly()
 		}
 	}
-	return LoadPolicy(s.ctx, f.Root, false)
+	return FeaturePolicy(s.ctx, f, false)
 }
 
 // reportRisk (chế độ web): đặt event RISK_CLASSIFIED của risk.yaml vừa ghi vào outbox, một lần; flush gửi ngay (lệnh
@@ -376,10 +376,10 @@ func (s *submission) reportRisk(f *Feature, flush bool) {
 	}
 }
 
-// riskLevel là mức trong risk.yaml gửi kèm bản nộp ở chế độ web (server tự duyệt theo mức này); với BRD server lấy
-// mức chặt hơn của mức tạm trong thẻ và mức này, Review không bao giờ tự duyệt. Không có/hỏng risk.yaml thì "".
+// riskLevel là mức trong risk.yaml gửi kèm bản nộp ở chế độ web (server tự duyệt theo mức này); BRD và Review không
+// bao giờ tự duyệt. Không có/hỏng risk.yaml thì "".
 func riskLevel(f *Feature, g gate.Gate) string {
-	if g == gate.REVIEW {
+	if g == gate.REVIEW || g == gate.BRD {
 		return ""
 	}
 	r, ok, err := risk.ReadRiskFile(f.Paths.Risk())
@@ -389,49 +389,40 @@ func riskLevel(f *Feature, g gate.Gate) string {
 	return r.Level
 }
 
-// brdRiskPreview: `submit brd` in mức tạm chỉ bằng rule keyword; không ghi file, lỗi chính sách chỉ cảnh báo.
-func (s *submission) brdRiskPreview(f *Feature) {
-	r, err := guarded(func() (risk.RiskResult, error) {
-		l, err := s.policy(f)
-		if err != nil {
-			return risk.RiskResult{}, err
-		}
-		return brdPreview(l.Policy, f)
-	})
-	var a *Abort
-	switch {
-	case err == nil:
-		line := "Rủi ro tạm (từ khóa): " + r.Level
-		if len(r.Matched) > 0 {
-			line += " — " + matchedText(r.Matched)
-		}
-		s.ctx.Println(line)
-	case asAbort(err, &a):
-		s.ctx.Eprintln("Cảnh báo (rủi ro tạm): " + a.Msg)
-	default:
-		s.ctx.Eprintln("Cảnh báo: không tính được rủi ro tạm: " + err.Error())
-	}
-}
-
-// classify tính lại và ghi risk.yaml khi khác bản đang có. Đã có mức đổi tay thì giữ nguyên; nếu chính sách hoặc dữ
-// kiện đã đổi kể từ lần ghi thì chỉ cảnh báo. Trả bản đang hiệu lực.
-func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.RiskFile, error) {
-	fresh, err := classifyRisk(p, f)
-	if err != nil {
-		return risk.RiskFile{}, err
+// classify dựng risk.yaml từ risk-agent.json và ghi khi khác bản đang có; risk-agent.json thiếu hoặc sai thì trả
+// phát hiện (không ghi gì). Đã có mức đổi tay thì giữ nguyên; nếu chính sách, tài liệu hoặc kết quả xếp loại đã đổi kể
+// từ lần ghi thì chỉ cảnh báo. Trả bản đang hiệu lực.
+func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.RiskFile, []spec.Finding, error) {
+	fresh, findings, err := classifyRisk(p, f)
+	if err != nil || len(findings) > 0 {
+		return risk.RiskFile{}, findings, err
 	}
 	old, ok, err := risk.ReadRiskFile(f.Paths.Risk())
 	if err != nil {
-		ok = false // file hỏng (chỉ CLI ghi): tính lại
+		ok = false // file hỏng (chỉ CLI ghi): ghi lại
 	}
 	if ok && old.Override != nil {
-		if old.Policy != fresh.Policy || !sameYAML(old.Matched, fresh.Matched) || !sameYAML(old.Agent, fresh.Agent) ||
+		if old.Policy != fresh.Policy || !sameYAML(old.Matched, fresh.Matched) || !sameYAML(old.LLM, fresh.LLM) ||
 			fresh.Level != old.Override.From {
-			s.ctx.Eprintln("Cảnh báo: chính sách hoặc thiết kế đã đổi kể từ lần ghi " + f.Paths.Rel(f.Paths.Risk()) +
-				" (tính lại sẽ ra " + fresh.Level + "); giữ mức đổi tay " + old.Level + " của " + old.Override.By +
-				". Dev chạy `aisdlc risk reclassify` để tính lại.")
+			s.ctx.Eprintln("Cảnh báo: chính sách, tài liệu hoặc kết quả xếp loại đã đổi kể từ lần ghi " +
+				f.Paths.Rel(f.Paths.Risk()) + " (xếp loại mới ra " + fresh.Level + "); giữ mức đổi tay " + old.Level +
+				" của " + old.Override.By + ". Dev chạy `aisdlc risk reclassify` để áp kết quả mới.")
 		}
-		return old, nil
+		// giữ mức đổi tay nhưng gắn với kết quả xếp loại mới (llm, luật khớp, chính sách): cổng Case không còn coi
+		// risk.yaml là cũ chỉ vì dev đã đổi mức
+		kept := old
+		ov := *old.Override
+		ov.From = fresh.Level
+		kept.Override = &ov
+		kept.LLM, kept.Matched, kept.Policy = fresh.LLM, fresh.Matched, fresh.Policy
+		kept.Requirements = append([]risk.Requirement(nil), p.RequirementsFor(old.Level)...)
+		kept.Flow = risk.FlowOf(p, old.Level)
+		if !sameYAML(old, kept) {
+			if err := kept.Write(f.Paths.Risk()); err != nil {
+				return risk.RiskFile{}, nil, err
+			}
+		}
+		return kept, nil, nil
 	}
 	if !ok || !sameYAML(old, fresh) {
 		if s.reclassified == nil {
@@ -442,7 +433,7 @@ func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.R
 		}
 		s.reclassified, s.reclassifiedBy = &fresh, &p
 		if err := fresh.Write(f.Paths.Risk()); err != nil {
-			return risk.RiskFile{}, err
+			return risk.RiskFile{}, nil, err
 		}
 		// web: event gửi sau bản nộp (server thay thế bản tự duyệt khi nhận event; cổng trước phải còn hiệu lực
 		// lúc nộp, như chế độ local) — xem submit
@@ -455,7 +446,7 @@ func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.R
 		s.ctx.Println(fmt.Sprintf("Rủi ro: %s (chính sách v%d) — %s", fresh.Level, fresh.Policy.Version,
 			matchedText(fresh.Matched)))
 	}
-	return fresh, nil
+	return fresh, nil, nil
 }
 
 // sameYAML: a và b ghi ra cùng YAML (equals của record Java; nil và rỗng như nhau như khi đọc lại file).
@@ -468,23 +459,51 @@ func sameYAML(a, b any) bool {
 	return string(x) == string(y)
 }
 
-// riskRequirements: cổng Case FULL bỏ qua chỉ khi là tính năng cũ (không có risk.yaml và design.yaml không có
-// impact); thiếu risk.yaml mà design có impact thì phân loại và ghi lại như `submit design`. LITE luôn phân loại.
-// Mỗi yêu cầu thiếu thành một finding RISK_REQ.
+// riskRequirements: risk.yaml có hiệu lực cho cổng Case rồi mỗi yêu cầu thiếu thành một finding RISK_REQ.
+//   - Tính năng cũ (không có dấu riskSchema) đã có risk.yaml: dùng nguyên, không xếp loại lại. Không có risk.yaml và
+//     design.yaml không có impact (FULL): bỏ qua như trước.
+//   - FULL có dấu và đã có risk.yaml: kết quả xếp loại phải khớp chính sách và tài liệu hiện tại (llm.inputsHash),
+//     không thì RISK_STALE (dev xếp lại bằng `aisdlc risk reclassify`).
+//   - Còn lại (LITE, hoặc chưa có risk.yaml): xếp loại từ risk-agent.json như `submit design`.
 func (s *submission) riskRequirements(f *Feature, cs spec.CasesSpec) ([]spec.Finding, error) {
 	full := f.Flow() == model.FlowFull
-	if full && !exists(f.Paths.Risk()) {
-		if req, _ := risk.RequiredByDesign(f.Paths.DesignYaml()); !req {
-			return nil, nil
+	rf, ok, err := risk.ReadRiskFile(f.Paths.Risk())
+	if err != nil {
+		ok = false // file hỏng (chỉ CLI ghi): xếp loại lại
+	}
+	switch {
+	case !llmRisk(f) && ok:
+	case !llmRisk(f) && full && !requiredByDesign(f):
+		return nil, nil
+	default:
+		l, err := s.policy(f)
+		if err != nil {
+			return nil, err
 		}
-	}
-	l, err := s.policy(f)
-	if err != nil {
-		return nil, err
-	}
-	rf, err := s.classify(f, l.Policy, false)
-	if err != nil {
-		return nil, err
+		if err := usablePolicy(l); err != nil {
+			return nil, err
+		}
+		if full && ok && llmRisk(f) {
+			_, hash, err := riskInputs(l.Policy, f)
+			if err != nil {
+				return nil, err
+			}
+			if rf.LLM == nil {
+				return []spec.Finding{{Code: "RISK_STALE", Message: f.Paths.Rel(f.Paths.Risk()) + " chưa có kết quả " +
+					"xếp loại LLM; chạy subagent aisdlc-risk-classifier rồi `aisdlc risk reclassify`."}}, nil
+			}
+			if rf.LLM.InputsHash != hash {
+				return []spec.Finding{{Code: "RISK_STALE", Message: "Chính sách hoặc tài liệu đầu vào đã đổi kể từ " +
+					"lần xếp loại rủi ro (" + f.Paths.Rel(f.Paths.Risk()) + "): chạy lại `aisdlc risk inputs` và " +
+					"subagent aisdlc-risk-classifier, rồi dev chạy `aisdlc risk reclassify`."}}, nil
+			}
+		} else {
+			x, fs, err := s.classify(f, l.Policy, false)
+			if err != nil || len(fs) > 0 {
+				return fs, err
+			}
+			rf = x
+		}
 	}
 	var brd *review.BrdDoc
 	var doc *review.DesignDoc
@@ -511,23 +530,6 @@ func (s *submission) riskRequirements(f *Feature, cs spec.CasesSpec) ([]spec.Fin
 		}
 	}
 	return risk.RequirementFindings(rf, risk.CheckRequirements(rf, cs, d, brd, doc)), nil
-}
-
-// liteImpactLevel: luồng lite, impact.level trong cases.yaml phải thuộc thang của chính sách (như design.yaml ở FULL).
-func (s *submission) liteImpactLevel(f *Feature, cs spec.CasesSpec) (*spec.Finding, error) {
-	if cs.Impact == nil {
-		return nil, nil
-	}
-	l, err := s.policy(f)
-	if err != nil {
-		return nil, err
-	}
-	levels := l.Policy.Levels
-	if slices.Contains(levels, cs.Impact.Level) {
-		return nil, nil
-	}
-	return &spec.Finding{Code: "IMPACT_LEVEL", Message: "impact.level \"" + cs.Impact.Level +
-		"\" không thuộc các mức hợp lệ [" + strings.Join(levels, ", ") + "]."}, nil
 }
 
 // stepsNotAccepted: REVIEW_STEPS_NOT_ACCEPTED (open=true) nếu có bước (theo thiết kế/cases) chưa được dev chấp nhận.
@@ -677,4 +679,11 @@ func (s *submission) submit(f *Feature, g gate.Gate, findings []spec.Finding, in
 	}
 	s.ctx.Println("Sửa rồi chạy lại `aisdlc submit " + name + "`.")
 	return ExitFindings, nil
+}
+
+// warnImpact in cảnh báo không chặn khi design.yaml/cases.yaml còn khối impact cũ.
+func (s *submission) warnImpact(i *spec.Impact) {
+	if w := spec.ImpactDeprecationWarning(i); w != "" {
+		s.ctx.Eprintln("Cảnh báo: " + w)
+	}
 }

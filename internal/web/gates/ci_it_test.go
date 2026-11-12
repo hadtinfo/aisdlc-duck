@@ -139,10 +139,12 @@ func parseCiApprovals(t *testing.T, body []byte) eval.CIApprovals {
 func TestCiApprovalsJSONShape(t *testing.T) {
 	fx := newGfx(t, "cs")
 	ci := webtest.CliToken(t, fx.e.Pool, "ci-token", "cs-ci")
-	f := fx.autoFeat(t, "r/cs-1", "K-1", genericPolicy(t), cards("low", "[]"))
-	f.submitOk("BRD") // tự duyệt (channel auto, rule flow:low)
-	f.submitOk("DESIGN")
-	f.approveOk("DESIGN") // duyệt tay trên web
+	f := fx.autoFeat(t, "r/cs-1", "K-1", genericPolicy(t), cards("[]"))
+	f.openGates("BRD") // duyệt tay trên web (BRD luôn duyệt tay)
+	// Thiết kế tự duyệt (channel auto, rule flow:low)
+	if r := f.submitWithRisk("DESIGN", "low"); r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
 
 	r := fx.w.GetBearer("/api/ci/approvals?repo=r/cs-1&feature=K-1", ci)
 	if r.Status != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
@@ -187,12 +189,12 @@ func TestCiApprovalsJSONShape(t *testing.T) {
 			t.Fatal(got, string(a))
 		}
 	}
-	var design map[string]any
-	_ = json.Unmarshal(top.Approvals[1], &design)
-	if design["evaluatedTree"] != nil || design["rule"] != nil || design["channel"] != "web" {
-		t.Fatal(design)
+	var manual map[string]any
+	_ = json.Unmarshal(top.Approvals[0], &manual)
+	if manual["evaluatedTree"] != nil || manual["rule"] != nil || manual["channel"] != "web" {
+		t.Fatal(manual)
 	}
-	if at := design["at"].(string); !strings.HasSuffix(at, "Z") {
+	if at := manual["at"].(string); !strings.HasSuffix(at, "Z") {
 		t.Fatal(at)
 	}
 
@@ -200,11 +202,11 @@ func TestCiApprovalsJSONShape(t *testing.T) {
 	if got.Mode != "web" || !got.Pinned || len(got.EvaluatedTree) != 0 {
 		t.Fatalf("%+v", got)
 	}
-	brd, design2 := got.Approvals[gate.BRD], got.Approvals[gate.DESIGN]
-	if !brd.IsAuto() || brd.Rule != "flow:low" || brd.Hash != f.hash("BRD") || brd.At.IsZero() {
-		t.Fatalf("%+v", brd)
+	brd, design := got.Approvals[gate.BRD], got.Approvals[gate.DESIGN]
+	if !design.IsAuto() || design.Rule != "flow:low" || design.Hash != f.hash("DESIGN") || design.At.IsZero() {
+		t.Fatalf("%+v", design)
 	}
-	if design2.IsAuto() || design2.Approver != "cs.owner" || design2.Channel != "web" || design2.Rule != "" || design2.Hash != f.hash("DESIGN") {
-		t.Fatalf("%+v", design2)
+	if brd.IsAuto() || brd.Approver != "cs.owner" || brd.Channel != "web" || brd.Rule != "" || brd.Hash != f.hash("BRD") {
+		t.Fatalf("%+v", brd)
 	}
 }

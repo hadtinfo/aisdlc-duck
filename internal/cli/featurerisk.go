@@ -1,91 +1,103 @@
 package cli
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 
-	"aisdlc/internal/model"
-	"aisdlc/internal/review"
+	"aisdlc/internal/fsx"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/spec"
 )
 
-// FeatureRisk của Java: phân loại rủi ro một tính năng theo chính sách hiện tại và mức tạm của BRD. Event rủi ro gửi
-// web (RISK_CLASSIFIED, RISK_OVERRIDDEN) ở webpublish.go.
+// FeatureRisk: xếp loại rủi ro một tính năng từ kết quả subagent aisdlc-risk-classifier (risk-agent.json). Event rủi
+// ro gửi web (RISK_CLASSIFIED, RISK_OVERRIDDEN) ở webpublish.go.
 
-// classifyRisk là bản chụp mới (chưa override) theo luồng: FULL dùng BRD, thiết kế, migration nháp; LITE dùng
-// cases.yaml.
-func classifyRisk(p risk.RiskPolicy, f *Feature) (risk.RiskFile, error) {
-	title := f.Meta.Title
-	if f.Flow() == model.FlowLite {
-		var impact *spec.Impact
-		if exists(f.Paths.Cases()) {
-			cs, err := spec.ReadCases(f.Paths.Cases())
-			if err != nil {
-				return risk.RiskFile{}, err
-			}
-			impact = cs.Impact
-		}
-		in, err := risk.CollectLite(f.Paths, title, f.Adapter)
-		if err != nil {
-			return risk.RiskFile{}, err
-		}
-		return risk.NewRiskFile(p, risk.Classify(p, in), impact), nil
+// EffectivePolicyFile là chính sách có hiệu lực `aisdlc risk inputs` ghi ra cho subagent đọc (chế độ web chính sách
+// nằm trong cache đã ký, không ở aisdlc/risk-policy.yaml).
+const EffectivePolicyFile = ".aisdlc/risk/policy-effective.yaml"
+
+// riskSchemaMarker là dấu `riskSchema` mà `init` ghi vào feature.yaml: tính năng có dấu này xếp loại bằng subagent.
+const riskSchemaMarker = 2
+
+// llmRisk: tính năng đi luồng xếp loại bằng subagent (có dấu riskSchema). Tính năng cũ giữ risk.yaml đang có.
+func llmRisk(f *Feature) bool { return f.Meta.RiskSchema >= riskSchemaMarker }
+
+// requiredByDesign: tính năng cũ luồng FULL chưa có risk.yaml chỉ phải xếp loại khi design.yaml có impact.
+func requiredByDesign(f *Feature) bool { return risk.RequiredFor(f.Meta, f.Paths.DesignYaml()) }
+
+// usablePolicy: chính sách dùng được để xếp loại (schema 2); không thì exit 2. Chế độ web dev không tự sửa được
+// chính sách nên thông báo chỉ sang quản trị.
+func usablePolicy(l LoadedPolicy) error {
+	err := l.Policy.Usable()
+	if err == nil {
+		return nil
 	}
-	var impact *spec.Impact
-	if exists(f.Paths.DesignYaml()) {
-		d, err := spec.ReadDesign(f.Paths.DesignYaml())
-		if err != nil {
-			return risk.RiskFile{}, err
-		}
-		impact = d.Impact
+	var pe *risk.PolicyError
+	msg := err.Error()
+	if errors.As(err, &pe) && len(pe.Errors) > 0 {
+		msg = pe.Errors[0]
 	}
-	in, err := risk.CollectFull(f.Paths, title, f.Adapter)
+	if l.Origin == "web" {
+		msg = "Chính sách dùng schema 1 (luật so khớp); quản trị cần chuyển chính sách sang schema 2 trên web."
+	}
+	return abort(2, msg)
+}
+
+// riskInputs là các file đầu vào của subagent và inputsHash của chúng với chính sách p.
+func riskInputs(p risk.RiskPolicy, f *Feature) ([]risk.InputFile, string, error) {
+	files, err := risk.InputFiles(f.Root, f.Paths, f.Flow())
 	if err != nil {
-		return risk.RiskFile{}, err
+		return nil, "", err
 	}
-	return risk.NewRiskFile(p, risk.Classify(p, in), impact), nil
+	return files, risk.InputsHash(p, files), nil
 }
 
-// brdPreview là mức tạm chỉ bằng rule keyword trên tiêu đề và brd.md (không ghi file).
-func brdPreview(p risk.RiskPolicy, f *Feature) (risk.RiskResult, error) {
-	brd := ""
-	if exists(f.Paths.Brd()) {
-		b, err := os.ReadFile(f.Paths.Brd())
-		if err != nil {
-			return risk.RiskResult{}, err
-		}
-		brd = string(b)
+// classifyRisk đọc và kiểm risk-agent.json rồi dựng risk.yaml mới (chưa override). Thiếu file → RISK_AGENT_MISSING;
+// JSON sai hoặc không khớp đầu vào/chính sách → mỗi lỗi một RISK_AGENT_INVALID (chặn như mọi phát hiện khác).
+func classifyRisk(p risk.RiskPolicy, f *Feature) (risk.RiskFile, []spec.Finding, error) {
+	b, err := os.ReadFile(f.Paths.RiskAgent())
+	if errors.Is(err, os.ErrNotExist) {
+		return risk.RiskFile{}, []spec.Finding{{Code: "RISK_AGENT_MISSING", Message: "Chưa có risk-agent.json: " +
+			"chạy `aisdlc risk inputs` rồi subagent aisdlc-risk-classifier (ghi kết quả vào " +
+			f.Paths.Rel(f.Paths.RiskAgent()) + ")."}}, nil
 	}
-	return risk.Classify(p, risk.CollectBrdOnly(f.Meta.Title, brd)), nil
-}
-
-// withBrdPreview là thẻ BRD kèm riskPreview; không đọc được chính sách thì giữ nguyên thẻ. Không lỗi, không in.
-func withBrdPreview(ctx *Context, f *Feature, card review.ReviewCard) (out review.ReviewCard) {
-	if card.Gate != "BRD" {
-		return card
-	}
-	defer func() {
-		if recover() != nil {
-			out = card
-		}
-	}()
-	l, ok := TryLoadPolicy(ctx, f.Root)
-	if !ok {
-		return card
-	}
-	r, err := brdPreview(l.Policy, f)
 	if err != nil {
-		return card
+		return risk.RiskFile{}, nil, err
 	}
-	ms := make([]review.RiskMatch, 0, len(r.Matched))
-	for _, m := range r.Matched {
-		ms = append(ms, review.RiskMatch{Rule: m.Rule, Level: m.Level, On: m.On})
+	invalid := func(msgs ...string) []spec.Finding {
+		out := make([]spec.Finding, len(msgs))
+		for i, m := range msgs {
+			out[i] = spec.Finding{Code: "RISK_AGENT_INVALID", Message: m + ". Sửa tài liệu nếu cần rồi chạy lại " +
+				"`aisdlc risk inputs` và subagent aisdlc-risk-classifier; không sửa tay risk-agent.json."}
+		}
+		return out
 	}
-	return card.WithRiskPreview(review.RiskPreview{Level: r.Level, Matched: ms})
+	res, err := risk.ParseLLMResult(string(b))
+	if err != nil {
+		return risk.RiskFile{}, invalid(err.Error()), nil
+	}
+	files, hash, err := riskInputs(p, f)
+	if err != nil {
+		return risk.RiskFile{}, nil, err
+	}
+	if errs := risk.ValidateLLMResult(p, res, hash, files); len(errs) > 0 {
+		return risk.RiskFile{}, invalid(errs...), nil
+	}
+	return risk.FromLLM(p, res), nil, nil
 }
 
-// matchedText là "R4 (bảng order_item), G1 (…)" để in.
+// writeEffectivePolicy ghi chính sách có hiệu lực ra EffectivePolicyFile cho subagent đọc.
+func writeEffectivePolicy(root string, p risk.RiskPolicy) error {
+	y, err := p.ToYAML()
+	if err != nil {
+		return err
+	}
+	return fsx.WriteAtomic(filepath.Join(root, filepath.FromSlash(EffectivePolicyFile)), []byte(y), 0o644)
+}
+
+// matchedText là "R4 (“…” (file)), G1 (…)" để in.
 func matchedText(ms []risk.Match) string {
 	if len(ms) == 0 {
 		return "không rule nào khớp"

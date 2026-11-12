@@ -62,17 +62,10 @@ func newReviewCmd(ctx *Context) *cobra.Command {
 	return c
 }
 
-// CardFor là review card của cổng g (ReviewCommand.card): thẻ BRD kèm mức rủi ro tạm.
+// CardFor là review card của cổng g (ReviewCommand.card).
 func CardFor(ctx *Context, f *Feature, g gate.Gate) (review.ReviewCard, error) {
-	card, err := cardbuild.BuildCard(cardbuild.ReviewInput{Paths: f.Paths, Meta: f.Meta, Flow: f.Flow(),
+	return cardbuild.BuildCard(cardbuild.ReviewInput{Paths: f.Paths, Meta: f.Meta, Flow: f.Flow(),
 		Config: f.Config, Git: f.Git(), Adapter: f.Adapter}, g)
-	if err != nil {
-		return review.ReviewCard{}, err
-	}
-	if g == gate.BRD {
-		card = withBrdPreview(ctx, f, card)
-	}
-	return card, nil
 }
 
 // safeCard như CardFor nhưng panic cũng thành lỗi (Java bắt mọi Throwable trừ OutOfMemoryError).

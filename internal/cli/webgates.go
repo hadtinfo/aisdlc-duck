@@ -769,6 +769,13 @@ func (w *WebCache) importRepoPolicy(c WebConfig, prefix string) error {
 		return err
 	}
 	if !r.OK() {
+		// 400 kèm lỗi chính sách (vd. còn schema 1: nhắc `aisdlc policy migrate`) thì in lỗi đó
+		var e struct {
+			Error string `json:"error"`
+		}
+		if r.Status == http.StatusBadRequest && json.Unmarshal(r.Body, &e) == nil && strings.TrimSpace(e.Error) != "" {
+			return abort(2, prefix+"web không nhận chính sách (HTTP 400): "+w.scrub(oneLineErr(errors.New(e.Error))))
+		}
 		return abort(2, prefix+"web không nhận chính sách (HTTP "+strconv.Itoa(r.Status)+").")
 	}
 	return nil

@@ -26,6 +26,9 @@ var tightParams = map[string]bool{"min": true, "threads": true}
 // DiffPolicies so hai bản chính sách theo từng mục.
 func DiffPolicies(from, to RiskPolicy) []PolicyChange {
 	out := []PolicyChange{}
+	if from.Schema != to.Schema {
+		out = append(out, PolicyChange{Kind: "SCHEMA_MIGRATED", Key: "schema", Before: strconv.Itoa(from.Schema), After: strconv.Itoa(to.Schema)})
+	}
 	diffRules(from, to, &out)
 	diffRequirements(from, to, &out)
 	diffFlow(from, to, &out)
@@ -48,7 +51,9 @@ func diffRules(from, to RiskPolicy, out *[]PolicyChange) {
 		case !reflect.DeepEqual(r, n):
 			disabled := r.Enabled && !n.Enabled
 			lowered := to.Rank(n.Level) < rankIn(to, from, r.Level)
-			*out = append(*out, PolicyChange{"CHANGE_RULE", r.ID, describeRule(r), describeRule(n), disabled || lowered})
+			// Đổi mô tả bằng lời có thể thu hẹp phạm vi rule: coi là nới.
+			reworded := r.Describe != n.Describe
+			*out = append(*out, PolicyChange{"CHANGE_RULE", r.ID, describeRule(r), describeRule(n), disabled || lowered || reworded})
 		}
 	}
 	for _, n := range to.Rules {
@@ -67,6 +72,13 @@ func rankIn(to, from RiskPolicy, level string) int {
 }
 
 func describeRule(r RiskRule) string {
+	if r.Describe != "" {
+		s := strconv.Quote(r.Describe) + " → " + r.Level
+		if !r.Enabled {
+			s += " (tắt)"
+		}
+		return s
+	}
 	kind := "?"
 	if r.Kind != "" {
 		kind = strings.ToLower(string(r.Kind))
@@ -190,7 +202,7 @@ func diffFlow(from, to RiskPolicy, out *[]PolicyChange) {
 
 func diffClassification(from, to RiskPolicy, out *[]PolicyChange) {
 	a, b := from.Classification, to.Classification
-	if a.Agent != b.Agent {
+	if a.Agent != b.Agent && from.Schema != 2 && to.Schema != 2 { // schema 2 không có agent
 		*out = append(*out, PolicyChange{"CHANGE_CLASSIFICATION", "agent", string(a.Agent), string(b.Agent),
 			a.Agent == AgentRaise && b.Agent == AgentOff})
 	}

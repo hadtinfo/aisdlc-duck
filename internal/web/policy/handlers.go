@@ -18,7 +18,7 @@ import (
 const maxBytes = 256 * 1024
 
 // Routes đăng ký GET /api/cli/policy, POST /api/cli/policy/import, GET /api/policy, GET /api/policy/versions,
-// POST /api/policy/{publish,validate,classify}.
+// POST /api/policy/{publish,validate,migrate-draft}.
 func Routes(r chi.Router, s *Service) {
 	limit := httpx.LimitBodyWith(maxBytes, httpx.NewError(http.StatusRequestEntityTooLarge, "Payload quá lớn"))
 	r.Get("/api/cli/policy", wrap(s.cliGet))
@@ -27,7 +27,7 @@ func Routes(r chi.Router, s *Service) {
 	r.Get("/api/policy/versions", wrap(s.versions))
 	r.With(limit).Post("/api/policy/publish", wrap(s.publish))
 	r.With(limit).Post("/api/policy/validate", wrap(s.validate))
-	r.With(limit).Post("/api/policy/classify", wrap(s.classify))
+	r.With(limit).Post("/api/policy/migrate-draft", wrap(s.migrateDraft))
 }
 
 func wrap(f func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
@@ -287,23 +287,20 @@ func (s *Service) validate(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (s *Service) classify(w http.ResponseWriter, r *http.Request) error {
+// migrateDraft: POST /api/policy/migrate-draft {repo} → {policy, changes}; quyền như validate.
+func (s *Service) migrateDraft(w http.ResponseWriter, r *http.Request) error {
 	b, err := body(r)
 	if err != nil {
 		return err
 	}
-	policy, err := b.obj("policy")
+	repo, err := b.text("repo")
 	if err != nil {
 		return err
 	}
-	inputs, err := b.obj("inputs")
+	pj, ch, err := s.MigrateDraft(r.Context(), repo)
 	if err != nil {
 		return err
 	}
-	out, err := Classify(policy, inputs)
-	if err != nil {
-		return err
-	}
-	httpx.WriteJSON(w, http.StatusOK, out)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"policy": json.RawMessage(pj), "changes": ch})
 	return nil
 }

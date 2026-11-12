@@ -1,5 +1,5 @@
 // Package policy là chính sách rủi ro theo repo trên web (PolicyController/PolicyService/PolicyRepository.java):
-// nhập lần đầu từ CLI, API ký cho CLI, xem, lịch sử, xuất bản, kiểm tra và phân loại thử cho UI.
+// nhập lần đầu từ CLI, API ký cho CLI, xem, lịch sử, xuất bản, kiểm tra và chuyển nháp schema 2 cho UI.
 package policy
 
 import (
@@ -126,10 +126,14 @@ func (s *Service) audit(ctx context.Context, tx pgx.Tx, e auth.AuditEntry) error
 	return s.Auth.WriteAudit(ctx, tx, e)
 }
 
-// ImportFirst nhập lần đầu. YAML hỏng → *risk.PolicyError; đã có phiên bản → không đổi gì (created=false).
+// ImportFirst nhập lần đầu. YAML hỏng hoặc còn schema 1 → *risk.PolicyError (schema 1: thông điệp của Usable, nhắc
+// chạy `aisdlc policy migrate` trước); đã có phiên bản → không đổi gì (created=false).
 func (s *Service) ImportFirst(ctx context.Context, repo, yaml, author, ip string) (created bool, version int, err error) {
 	p, err := risk.ParsePolicy(yaml)
 	if err != nil {
+		return false, 0, err
+	}
+	if err := p.Usable(); err != nil {
 		return false, 0, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
@@ -311,7 +315,7 @@ func hasPreset(p risk.RiskPolicy) bool {
 // presetUpdate: thông báo mẫu mới; nil khi không có preset hoặc đã dùng bản mới nhất đi kèm. "policy" là bản mẫu mới
 // (JSON như GET /api/policy) để UI áp từng thay đổi vào nháp.
 func presetUpdate(live risk.RiskPolicy) (map[string]any, error) {
-	if !hasPreset(live) {
+	if live.Schema == 1 || !hasPreset(live) { // schema 1 chỉ đọc: chuyển sang schema 2 thay vì cập nhật mẫu
 		return nil, nil
 	}
 	name := live.Preset.Name
@@ -362,6 +366,9 @@ func (s *Service) Publish(ctx context.Context, repo string, base int, policyJSON
 	author, ip string) (map[string]any, error) {
 	p, err := risk.PolicyFromJSON(policyJSON)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.Usable(); err != nil { // schema 1 chỉ đọc: không xuất bản thêm
 		return nil, err
 	}
 	var out map[string]any
@@ -418,6 +425,9 @@ func (s *Service) Publish(ctx context.Context, repo string, base int, policyJSON
 // Validate trả lỗi kiểm tra (nếu có) và thay đổi so với bản đang hiệu lực của repo (rỗng khi repo=nil hoặc chưa có).
 func (s *Service) Validate(ctx context.Context, repo *string, policyJSON string) (map[string]any, error) {
 	p, err := risk.PolicyFromJSON(policyJSON)
+	if err == nil {
+		err = p.Usable()
+	}
 	if err != nil {
 		var pe *risk.PolicyError
 		if errors.As(err, &pe) {
@@ -442,55 +452,32 @@ func (s *Service) Validate(ctx context.Context, repo *string, policyJSON string)
 	return map[string]any{"errors": []string{}, "changes": changes(ch)}, nil
 }
 
-type inputsJSON struct {
-	Text       string   `json:"text"`
-	Paths      []string `json:"paths"`
-	Tables     []string `json:"tables"`
-	Endpoints  []string `json:"endpoints"`
-	Labels     []string `json:"labels"`
-	AgentLevel string   `json:"agentLevel"`
-}
-
-type matchJSON struct {
-	Rule  string `json:"rule"`
-	Level string `json:"level"`
-	On    string `json:"on"`
-}
-
-type resultJSON struct {
-	Level      string      `json:"level"`
-	RuleLevel  string      `json:"ruleLevel"`
-	Matched    []matchJSON `json:"matched"`
-	AgentLevel *string     `json:"agentLevel"`
-}
-
-// Classify phân loại thử bằng đúng bộ phân loại của risk.
-func Classify(policyJSON, inputs string) (map[string]any, error) {
-	p, err := risk.PolicyFromJSON(policyJSON)
+// migrateDraft chuyển chính sách schema 1 sang schema 2 và trả JSON bản nháp cùng danh sách thay đổi so với bản gốc.
+// Schema 2 sẵn thì không có gì để chuyển (400).
+func migrateDraft(old risk.RiskPolicy) (string, []ChangeJSON, error) {
+	if old.Schema != 1 {
+		return "", nil, &risk.PolicyError{Errors: []string{"Chính sách đã dùng schema 2, không cần chuyển"}}
+	}
+	n, err := risk.MigrateToV2(old)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	var in inputsJSON
-	if err := json.Unmarshal([]byte(inputs), &in); err != nil {
-		return nil, &risk.PolicyError{Errors: []string{"inputs không hợp lệ: " + err.Error()}}
+	return n.ToJSON(), changes(risk.DiffPolicies(old, n)), nil
+}
+
+// MigrateDraft tạo bản nháp schema 2 từ chính sách đang hiệu lực (schema 1) của repo; không ghi gì vào DB. Người có
+// quyền sửa xem lại rồi xuất bản như mọi phiên bản. Repo chưa có chính sách → 404.
+func (s *Service) MigrateDraft(ctx context.Context, repo string) (string, []ChangeJSON, error) {
+	r, err := latest(ctx, s.Pool, repo)
+	if err != nil {
+		return "", nil, err
 	}
-	r := risk.Classify(p, risk.RiskInputs{Text: in.Text, Paths: in.Paths, Tables: in.Tables, Endpoints: in.Endpoints,
-		Labels: in.Labels, AgentLevel: in.AgentLevel})
-	res := resultJSON{Level: r.Level, RuleLevel: r.RuleLevel, Matched: []matchJSON{}}
-	for _, m := range r.Matched {
-		res.Matched = append(res.Matched, matchJSON{m.Rule, m.Level, m.On})
+	if r == nil {
+		return "", nil, httpx.NewError(404, "Repo chưa có chính sách")
 	}
-	if r.AgentLevel != "" {
-		a := r.AgentLevel
-		res.AgentLevel = &a
+	old, err := risk.ParsePolicy(r.Body)
+	if err != nil {
+		return "", nil, err
 	}
-	reqs := []map[string]any{}
-	for _, q := range p.RequirementsFor(r.Level) {
-		params := q.Params
-		if params == nil {
-			params = map[string]any{}
-		}
-		reqs = append(reqs, map[string]any{"id": q.ID, "name": risk.RequirementDisplayName(q), "params": params})
-	}
-	return map[string]any{"result": res, "requirements": reqs}, nil
+	return migrateDraft(old)
 }

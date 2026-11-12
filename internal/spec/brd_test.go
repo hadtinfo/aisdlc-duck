@@ -103,11 +103,11 @@ func TestCRLFMarkdown(t *testing.T) {
 		t.Fatal("brd template CRLF khác LF")
 	}
 	d := spec2(t)
-	if f := ValidateDesign(crlf(tmplText(t, "design.md")), d, nil); len(f) != 0 {
+	if f := ValidateDesign(crlf(tmplText(t, "design.md")), d); len(f) != 0 {
 		t.Fatalf("design: %v", f)
 	}
 	open := crlf(tmplText(t, "design.md") + "\n- [ ] Có cần?\n")
-	if got := codesOf(ValidateDesign(open, d, nil)); !reflect.DeepEqual(got, []string{"DESIGN_OPEN_QUESTION"}) {
+	if got := codesOf(ValidateDesign(open, d)); !reflect.DeepEqual(got, []string{"DESIGN_OPEN_QUESTION"}) {
 		t.Fatalf("%v", got)
 	}
 }

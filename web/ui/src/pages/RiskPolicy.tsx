@@ -5,22 +5,21 @@ import { CopyCommand } from "../components/CopyCommand";
 import { RiskDialog } from "../components/RiskDialog";
 import { RiskRequirements } from "../components/RiskRequirements";
 import { RiskRules } from "../components/RiskRules";
-import { RiskTry } from "../components/RiskTry";
 import { RiskVersions } from "../components/RiskVersions";
 import { UserMenu } from "../components/UserMenu";
 import {
   type Draft, type Policy, type PolicyChange, type PolicyVersion, type PolicyView, type PresetHandled, allPresetHandled,
-  applyPresetChange, changeId, changeText, clearDraft, draftChanges, loadDraft, loadPolicy, presetVersionFor, publish,
+  applyPresetChange, changeId, changeText, clearDraft, draftChanges, loadDraft, loadPolicy, migrateDraft, presetVersionFor, publish,
   saveDraft, skipAllRemaining, validate, versions,
 } from "../risk";
 import { type RiskTab, riskTab } from "../routes";
 import "../risk.css";
 
 const TABS: [RiskTab, string][] = [
-  ["rules", "Rule nhận diện"], ["levels", "Yêu cầu theo mức"], ["try", "Thử phân loại"], ["history", "Phiên bản"],
+  ["rules", "Rule nhận diện"], ["levels", "Yêu cầu theo mức"], ["history", "Phiên bản"],
 ];
 
-/** Trang /risk/<repo>: chính sách rủi ro của repo, 4 tab theo hash, nháp lưu localStorage, dev tự xuất bản (spec §6). */
+/** Trang /risk/<repo>: chính sách rủi ro của repo, 3 tab theo hash, nháp lưu localStorage, dev tự xuất bản (spec §6). */
 export function RiskPolicy({ repoId }: { repoId: string }) {
   const tab = riskTab(useLocation().hash);
   const [view, setView] = useState<PolicyView | null>(null);
@@ -106,6 +105,22 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
     say("Đã áp dụng vào nháp");
   }
 
+  /** Nạp bản nháp schema 2 từ server vào trình sửa; xem lại rồi xuất bản như mọi phiên bản. */
+  async function migrate() {
+    if (!view) return;
+    try {
+      const r = await migrateDraft(repoId);
+      const next: Draft = { baseVersion: view.version, policy: r.policy };
+      saveDraft(repoId, next);
+      setDraft(next);
+      setHandled({});
+      setRebasedTo(null);
+      say("Đã nạp bản nháp schema 2; xem lại rồi xuất bản");
+    } catch (e) {
+      if (!(e instanceof UnauthorizedError)) say(e instanceof ApiError ? e.message : "Không kết nối được máy chủ");
+    }
+  }
+
   const repoName = repoId.split("/").slice(-1)[0];
   const features = view ? Object.values(view.featureCounts).reduce((a, b) => a + b, 0) : 0;
   const stale = !!(view && draft && draft.baseVersion !== view.version);
@@ -136,6 +151,14 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
             · <span>{features} tính năng đang gắn phiên bản</span>
             · <span className="mono" title={repoId}>{repoId}</span>
           </div>
+          {view.policy.schema === 1 && (
+            <div className="rk-note warn" style={{ marginBottom: 16 }}>
+              <div className="grow">Chính sách đang hiệu lực dùng <b>schema 1</b> (luật so khớp) và chưa phân loại được.
+                Chuyển sang schema 2: mỗi luật thành một mô tả bằng lời; bản nháp nạp vào trình sửa để bạn xem lại và xuất bản
+                (cần ghi lý do vì mô tả mới có thể nới luật).</div>
+              <button type="button" onClick={() => void migrate()}>Chuyển sang schema 2</button>
+            </div>
+          )}
           <nav className="rk-tabs" aria-label="Chính sách rủi ro">
             {TABS.map(([id, name]) => (
               <Link key={id} to={{ hash: id }} aria-current={tab === id ? "page" : undefined}>
@@ -160,7 +183,6 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
           )}
           {tab === "rules" && <RiskRules policy={policy} base={view.policy} presetRuleIds={view.presetRuleIds ?? []} onChange={update} />}
           {tab === "levels" && <RiskRequirements policy={policy} base={view.policy} onChange={update} />}
-          {tab === "try" && <RiskTry policy={policy} />}
           {tab === "history" && (
             <RiskVersions view={view} versions={vers} error={versError} handled={handled} onApply={apply}
               onSkip={(c) => handle({ ...handled, [changeId(c)]: "skipped" })}

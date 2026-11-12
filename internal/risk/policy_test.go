@@ -343,3 +343,109 @@ func TestEmptyLevelFlowHashesLikeAbsent(t *testing.T) {
 		t.Error("flow rỗng phải băm như không có")
 	}
 }
+
+const schema2Base = `schema: 2
+version: 1
+levels: [low, high]
+default: low
+rules:
+  - { id: R1, level: high, describe: "Chạm sổ cái" }
+requirements:
+  high:
+    - { id: idempotent }
+`
+
+func TestParseSchema2(t *testing.T) {
+	p, err := ParsePolicy(schema2Base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Schema != 2 || p.Rules[0].Describe != "Chạm sổ cái" || !p.Rules[0].Enabled {
+		t.Errorf("p = %+v", p)
+	}
+	if err := p.Usable(); err != nil {
+		t.Errorf("Usable = %v", err)
+	}
+}
+
+func TestSchema2RejectsMatchKeys(t *testing.T) {
+	y := strings.Replace(schema2Base, `describe: "Chạm sổ cái" }`, `describe: x, kind: label, match: a }`, 1)
+	_, err := ParsePolicy(y)
+	if err == nil || !strings.Contains(err.Error(), "R1: khóa lạ 'kind'") || !strings.Contains(err.Error(), "R1: khóa lạ 'match'") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestSchema2DescribeRequired(t *testing.T) {
+	for _, d := range []string{`, describe: ""`, `, describe: "  "`, ``} {
+		y := strings.Replace(schema2Base, `, describe: "Chạm sổ cái"`, d, 1)
+		_, err := ParsePolicy(y)
+		if err == nil || !strings.Contains(err.Error(), "R1: describe không được rỗng") {
+			t.Errorf("%q: err = %v", d, err)
+		}
+	}
+}
+
+func TestSchema2RejectsAgentClassification(t *testing.T) {
+	y := schema2Base + "classification: { agent: raise, devLower: reason }\n"
+	_, err := ParsePolicy(y)
+	if err == nil || !strings.Contains(err.Error(), "classification: khóa lạ 'agent'") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := ParsePolicy(schema2Base + "classification: { devLower: never }\n"); err != nil {
+		t.Errorf("devLower phải hợp lệ: %v", err)
+	}
+}
+
+func TestSchema2FlowBrdWarning(t *testing.T) {
+	y := schema2Base + "flow:\n  high: { brd: manual, design: auto }\n"
+	p, err := ParsePolicy(y)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := p.Flow["high"]["brd"]; has || p.Flow["high"]["design"] != "auto" {
+		t.Errorf("flow = %v", p.Flow)
+	}
+	if len(p.Warnings) != 1 || p.Warnings[0] != "flow.high.brd bị bỏ qua: cổng BRD luôn duyệt tay" {
+		t.Errorf("warnings = %v", p.Warnings)
+	}
+}
+
+func TestSchema2JSONRoundTrip(t *testing.T) {
+	p, _ := ParsePolicy(schema2Base)
+	js := p.ToJSON()
+	if strings.Contains(js, `"kind"`) || strings.Contains(js, `"match"`) || !strings.Contains(js, `"describe":"Chạm sổ cái"`) {
+		t.Errorf("json = %s", js)
+	}
+	q, err := PolicyFromJSON(js)
+	if err != nil || q.Hash() != p.Hash() {
+		t.Errorf("round trip: %v", err)
+	}
+	y, err := p.ToYAML()
+	if err != nil || strings.Contains(y, "kind:") || strings.Contains(y, "match:") || !strings.Contains(y, "describe:") {
+		t.Errorf("yaml = %s (%v)", y, err)
+	}
+}
+
+func TestUsableRejectsSchema1(t *testing.T) {
+	p, err := LoadPreset("generic", "2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Usable()
+	var pe *PolicyError
+	if !errors.As(err, &pe) || !strings.Contains(err.Error(), "`aisdlc policy migrate`") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestSchema1HashUnchanged(t *testing.T) {
+	p, err := LoadPreset("generic", "2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const golden = "sha256:40dcc55640ceddbd59b8885d815b33a683407b46744014862af35f5e5244beea" // ghi từ main trước khi đổi
+	if p.Hash() != golden {
+		t.Errorf("hash = %s", p.Hash())
+	}
+}

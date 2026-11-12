@@ -91,21 +91,22 @@ func (r *testRepo) noApproval(g gate.Gate) {
 	}
 }
 
-// lowThroughCases: BRD, Thiết kế, Case đều tự duyệt ở mức low.
-func (r *testRepo) lowThroughCases() {
+// brdManual: nộp BRD (luôn duyệt tay) rồi dev duyệt.
+func (r *testRepo) brdManual() {
 	r.t.Helper()
 	r.ok(noConsole(), "submit", "brd")
-	contains(r.t, r.out, "Đã nộp cổng BRD, không có phát hiện: tự duyệt (mức low).")
+	contains(r.t, r.out, "Đã nộp cổng BRD, không có phát hiện. Dev duyệt bằng `aisdlc approve brd`")
+	r.ok(typed("PAY-1"), "approve", "brd")
+}
+
+// lowThroughCases: BRD dev duyệt; Thiết kế, Case tự duyệt ở mức low.
+func (r *testRepo) lowThroughCases() {
+	r.t.Helper()
+	r.brdManual()
 	r.ok(noConsole(), "submit", "design")
 	contains(r.t, r.out, "tự duyệt (mức low)")
 	r.ok(noConsole(), "submit", "cases")
 	contains(r.t, r.out, "tự duyệt (mức low)")
-}
-
-func (r *testRepo) setDesignImpact(impact string) {
-	r.t.Helper()
-	y := regexp.MustCompile(`(?m)^impact:.*$`).ReplaceAllLiteralString(r.read(designFile), "impact: "+impact)
-	r.write(designFile, y)
 }
 
 func matches(t *testing.T, s, pattern string) {
@@ -116,10 +117,11 @@ func matches(t *testing.T, s, pattern string) {
 }
 
 // Phần bước (step start/finish tự accept, Review vẫn chờ dev) ở task 6.
-func TestLowFeatureBrdDesignCasesAutoApprovedReviewManual(t *testing.T) {
+func TestLowFeatureDesignCasesAutoApprovedBrdReviewManual(t *testing.T) {
 	r := flowRepo(t)
 	r.lowThroughCases()
-	r.assertAuto(gate.BRD, "low")
+	brd, _ := r.approval(gate.BRD)
+	eq(t, brd.Approver, "Dev Một")
 	r.assertAuto(gate.DESIGN, "low")
 	r.assertAuto(gate.CASES, "low")
 	s := r.status()
@@ -129,7 +131,8 @@ func TestLowFeatureBrdDesignCasesAutoApprovedReviewManual(t *testing.T) {
 	eq(t, s.Gates["REVIEW"], "NOT_SUBMITTED")
 
 	r.ok(noConsole(), "status")
-	matches(t, r.out, `BRD +APPROVED +tự duyệt \(mức low\)`)
+	matches(t, r.out, `DESIGN +APPROVED +tự duyệt \(mức low\)`)
+	notContains(t, r.out, "BRD    APPROVED    tự duyệt")
 	contains(t, r.out, "Cổng kế tiếp cần xử lý: REVIEW")
 	r.ok(noConsole(), "review", "design")
 	contains(t, r.out, "Duyệt: tự duyệt (mức low)")
@@ -140,8 +143,7 @@ func TestLowFeatureBrdDesignCasesAutoApprovedReviewManual(t *testing.T) {
 
 func TestHighFlagNoAuto(t *testing.T) {
 	r := flowRepo(t)
-	r.ok(noConsole(), "submit", "brd")
-	r.assertAuto(gate.BRD, "low")
+	r.brdManual()
 	// S2 chồng phạm vi với S1: review card có cờ SCOPE_OVERLAP mức HIGH
 	d := r.read(designFile)
 	r.write(designFile, regexp.MustCompile(regexp.QuoteMeta(`scope: ["internal/limit/service/**"`)).
@@ -178,55 +180,28 @@ func TestNoPolicyFileFallbackHasNoFlow(t *testing.T) {
 	r.noApproval(gate.DESIGN)
 }
 
-// submitDesignRaiseFlow: BRD tự duyệt ở low, rồi `submit design` nâng lên high: bản tự duyệt BRD bị thay thế.
-func (r *testRepo) submitDesignRaiseFlow() {
-	r.t.Helper()
-	r.ok(noConsole(), "submit", "brd")
-	r.assertAuto(gate.BRD, "low")
-	r.setDesignImpact(`{ level: high, labels: [money-movement], reason: "Chuyển tiền" }`)
-	r.ok(noConsole(), "submit", "design")
-	contains(r.t, r.out, "Mức tăng low → high: cổng BRD cần dev duyệt lại.")
-	eq(r.t, r.superseded(gate.BRD), true)
-}
-
-func TestSubmitDesignRaiseSupersedesBrd(t *testing.T) {
+// Mức high từ subagent: Thiết kế không tự duyệt; bản duyệt tay BRD giữ nguyên.
+func TestSubmitDesignHighStaysManualKeepsBrd(t *testing.T) {
 	r := flowRepo(t)
-	r.ok(noConsole(), "submit", "brd")
-	r.assertAuto(gate.BRD, "low")
-	r.setDesignImpact(`{ level: high, labels: [money-movement], reason: "Chuyển tiền" }`)
+	r.brdManual()
+	r.llmLevel = "high"
 	r.ok(noConsole(), "submit", "design")
-	contains(t, r.out, "Rủi ro: high", "Mức tăng low → high: cổng BRD cần dev duyệt lại.")
-	notContains(t, r.out, "Đã nộp cổng DESIGN, không có phát hiện: tự duyệt")
-	eq(t, r.superseded(gate.BRD), true)
+	contains(t, r.out, "Rủi ro: high", "Dev duyệt bằng `aisdlc approve design`")
+	notContains(t, r.out, "tự duyệt", "cần dev duyệt lại")
 	r.noApproval(gate.DESIGN)
-	eq(t, r.state(gate.BRD), "AWAITING_APPROVAL")
-	eq(t, r.state(gate.DESIGN), "LOCKED_BY_PREVIOUS")
-	r.ok(typed("PAY-1"), "approve", "brd")
-	eq(t, r.state(gate.DESIGN), "AWAITING_APPROVAL") // bản nộp thiết kế vẫn còn
-}
-
-func TestResubmitBrdAfterRaiseStaysManual(t *testing.T) {
-	r := flowRepo(t)
-	r.submitDesignRaiseFlow()
-	r.ok(noConsole(), "submit", "brd") // agent nộp lại BRD không đổi
-	notContains(t, r.out, "tự duyệt (mức")
-	contains(t, r.out, "Dev duyệt bằng `aisdlc approve brd`")
-	eq(t, r.superseded(gate.BRD), true)
-	eq(t, r.state(gate.BRD), "AWAITING_APPROVAL")
-}
-
-// raisingPolicy: chính sách thêm rule từ khóa khớp BRD, tính lại thành medium (flow duyệt tay, case mẫu đủ yêu cầu).
-func raisingPolicy(p string) string {
-	return regexp.MustCompile(`(?m)^rules:\n`).ReplaceAllLiteralString(p,
-		"rules:\n  - { id: X1, kind: keyword, match: \"hạn mức\", level: medium, note: Hạn mức }\n")
+	eq(t, r.superseded(gate.BRD), false)
+	eq(t, r.state(gate.BRD), "APPROVED")
+	eq(t, r.state(gate.DESIGN), "AWAITING_APPROVAL")
 }
 
 func TestCasesRaiseThenHarnessThrowsNextSubmitSupersedes(t *testing.T) {
 	r := flowRepo(t)
-	r.ok(noConsole(), "submit", "brd")
+	r.brdManual()
 	r.ok(noConsole(), "submit", "design")
 	r.assertAuto(gate.DESIGN, "low")
-	r.write(policyFile, raisingPolicy(r.read(policyFile)))
+	// chưa có risk.yaml lúc nộp Case: xếp loại từ risk-agent.json (subagent nay ra medium)
+	must(t, os.Remove(filepath.Join(r.root, riskFile)))
+	r.llmLevel = "medium"
 	r.runner.err = errors.New("harness chết giữa chừng")
 	if r.run("submit", "cases") == 0 {
 		t.Fatal("phải lỗi")
@@ -236,21 +211,20 @@ func TestCasesRaiseThenHarnessThrowsNextSubmitSupersedes(t *testing.T) {
 	rf, _, err := risk.ReadRiskFile(filepath.Join(r.root, riskFile))
 	must(t, err)
 	eq(t, rf.Level, "medium")
-	eq(t, r.superseded(gate.BRD), false) // chưa thay thế
+	eq(t, r.superseded(gate.DESIGN), false) // chưa thay thế
 
 	r.runner.err = nil
 	r.runner.cases = failingCases
 	calls := len(r.runner.calls)
 	eq(t, r.run("submit", "cases"), 2)
-	contains(t, r.out, "Mức tăng low → medium: cổng BRD, Thiết kế cần dev duyệt lại.")
+	contains(t, r.out, "Mức tăng low → medium: cổng Thiết kế cần dev duyệt lại.")
 	contains(t, r.err, "Cổng CASES bị khóa: cổng trước chưa được duyệt.")
 	eq(t, len(r.runner.calls), calls) // dừng trước khi chạy harness
-	eq(t, r.superseded(gate.BRD), true)
+	eq(t, r.superseded(gate.BRD), false)
 	eq(t, r.superseded(gate.DESIGN), true)
-	eq(t, r.state(gate.BRD), "AWAITING_APPROVAL")
+	eq(t, r.state(gate.DESIGN), "AWAITING_APPROVAL")
 
 	// dev duyệt tay lại; agent nộp Case: mức medium duyệt tay, không in lại thông điệp
-	r.ok(typed("PAY-1"), "approve", "brd")
 	r.ok(typed("PAY-1"), "approve", "design")
 	r.ok(noConsole(), "submit", "cases")
 	notContains(t, r.out, "cần dev duyệt lại", "tự duyệt (mức")
@@ -260,8 +234,6 @@ func TestCasesRaiseThenHarnessThrowsNextSubmitSupersedes(t *testing.T) {
 
 func TestApproverNamedAutoRejected(t *testing.T) {
 	r := flowRepo(t)
-	r.write(policyFile, regexp.MustCompile(regexp.QuoteMeta("low:    { brd: auto,")).
-		ReplaceAllLiteralString(r.read(policyFile), "low:    { brd: manual,"))
 	r.ok(noConsole(), "submit", "brd")
 	r.noApproval(gate.BRD)
 	for _, name := range []string{"auto", "AUTO", " Auto "} {
@@ -362,58 +334,52 @@ func TestStepCasesFailNoAutoAccept(t *testing.T) {
 func TestReclassifyRaiseSupersedesAllAutoGates(t *testing.T) {
 	r := flowRepo(t)
 	r.lowThroughCases()
-	// chính sách thêm rule từ khóa khớp BRD: tính lại thành high
-	r.write(policyFile, regexp.MustCompile(`(?m)^rules:\n`).ReplaceAllLiteralString(r.read(policyFile),
-		"rules:\n  - { id: X1, kind: keyword, match: \"hạn mức\", level: high, note: Hạn mức }\n"))
+	// subagent chạy lại, nay xếp high: dev áp kết quả mới
+	r.llmLevel = "high"
 	r.ok(typed("PAY-1"), "risk", "reclassify")
-	contains(t, r.out, "Mức tăng low → high: cổng BRD, Thiết kế cần dev duyệt lại.", "Cổng Case đã mở lại")
-	eq(t, r.superseded(gate.BRD), true)
+	contains(t, r.out, "Mức tăng low → high: cổng Thiết kế cần dev duyệt lại.", "Cổng Case đã mở lại")
+	eq(t, r.superseded(gate.BRD), false)
 	eq(t, r.superseded(gate.DESIGN), true)
 	r.noApproval(gate.CASES)
-	eq(t, r.state(gate.BRD), "AWAITING_APPROVAL")
-	eq(t, r.state(gate.DESIGN), "LOCKED_BY_PREVIOUS")
+	eq(t, r.state(gate.BRD), "APPROVED")
+	eq(t, r.state(gate.DESIGN), "AWAITING_APPROVAL")
 
 	r.ok(noConsole(), "status")
-	matches(t, r.out, `BRD +AWAITING_APPROVAL +chờ dev duyệt \(bản tự duyệt \(mức low\) đã bị thay thế khi nâng mức\)`)
+	matches(t, r.out, `DESIGN +AWAITING_APPROVAL +chờ dev duyệt \(bản tự duyệt \(mức low\) đã bị thay thế khi nâng mức\)`)
 	// agent không đi tiếp được: chưa được code
 	if r.run("step", "start", "S1") == 0 {
 		t.Fatal("step start phải lỗi")
 	}
 
 	// dev duyệt tay lại, không cần nộp lại
-	r.ok(typed("PAY-1"), "approve", "brd")
-	a, _ := r.approval(gate.BRD)
-	eq(t, a.Approver, "Dev Một")
-	eq(t, r.state(gate.DESIGN), "AWAITING_APPROVAL")
 	r.ok(typed("PAY-1"), "approve", "design")
-	a, _ = r.approval(gate.DESIGN)
+	a, _ := r.approval(gate.DESIGN)
 	eq(t, a.Approver, "Dev Một")
 }
 
 func TestFlowEditSameLevelSaysFlowChangedNotRaise(t *testing.T) {
 	r := flowRepo(t)
 	r.lowThroughCases()
-	// cùng mức low nhưng chính sách đổi BRD sang duyệt tay
-	r.write(policyFile, regexp.MustCompile(regexp.QuoteMeta("low:    { brd: auto,")).
-		ReplaceAllLiteralString(r.read(policyFile), "low:    { brd: manual,"))
+	// cùng mức low nhưng chính sách đổi Thiết kế sang duyệt tay
+	r.write(policyFile, regexp.MustCompile(regexp.QuoteMeta("low:    { design: auto,")).
+		ReplaceAllLiteralString(r.read(policyFile), "low:    { design: manual,"))
 	r.ok(typed("PAY-1"), "risk", "reclassify")
-	contains(t, r.out, "Flow của mức low đổi: cổng BRD cần dev duyệt lại.")
+	contains(t, r.out, "Flow của mức low đổi: cổng Thiết kế cần dev duyệt lại.")
 	notContains(t, r.out, "Mức tăng")
-	eq(t, r.superseded(gate.BRD), true)
-	eq(t, r.superseded(gate.DESIGN), false)
+	eq(t, r.superseded(gate.DESIGN), true)
+	eq(t, r.superseded(gate.BRD), false)
 }
 
-func TestResubmitBrdAfterRiskSetHighStaysManual(t *testing.T) {
+func TestRiskSetHighSupersedesDesignKeepsManualBrd(t *testing.T) {
 	r := flowRepo(t)
-	r.ok(noConsole(), "submit", "brd")
+	r.brdManual()
 	r.ok(noConsole(), "submit", "design")
 	r.assertAuto(gate.DESIGN, "low")
 	r.ok(typed("PAY-1"), "risk", "set", "high", "--reason", "Chuyển tiền thật")
-	eq(t, r.superseded(gate.BRD), true)
-	r.ok(noConsole(), "submit", "brd")
-	notContains(t, r.out, "tự duyệt (mức")
-	eq(t, r.superseded(gate.BRD), true)
-	eq(t, r.state(gate.BRD), "AWAITING_APPROVAL")
+	contains(t, r.out, "Mức tăng low → high: cổng Thiết kế cần dev duyệt lại.")
+	eq(t, r.superseded(gate.DESIGN), true)
+	eq(t, r.superseded(gate.BRD), false)
+	eq(t, r.state(gate.BRD), "APPROVED")
 }
 
 func TestStepFinishSupersedesStaleAutoGates(t *testing.T) {
@@ -427,17 +393,16 @@ func TestStepFinishSupersedesStaleAutoGates(t *testing.T) {
 	r.write(s1File, "package handler\n")
 	r.runner.cases = passing("C1")
 	r.ok(noConsole(), "step", "finish", "S1")
-	contains(t, r.out, "Mức tăng low → high: cổng BRD, Thiết kế, Case cần dev duyệt lại.")
+	contains(t, r.out, "Mức tăng low → high: cổng Thiết kế, Case cần dev duyệt lại.")
 	notContains(t, r.out, "Đã chấp nhận bước S1")
 	eq(t, r.superseded(gate.CASES), true)
 }
 
 func TestLowerNeverTurnsManualIntoAuto(t *testing.T) {
 	r := flowRepo(t)
-	r.ok(noConsole(), "submit", "brd")
-	r.setDesignImpact(`{ level: high, labels: [money-movement], reason: "Chuyển tiền" }`)
+	r.brdManual()
+	r.llmLevel = "high"
 	r.ok(noConsole(), "submit", "design")
-	r.ok(typed("PAY-1"), "approve", "brd")
 	r.ok(typed("PAY-1"), "approve", "design")
 	brd, _ := r.approval(gate.BRD)
 	design, _ := r.approval(gate.DESIGN)

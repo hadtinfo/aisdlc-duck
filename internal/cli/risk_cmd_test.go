@@ -14,6 +14,7 @@ import (
 func highDesignApproved(t *testing.T) *testRepo {
 	r := bankingRepo(t)
 	r.brdApproved()
+	r.llmLevel = "high" // subagent xếp high (luật R4: bảng sổ cái)
 	r.ok(noConsole(), "submit", "design")
 	r.ok(typed("PAY-1"), "approve", "design")
 	eq(t, r.risk().Level, "high")
@@ -59,7 +60,7 @@ func TestLowerWithReasonWritesOverrideAndEvent(t *testing.T) {
 
 func TestPolicyChangedSinceClassificationExit2(t *testing.T) {
 	r := highDesignApproved(t)
-	r.write(policyFile, strings.Replace(r.read(policyFile), "note: Mọi thay đổi chạm sổ cái", "note: Ghi chú mới", 1))
+	r.write(policyFile, strings.Replace(r.read(policyFile), "Mọi thay đổi chạm sổ cái", "Ghi chú mới", 1))
 	eq(t, r.runC(typed("PAY-1"), "risk", "set", "medium", "--reason", "x"), 2)
 	contains(t, r.err, "Chính sách đã đổi kể từ lần phân loại; chạy `aisdlc risk reclassify` trước.")
 	eq(t, r.risk().Level, "high")

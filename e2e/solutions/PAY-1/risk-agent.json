@@ -1,0 +1,15 @@
+{
+  "inputsHash": "<thay bằng inputsHash của aisdlc risk inputs>",
+  "level": "high",
+  "matched": [
+    {"rule": "E1", "evidence": "App chặn sớm giao dịch chuyển tiền vượt hạn mức ngày của tài khoản", "file": "aisdlc/features/PAY-1/brd.md"},
+    {"rule": "G2", "evidence": "CREATE TABLE daily_limit (", "file": "aisdlc/features/PAY-1/db/00002_daily_limit.sql"}
+  ],
+  "notMatched": [
+    {"rule": "G1", "reason": "API chỉ kiểm tra hạn mức, không chuyển tiền và không cộng số đã dùng (BRD: ngoài phạm vi)."},
+    {"rule": "G3", "reason": "Không đổi đăng nhập, token hay quyền truy cập."},
+    {"rule": "G4", "reason": "Không gọi hệ thống ngoài; endpoint mới chỉ dùng nội bộ cho app."}
+  ],
+  "override": null,
+  "summary": "Thêm API kiểm tra hạn mức ngày và bảng daily_limit: chặn giao dịch theo hạn mức (E1) nên mức high."
+}

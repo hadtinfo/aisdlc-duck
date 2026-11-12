@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetSession } from "./api";
 import {
   type Policy, type PolicyChange, type PresetUpdate, applyPresetChange, changeText, presetVersionFor, skipAllRemaining, clearDraft, draftChanges, levelTone, loadDraft, loadPolicy,
-  publish, saveDraft, setFlow, setRequirement,
+  migrateDraft, publish, saveDraft, setFlow, setRequirement,
 } from "./risk";
 
 /** Mẫu generic như GET /api/policy trả (JSON của RiskPolicy). */
@@ -269,5 +269,54 @@ describe("flow", () => {
     expect(draftChanges(draft, base)).toEqual(["Quy trình mức low, cổng step: auto → manual"]);
     expect(changeText({ kind: "CHANGE_FLOW", key: "low/step", before: "manual", after: "auto", loosening: true }))
       .toBe("flow low/step: manual ⟶ auto");
+  });
+});
+
+/** Chính sách schema 2: luật mô tả bằng lời. */
+function v2(): Policy {
+  return {
+    schema: 2, version: 2, preset: { name: "generic", version: "3" },
+    levels: ["low", "medium", "high"], default: "low",
+    rules: [{ id: "G1", describe: "Có dòng tiền đi qua", level: "high", enabled: true }],
+    classification: { devLower: "reason" },
+    requirements: { high: [{ id: "rule-pos-neg" }] },
+  };
+}
+
+describe("schema 2", () => {
+  it("draftChanges: sửa describe, thêm rule hiện mô tả", () => {
+    const base = v2();
+    const draft = clone(base);
+    draft.rules[0].describe = "Có dòng tiền hoặc số dư";
+    draft.rules.push({ id: "R2", describe: "Đổi quyền truy cập", level: "medium", enabled: true });
+    expect(draftChanges(base, draft)).toEqual([
+      "G1: sửa mô tả",
+      "R2: thêm (Đổi quyền truy cập → medium)",
+    ]);
+  });
+
+  it("draftChanges: chuyển từ schema 1 ghi một dòng chuyển schema", () => {
+    const out = draftChanges(generic(), v2());
+    expect(out[0]).toBe("Chuyển chính sách từ schema 1 sang schema 2 (luật mô tả bằng lời)");
+  });
+
+  it("changeText: SCHEMA_MIGRATED", () => {
+    expect(changeText({ kind: "SCHEMA_MIGRATED", key: "schema", before: "1", after: "2", loosening: false }))
+      .toBe("chuyển schema 1 ⟶ 2");
+  });
+
+  it("migrateDraft: POST /api/policy/migrate-draft với repo", async () => {
+    resetSession();
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    const f = vi.fn(async (path: string, _i?: RequestInit) => path === "/api/me"
+      ? json(200, { login: "dev", displayName: "Dev", role: "dev", csrf: "c-9" })
+      : json(200, { policy: v2(), changes: [] }));
+    vi.stubGlobal("fetch", f);
+    const r = await migrateDraft("a/b");
+    expect(r.policy.schema).toBe(2);
+    const [url, init] = f.mock.calls[1];
+    expect(url).toBe("/api/policy/migrate-draft");
+    expect(JSON.parse(init!.body as string)).toEqual({ repo: "a/b" });
   });
 });

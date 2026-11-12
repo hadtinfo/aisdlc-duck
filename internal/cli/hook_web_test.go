@@ -389,6 +389,7 @@ func TestLowerWithReasonSendsRiskEvents(t *testing.T) {
 	r.env["AISDLC_WEB_URL"] = web.URL()
 	r.env["AISDLC_WEB_TOKEN"] = "ingest-tok"
 	r.brdApproved()
+	r.llmLevel = "high"
 	r.ok(noConsole(), "submit", "design")
 	r.ok(typed("PAY-1"), "approve", "design")
 	var cl map[string]any

@@ -52,8 +52,8 @@ func (t *cardText) card(key string, c ReviewCard, approval string) {
 			t.add("Agent: " + a.Level + reason + labels)
 		}
 	}
-	if c.RiskPreview != nil {
-		t.add("Rủi ro tạm (từ khóa): " + c.RiskPreview.Level)
+	if c.RiskLLM != nil {
+		t.riskLLM(*c.RiskLLM)
 	}
 	t.flags(c.Flags)
 	t.assumptions(c)
@@ -281,4 +281,20 @@ func (t *cardText) cut(s string) string {
 	}
 	r := []rune(one)
 	return string(r[:t.width-1]) + "…"
+}
+
+func (t *cardText) riskLLM(b RiskLLMBlock) {
+	t.add("Xếp loại LLM: " + b.Level)
+	if strings.TrimSpace(b.Summary) != "" {
+		t.add("  " + b.Summary)
+	}
+	if b.Override != nil {
+		t.add("  Lệch mức rule (" + b.Override.From + "): " + b.Override.Reason)
+	}
+	for _, m := range b.Matched {
+		t.add("  " + m.Rule + " (" + m.Level + "): " + m.On)
+	}
+	for _, n := range b.NotMatched {
+		t.add("  Không khớp: " + n.Rule + " — " + n.Reason)
+	}
 }

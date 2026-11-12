@@ -48,7 +48,7 @@ const (
 
 // ClassificationRules là khối classification của chính sách.
 type ClassificationRules struct {
-	Agent    AgentMode `yaml:"agent" json:"agent"`
+	Agent    AgentMode `yaml:"agent,omitempty" json:"agent,omitempty"` // chỉ schema 1
 	DevLower DevLower  `yaml:"devLower" json:"devLower"`
 }
 
@@ -57,14 +57,16 @@ func DefaultClassification() ClassificationRules {
 	return ClassificationRules{Agent: AgentRaise, DevLower: DevLowerReason}
 }
 
-// RiskRule là một rule phân loại. Note rỗng nghĩa là không có.
+// RiskRule là một rule phân loại. Schema 1 dùng Kind/Match/Note (luật so khớp); schema 2 chỉ dùng Describe
+// (mô tả bằng lời cho LLM). Note rỗng nghĩa là không có.
 type RiskRule struct {
-	ID      string    `yaml:"id" json:"id"`
-	Kind    MatchKind `yaml:"kind" json:"kind"`
-	Match   []string  `yaml:"match" json:"match"`
-	Level   string    `yaml:"level" json:"level"`
-	Note    string    `yaml:"note,omitempty" json:"note,omitempty"`
-	Enabled bool      `yaml:"enabled" json:"enabled"`
+	ID       string    `yaml:"id" json:"id"`
+	Kind     MatchKind `yaml:"kind,omitempty" json:"kind,omitempty"`
+	Match    []string  `yaml:"match,omitempty" json:"match,omitempty"`
+	Describe string    `yaml:"describe,omitempty" json:"describe,omitempty"`
+	Level    string    `yaml:"level" json:"level"`
+	Note     string    `yaml:"note,omitempty" json:"note,omitempty"`
+	Enabled  bool      `yaml:"enabled" json:"enabled"`
 }
 
 // PresetRef ghi mẫu mà chính sách xuất phát.
@@ -84,6 +86,8 @@ type RiskPolicy struct {
 	Classification ClassificationRules          `yaml:"classification" json:"classification"`
 	Requirements   map[string][]Requirement     `yaml:"requirements" json:"requirements"`
 	Flow           map[string]map[string]string `yaml:"flow,omitempty" json:"flow,omitempty"`
+	// Warnings: cảnh báo khi đọc (không làm hỏng chính sách), không ghi ra YAML/JSON.
+	Warnings []string `yaml:"-" json:"-"`
 }
 
 // FlowUnits là các cổng có thể khai trong flow (Review luôn duyệt tay).
@@ -97,6 +101,14 @@ func (e *PolicyError) Error() string {
 }
 
 func policyErr(msgs ...string) error { return &PolicyError{Errors: msgs} }
+
+// Usable báo chính sách có dùng được để phân loại không: chỉ schema 2 (luật mô tả bằng lời) dùng được.
+func (p RiskPolicy) Usable() error {
+	if p.Schema == 1 {
+		return policyErr("Chính sách dùng schema 1 (luật so khớp); chạy `aisdlc policy migrate` để chuyển sang schema 2.")
+	}
+	return nil
+}
 
 // ParsePolicy đọc chính sách từ YAML; lỗi có kiểu *PolicyError.
 func ParsePolicy(y string) (RiskPolicy, error) {
@@ -204,8 +216,9 @@ func isScalar(v any) bool {
 }
 
 var (
-	topKeys  = map[string]bool{"schema": true, "version": true, "preset": true, "levels": true, "default": true, "rules": true, "classification": true, "requirements": true, "flow": true}
-	ruleKeys = map[string]bool{"id": true, "kind": true, "match": true, "level": true, "note": true, "enabled": true}
+	topKeys   = map[string]bool{"schema": true, "version": true, "preset": true, "levels": true, "default": true, "rules": true, "classification": true, "requirements": true, "flow": true}
+	ruleKeys  = map[string]bool{"id": true, "kind": true, "match": true, "level": true, "note": true, "enabled": true}
+	ruleKeys2 = map[string]bool{"id": true, "level": true, "describe": true, "enabled": true}
 )
 
 func unknownKeys(m map[string]any, known map[string]bool, where string, errs *[]string) {
@@ -234,13 +247,18 @@ func enumCheck(m map[string]any, field string, valid []string, where string, err
 // checkShape kiểm cấu trúc; trả true khi có lỗi làm không thể bind (các lỗi khác chỉ gom thêm).
 func checkShape(root map[string]any, errs *[]string) bool {
 	fatal := false
+	schema2 := rawSchema(root) == 2
 	unknownKeys(root, topKeys, "chính sách", errs)
 	if preset, ok := root["preset"].(map[string]any); ok {
 		unknownKeys(preset, map[string]bool{"name": true, "version": true}, "preset", errs)
 	}
 	if cls, ok := root["classification"].(map[string]any); ok {
-		unknownKeys(cls, map[string]bool{"agent": true, "devLower": true}, "classification", errs)
-		fatal = enumCheck(cls, "agent", []string{"raise", "off"}, "classification.agent", errs) || fatal
+		if schema2 {
+			unknownKeys(cls, map[string]bool{"devLower": true}, "classification", errs)
+		} else {
+			unknownKeys(cls, map[string]bool{"agent": true, "devLower": true}, "classification", errs)
+			fatal = enumCheck(cls, "agent", []string{"raise", "off"}, "classification.agent", errs) || fatal
+		}
 		fatal = enumCheck(cls, "devLower", []string{"reason", "never"}, "classification.devLower", errs) || fatal
 	}
 	kinds := make([]string, len(matchKinds))
@@ -259,8 +277,12 @@ func checkShape(root map[string]any, errs *[]string) bool {
 			if id, has := r["id"]; has && id != nil {
 				where = asText(id)
 			}
-			unknownKeys(r, ruleKeys, where, errs)
-			fatal = enumCheck(r, "kind", kinds, where+": kind", errs) || fatal
+			if schema2 {
+				unknownKeys(r, ruleKeys2, where, errs)
+			} else {
+				unknownKeys(r, ruleKeys, where, errs)
+				fatal = enumCheck(r, "kind", kinds, where+": kind", errs) || fatal
+			}
 		}
 	}
 	if flow, has := root["flow"]; has && flow != nil {
@@ -321,6 +343,15 @@ func checkShape(root map[string]any, errs *[]string) bool {
 		}
 	}
 	return fatal
+}
+
+// rawSchema đọc khóa schema trước khi bind; thiếu hoặc sai dạng thì coi là 1.
+func rawSchema(root map[string]any) int {
+	n, err := toInt(root["schema"], 1, "schema")
+	if err != nil {
+		return 1
+	}
+	return n
 }
 
 func isFlowUnit(u string) bool {
@@ -409,7 +440,7 @@ func bind(root map[string]any) (RiskPolicy, error) {
 	case nil:
 	case []any:
 		for _, rv := range rs {
-			r, err := bindRule(rv.(map[string]any))
+			r, err := bindRule(rv.(map[string]any), p.Schema)
 			if err != nil {
 				return p, err
 			}
@@ -419,6 +450,9 @@ func bind(root map[string]any) (RiskPolicy, error) {
 		return p, fmt.Errorf("rules phải là danh sách")
 	}
 	p.Classification = DefaultClassification()
+	if p.Schema == 2 {
+		p.Classification.Agent = "" // schema 2 không có agent nâng mức
+	}
 	switch c := root["classification"].(type) {
 	case nil:
 	case map[string]any:
@@ -453,27 +487,37 @@ func bind(root map[string]any) (RiskPolicy, error) {
 	}
 	p.Flow = map[string]map[string]string{}
 	if fm, ok := root["flow"].(map[string]any); ok {
-		for level, uv := range fm {
-			units, ok := uv.(map[string]any)
+		for _, level := range sortedKeys(fm) {
+			units, ok := fm[level].(map[string]any)
 			if !ok || len(units) == 0 {
 				continue
 			}
 			m := map[string]string{}
-			for u, v := range units {
+			for _, u := range sortedKeys(units) {
+				v := units[u]
+				if p.Schema == 2 && u == "brd" {
+					p.Warnings = append(p.Warnings, "flow."+level+".brd bị bỏ qua: cổng BRD luôn duyệt tay")
+					continue
+				}
 				s, err := scalarString(v, "flow."+level+"."+u)
 				if err != nil {
 					return p, err
 				}
 				m[u] = s
 			}
-			p.Flow[level] = m
+			if len(m) > 0 {
+				p.Flow[level] = m
+			}
 		}
 	}
 	return p, nil
 }
 
-func bindRule(m map[string]any) (RiskRule, error) {
-	r := RiskRule{Match: []string{}, Enabled: true}
+func bindRule(m map[string]any, schema int) (RiskRule, error) {
+	r := RiskRule{Enabled: true}
+	if schema != 2 {
+		r.Match = []string{}
+	}
 	var err error
 	if r.ID, err = scalarString(m["id"], "id"); err != nil {
 		return r, err
@@ -502,6 +546,9 @@ func bindRule(m map[string]any) (RiskRule, error) {
 		return r, err
 	}
 	if r.Note, err = scalarString(m["note"], "note"); err != nil {
+		return r, err
+	}
+	if r.Describe, err = scalarString(m["describe"], "describe"); err != nil {
 		return r, err
 	}
 	switch e := m["enabled"].(type) {
@@ -556,8 +603,8 @@ func contains(l []string, s string) bool {
 
 func (p RiskPolicy) validate(errs *[]string) {
 	add := func(s string) { *errs = append(*errs, s) }
-	if p.Schema != 1 {
-		add("schema " + strconv.Itoa(p.Schema) + " không được hỗ trợ (chỉ có 1)")
+	if p.Schema != 1 && p.Schema != 2 {
+		add("schema " + strconv.Itoa(p.Schema) + " không được hỗ trợ (chỉ có 1 và 2)")
 	}
 	if len(p.Levels) < 2 || len(p.Levels) > 5 {
 		add("Thang mức phải có 2 đến 5 mức, hiện có " + strconv.Itoa(len(p.Levels)))
@@ -587,16 +634,22 @@ func (p RiskPolicy) validate(errs *[]string) {
 		} else {
 			seen[r.ID] = true
 		}
-		if r.Kind == "" {
-			add(id + ": thiếu kind")
-		}
-		if len(r.Match) == 0 {
-			add(id + ": match không được rỗng")
+		if p.Schema == 2 {
+			if strings.TrimSpace(r.Describe) == "" {
+				add(id + ": describe không được rỗng")
+			}
 		} else {
-			for _, m := range r.Match {
-				if strings.TrimSpace(m) == "" {
-					add(id + ": match có phần tử rỗng")
-					break
+			if r.Kind == "" {
+				add(id + ": thiếu kind")
+			}
+			if len(r.Match) == 0 {
+				add(id + ": match không được rỗng")
+			} else {
+				for _, m := range r.Match {
+					if strings.TrimSpace(m) == "" {
+						add(id + ": match có phần tử rỗng")
+						break
+					}
 				}
 			}
 		}
@@ -698,9 +751,13 @@ func (p RiskPolicy) ToYAML() (string, error) {
 func (p RiskPolicy) ToJSON() string {
 	var b bytes.Buffer
 	cls := p.Classification
-	b.WriteString(`{"classification":{"agent":`)
-	writeJSONString(&b, string(cls.Agent))
-	b.WriteString(`,"devLower":`)
+	b.WriteString(`{"classification":{`)
+	if p.Schema != 2 {
+		b.WriteString(`"agent":`)
+		writeJSONString(&b, string(cls.Agent))
+		b.WriteByte(',')
+	}
+	b.WriteString(`"devLower":`)
 	writeJSONString(&b, string(cls.DevLower))
 	b.WriteString(`},"default":`)
 	writeJSONString(&b, p.DefaultLevel)
@@ -745,6 +802,18 @@ func (p RiskPolicy) ToJSON() string {
 	for i, r := range p.Rules {
 		if i > 0 {
 			b.WriteByte(',')
+		}
+		if p.Schema == 2 {
+			b.WriteString(`{"describe":`)
+			writeJSONString(&b, r.Describe)
+			b.WriteString(`,"enabled":`)
+			b.WriteString(strconv.FormatBool(r.Enabled))
+			b.WriteString(`,"id":`)
+			writeJSONString(&b, r.ID)
+			b.WriteString(`,"level":`)
+			writeJSONString(&b, r.Level)
+			b.WriteByte('}')
+			continue
 		}
 		b.WriteString(`{"enabled":`)
 		b.WriteString(strconv.FormatBool(r.Enabled))

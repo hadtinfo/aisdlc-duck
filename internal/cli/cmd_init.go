@@ -97,7 +97,7 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 		}
 	}
 	meta := model.FeatureMeta{Key: k, Title: t, Flow: flow, BaseTree: baseTree, CreatedAt: ctx.Now().UTC(),
-		Owner: owner(ctx, root)}
+		Owner: owner(ctx, root), RiskSchema: riskSchemaMarker}
 	if err := meta.Write(paths.Meta()); err != nil {
 		return 0, err
 	}

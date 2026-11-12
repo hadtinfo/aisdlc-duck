@@ -22,6 +22,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Locale foundation (English/Vietnamese): the `locale` key (`vi` or `en`) in `aisdlc/config.yaml`, the
+  `AISDLC_LOCALE` environment variable (a wrong value is ignored) and `aisdlc setup --locale vi|en`. A repo without
+  the key stays Vietnamese, byte for byte.
+- English templates (`templates/en/`) for `brd.md`, `design.md`, `design.yaml`, `cases.yaml`, `config.yaml`,
+  `CLAUDE.md` and the CI job; `aisdlc init` uses the repo locale. The Vietnamese templates are unchanged except for
+  the new `locale: vi` line in `config.yaml`.
+- The BRD validator accepts English section headings (`Goal`, `In scope`, `Out of scope`, `Business rules`,
+  `Acceptance criteria`, `Assumptions`, `Open questions`) as well as the Vietnamese ones.
+- `aisdlc status` prints a `Locale:` line. CLI messages, the web UI and the plugin are still Vietnamese; they are
+  translated in later waves.
 - Project site on GitHub Pages (`site/`, English and Vietnamese) with a guided tour and screenshots, assembled by
   `make site` and published by the `Pages` workflow.
 - Subagent `aisdlc-risk-classifier` (read-only): decides which policy rules match a feature's documents, with verbatim

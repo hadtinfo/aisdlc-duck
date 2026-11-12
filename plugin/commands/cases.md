@@ -1,22 +1,22 @@
 ---
-description: Soạn cases.yaml cụ thể và nộp cổng case
-argument-hint: "[ghi chú thêm]"
+description: Write concrete cases.yaml and submit the case gate / Soạn cases.yaml cụ thể và nộp cổng case
+argument-hint: "[extra notes]"
 ---
-Soạn và nộp cổng `cases` của tính năng đang làm. Ghi chú của dev (nếu có): $ARGUMENTS
+Write and submit the `cases` gate of the current feature. Dev notes (if any): $ARGUMENTS
 
-1. Chạy `aisdlc status` để biết đường dẫn tính năng và trạng thái cổng.
-2. Đọc `feedback.md` của tính năng nếu có và xử lý hết góp ý của dev.
-3. Số case xấp xỉ số quy tắc nghiệp vụ/tiêu chí chấp nhận trong BRD, cộng một case lỗi hoặc biên cho mỗi bước Sx. Tối đa 15 case, trừ khi dev yêu cầu thêm. Không thêm luồng suy đoán.
-4. `reset_sql` và `given.sql` của một case chỉ được dùng bảng đã có ở bước của case đó. Bảng do migration của bước sau tạo không được xuất hiện trong case của bước trước, cũng không được nằm trong `reset_sql`. Dọn bảng đó trong `given.sql` của case thuộc bước tạo bảng.
-5. Quy tắc so DB trong `then.db` (`query` + `rows`): số so theo giá trị (`100` khớp `100.00`); bool viết `true`/`false`; NULL viết `null`; timestamp, date viết dạng RFC 3339 UTC (`2026-01-31T10:00:00Z`, date `2026-01-31`); json/jsonb so theo cấu trúc (không quan tâm thứ tự khóa); còn lại so dạng text. Số dòng phải khớp đúng.
-   Migration viết theo goose: `NNNNN_ten.sql` (5 chữ số, ví dụ `00002_them_bang_han_muc.sql`) với `-- +goose Up` (bắt buộc; `-- +goose Down` nên có); bản nháp ở `aisdlc/features/<KEY>/db/`.
-   Stub chỉ hỗ trợ tập con WireMock. `request`: `method`, `url`, `urlPath`, `urlPathPattern`, `queryParameters`, `headers`, `bodyPatterns` (`equalToJson`, `contains`); matcher là `equalTo` hoặc `matches`. `response`: `status`, `headers`, `body`, `jsonBody`, `fixedDelayMilliseconds`. Khóa khác bị báo `CASES_STUB_UNSUPPORTED`.
-6. Case kiểm một quy tắc BRD thì ghi `rules: [BR-n]`.
-   Case phải **cụ thể**: dùng giá trị thật (không ghi 'giá trị hợp lệ'). Không viết case để dễ pass; case phải fail trước khi code (lệnh submit sẽ chạy kiểm).
-7. **Rủi ro:** nếu có `risk.yaml` của tính năng, đọc nó (chỉ đọc, không sửa) và viết đủ case theo `requirements` của mức đó:
-   `idempotent` → case gửi trùng `when.repeat: 2` (hoặc hơn) cho mỗi endpoint ghi; `concurrent` → case `when.parallel` ≥ `threads` và `then.statusCounts`; `boundary` → case `kind: boundary` cho mỗi rule BRD gắn `[biên]`; `rule-pos-neg` → mỗi rule có case đúng và case sai/biên. Khi tính năng ghi dữ liệu tiền hoặc trạng thái (hoặc mức yêu cầu `invariant`), luồng lite khai `invariants` trong `cases.yaml`: mỗi mục `{ name, sql }`, `sql` là `SELECT`/`WITH` trả về các dòng vi phạm, kiểm sau mọi case. Luồng đầy đủ khai `invariants` trong `design.yaml`, không trong `cases.yaml`.
-   Luồng lite (chưa xếp loại ở cổng design): sau khi `cases.yaml` xong, chạy `aisdlc risk inputs`, gọi subagent `aisdlc-risk-classifier` (agent `aisdlc:aisdlc-risk-classifier`) với **chỉ** các đường dẫn đầu vào in ra, đường dẫn chính sách ở dòng `policy:` và `inputsHash`, rồi ghi JSON nguyên văn (bỏ rào ```) vào `aisdlc/features/<KEY>/risk-agent.json`. Báo `RISK_AGENT_MISSING`/`RISK_AGENT_INVALID` thì sửa tài liệu rồi chạy lại `aisdlc risk inputs` và subagent; không sửa tay JSON.
-8. Chạy `aisdlc submit cases`. Sửa theo findings rồi nộp lại cho tới khi hết findings.
-9. **Dừng.** Nói với dev: "Trước khi duyệt, `aisdlc review cases` in review card (cờ đỏ, giả định, tóm tắt). Dev duyệt bằng `aisdlc approve cases` ở terminal riêng (lệnh cần console thật)."
-   Nếu `aisdlc status` báo "Duyệt trong Claude Code: bật", nhắc thêm: "hoặc gõ `/aisdlc:approve cases` để duyệt ngay trong Claude Code (hiện hộp xác nhận), hoặc duyệt trên web"; ngược lại giữ lời nhắc ở terminal/web.
-   Không tự duyệt khi dev chưa yêu cầu trong cuộc trò chuyện này, không dùng `!`.
+1. Run `aisdlc status` for the feature path and gate status. Its first line is `Locale: vi|en`: write case names, comments and replies to the dev in that language (`vi` = Vietnamese, `en` = English); YAML keys stay as they are.
+2. Read the feature's `feedback.md` if present and address every comment from the dev.
+3. The number of cases is about the number of business rules/acceptance criteria in the BRD, plus one error or boundary case per step Sx. At most 15 cases unless the dev asks for more. No speculative flows.
+4. A case's `reset_sql` and `given.sql` may only use tables that exist at that case's step. A table created by a later step's migration must not appear in an earlier step's case, nor in `reset_sql`. Clean that table in `given.sql` of a case belonging to the step that creates it.
+5. DB comparison rules in `then.db` (`query` + `rows`): numbers compare by value (`100` matches `100.00`); bool is `true`/`false`; NULL is `null`; timestamp and date are RFC 3339 UTC (`2026-01-31T10:00:00Z`, date `2026-01-31`); json/jsonb compare by structure (key order ignored); everything else compares as text. Row counts must match exactly.
+   Migrations use goose: `NNNNN_name.sql` (5 digits, e.g. `00002_add_limit_table.sql`) with `-- +goose Up` (required; `-- +goose Down` recommended); drafts go in `aisdlc/features/<KEY>/db/`.
+   Stubs support a WireMock subset. `request`: `method`, `url`, `urlPath`, `urlPathPattern`, `queryParameters`, `headers`, `bodyPatterns` (`equalToJson`, `contains`); matchers are `equalTo` or `matches`. `response`: `status`, `headers`, `body`, `jsonBody`, `fixedDelayMilliseconds`. Other keys report `CASES_STUB_UNSUPPORTED`.
+6. A case checking a BRD rule sets `rules: [BR-n]`.
+   Cases must be **concrete**: real values (never 'a valid value'). Do not write cases that are easy to pass; a case must fail before the code exists (submit checks this).
+7. **Risk:** if the feature has `risk.yaml`, read it (read only, never edit) and write every case its level's `requirements` ask for:
+   `idempotent` → a duplicate-request case `when.repeat: 2` (or more) for each write endpoint; `concurrent` → a `when.parallel` case ≥ `threads` with `then.statusCounts`; `boundary` → a `kind: boundary` case for each BRD rule tagged `[boundary]` (`[biên]` in vi); `rule-pos-neg` → each rule has a passing case and a failing/boundary case. When the feature writes money or state data (or the level requires `invariant`), the lite flow declares `invariants` in `cases.yaml`: each item `{ name, sql }`, `sql` is a `SELECT`/`WITH` returning violating rows, checked after every case. The full flow declares `invariants` in `design.yaml`, not in `cases.yaml`.
+   Lite flow (not classified at the design gate): once `cases.yaml` is done, run `aisdlc risk inputs`, call the subagent `aisdlc-risk-classifier` (agent `aisdlc:aisdlc-risk-classifier`) with **only** the printed input paths, the policy path from the `policy:` line, `inputsHash` and the `Locale:` line, then write its JSON verbatim (strip the ``` fence) to `aisdlc/features/<KEY>/risk-agent.json`. On `RISK_AGENT_MISSING`/`RISK_AGENT_INVALID`, fix the documents, rerun `aisdlc risk inputs` and the subagent; never edit the JSON by hand.
+8. Run `aisdlc submit cases`. Fix the findings and resubmit until there are none.
+9. **Stop.** Tell the dev: "Before approving, `aisdlc review cases` prints the review card (red flags, assumptions, summary). Approve with `aisdlc approve cases` in a separate terminal (the command needs a real console)."
+   If `aisdlc status` shows approval inside Claude Code as on (`Approval inside Claude Code: on` / `Duyệt trong Claude Code: bật`), add: "or type `/aisdlc:approve cases` to approve inside Claude Code (shows a confirmation box), or approve on the web"; otherwise keep the terminal/web reminder.
+   Never approve unless the dev asked for it in this conversation; do not use `!`.

@@ -24,9 +24,17 @@ for c in init brd design cases step eval review status approve reject accept; do
   check "command $c: frontmatter description + argument-hint" "head -1 '$f' | grep -q '^---\$' && grep -q '^description: ' '$f' && grep -q '^argument-hint: ' '$f'"
   check "command $c: thân <= 25 dòng" "[ \$(awk 'BEGIN{n=0} /^---\$/{n++; next} n>=2' '$f' | grep -c .) -le 25 ]"
 done
+# Prompt tiếng Anh, theo locale của repo: mọi lệnh và agent nhắc dòng `Locale:` của `aisdlc status`; description song ngữ "English / Tiếng Việt"
+for f in "$P"/commands/*.md "$P"/agents/*.md; do
+  n="${f#$P/}"
+  check "$n: chỉ dẫn locale (dòng Locale: vi|en)" "grep -q 'Locale: vi|en' '$f'"
+  check "$n: description song ngữ" "grep -q '^description: [A-Z][^/]* / [^/]*[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]' '$f'"
+done
+for c in design cases review; do check "command $c: truyền dòng Locale: cho subagent" "grep -q 'the \`Locale:\` line' '$P/commands/$c.md'"; done
+check "agents: nhãn verdict và id là mã, không dịch" "grep -q 'DAT|CAN_SUA|NGHIEM_TRONG' '$P/agents/aisdlc-reviewer.md'"
 check "agent aisdlc-reviewer" "grep -q '^name: aisdlc-reviewer' '$P/agents/aisdlc-reviewer.md' && grep -q '^tools: Read, Grep, Glob' '$P/agents/aisdlc-reviewer.md'"
 check "agent aisdlc-risk-classifier: tools chỉ đọc, có schema" "grep -q '^name: aisdlc-risk-classifier' '$P/agents/aisdlc-risk-classifier.md' && grep -q '^tools: Read, Grep, Glob\$' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'inputsHash' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'notMatched' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'override' '$P/agents/aisdlc-risk-classifier.md'"
-check "design/cases dùng subagent risk-classifier, không còn impact" "grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/design.md' && grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/cases.md' && grep -q 'RISK_AGENT_INVALID' '$P/commands/design.md' && ! grep -qi 'impact' '$P'/commands/*.md && ! grep -qi 'rủi ro' '$P/commands/brd.md'"
+check "design/cases dùng subagent risk-classifier, không còn impact" "grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/design.md' && grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/cases.md' && grep -q 'RISK_AGENT_INVALID' '$P/commands/design.md' && ! grep -qi 'impact' '$P'/commands/*.md && ! grep -qi 'risk' '$P/commands/brd.md'"
 for id in sequence error-handling over-engineering naming security; do
   check "agent có tiêu chí $id" "grep -q '$id' '$P/agents/aisdlc-reviewer.md'"
 done
@@ -67,21 +75,21 @@ out="$(echo '{"tool_name":"Read","cwd":"/tmp"}' | "$P/bin/aisdlc" hook pre-tool-
 if [ -z "$out" ]; then ok "hook pre-tool-use với Read ở /tmp in rỗng"; else ko "hook pre-tool-use in: $out"; fi
 
 check "hooks.json: cả 5 sự kiện có timeout" "python3 -c \"import json;h=json.load(open('$P/hooks/hooks.json'))['hooks'];assert all('timeout' in v[0]['hooks'][0] for v in h.values())\""
-for c in brd design; do check "command $c: giới hạn ngắn" "grep -q '5 dòng' '$P/commands/$c.md' && grep -q 'Câu hỏi mở' '$P/commands/$c.md'"; done
-check "command design: miễn giới hạn 5 dòng cho bảng API và Giả định" "grep -q 'trừ bảng \`API\` và mục \`Giả định\`' '$P/commands/design.md'"
-check "command brd: miễn giới hạn 5 dòng cho Giả định, không nhắc API" "grep -q 'trừ mục \`Giả định\`' '$P/commands/brd.md' && ! grep -q 'bảng \`API\`' '$P/commands/brd.md'"
-check "command cases: tối đa 15 case" "grep -q '15 case' '$P/commands/cases.md'"
-check "command cases: reset_sql/given.sql chỉ dùng bảng đã có ở bước của case" "grep -q 'reset_sql' '$P/commands/cases.md' && grep -q 'bước sau' '$P/commands/cases.md'"
-check "command step: không refactor, không comment dài" "grep -q 'refactor' '$P/commands/step.md' && grep -q 'comment dài' '$P/commands/step.md'"
-check "command review: bỏ rào \`\`\` và dùng diff-by-step của eval" "grep -q 'rào' '$P/commands/review.md' && ! grep -q 'aisdlc diff' '$P/commands/review.md'"
+for c in brd design; do check "command $c: giới hạn ngắn" "grep -q '5 lines' '$P/commands/$c.md' && grep -q 'Open questions' '$P/commands/$c.md' && grep -q 'Câu hỏi mở' '$P/commands/$c.md'"; done
+check "command design: miễn giới hạn 5 dòng cho bảng API và Giả định" "grep -q 'except the \`API\` table and the \`Assumptions\` section' '$P/commands/design.md'"
+check "command brd: miễn giới hạn 5 dòng cho Giả định, không nhắc API" "grep -q 'except the \`Assumptions\` section' '$P/commands/brd.md' && ! grep -q '\`API\` table' '$P/commands/brd.md'"
+check "command cases: tối đa 15 case" "grep -q '15 cases' '$P/commands/cases.md'"
+check "command cases: reset_sql/given.sql chỉ dùng bảng đã có ở bước của case" "grep -q 'reset_sql' '$P/commands/cases.md' && grep -q 'later step' '$P/commands/cases.md'"
+check "command step: không refactor, không comment dài" "grep -q 'refactor' '$P/commands/step.md' && grep -q 'long comments' '$P/commands/step.md'"
+check "command review: bỏ rào \`\`\` và dùng diff-by-step của eval" "grep -q 'fence' '$P/commands/review.md' && ! grep -q 'aisdlc diff' '$P/commands/review.md'"
 
 check "commands và agents không còn nhắc Java/Maven" "! grep -rniE 'mvn|maven|junit|jacoco|flyway|src/main/java|pom\\.xml|AisdlcCasesTest|javadoc' '$P/commands' '$P/agents'"
 for c in cases step; do
-  check "command $c: quy tắc so DB (số, bool, null, RFC 3339 UTC, json/jsonb, text)" "grep -q 'RFC 3339 UTC' '$P/commands/$c.md' && grep -q 'json/jsonb' '$P/commands/$c.md' && grep -q 'true' '$P/commands/$c.md' && grep -q 'null' '$P/commands/$c.md' && grep -q 'dạng text' '$P/commands/$c.md'"
-  check "command $c: quy ước tên goose" "grep -q 'NNNNN_ten.sql' '$P/commands/$c.md' && grep -q -- '-- +goose Up' '$P/commands/$c.md'"
+  check "command $c: quy tắc so DB (số, bool, null, RFC 3339 UTC, json/jsonb, text)" "grep -q 'RFC 3339 UTC' '$P/commands/$c.md' && grep -q 'json/jsonb' '$P/commands/$c.md' && grep -q 'true' '$P/commands/$c.md' && grep -q 'null' '$P/commands/$c.md' && grep -q 'as text' '$P/commands/$c.md'"
+  check "command $c: quy ước tên goose" "grep -q 'NNNNN_name.sql' '$P/commands/$c.md' && grep -q -- '-- +goose Up' '$P/commands/$c.md'"
 done
 check "command step: viết Go" "grep -q 'Go' '$P/commands/step.md' && grep -q 'gofmt' '$P/commands/step.md'"
-check "command eval: build, unit test, Docker và bộ case" "grep -q 'go build' '$P/commands/eval.md' && grep -q 'go test' '$P/commands/eval.md' && grep -q 'Docker' '$P/commands/eval.md' && grep -q 'Kafka' '$P/commands/eval.md' && grep -q 'bộ case' '$P/commands/eval.md'"
+check "command eval: build, unit test, Docker và bộ case" "grep -q 'go build' '$P/commands/eval.md' && grep -q 'go test' '$P/commands/eval.md' && grep -q 'Docker' '$P/commands/eval.md' && grep -q 'Kafka' '$P/commands/eval.md' && grep -q 'case suite' '$P/commands/eval.md'"
 check "command cases: nêu tập con khóa stub" "grep -q 'bodyPatterns' '$P/commands/cases.md' && grep -q 'jsonBody' '$P/commands/cases.md'"
 check "agent reviewer: tiêu chí Go" "grep -q 'context' '$P/agents/aisdlc-reviewer.md' && grep -q 'defer' '$P/agents/aisdlc-reviewer.md' && grep -q 'database/sql\|pgx' '$P/agents/aisdlc-reviewer.md'"
 

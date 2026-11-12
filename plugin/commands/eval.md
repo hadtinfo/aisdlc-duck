@@ -1,8 +1,10 @@
 ---
-description: Chạy eval tầng 1 (build, unit test, Docker và bộ case đầy đủ)
+description: Run tier-1 eval (build, unit tests, Docker and the full case suite) / Chạy eval tầng 1 (build, unit test, Docker và bộ case đầy đủ)
 argument-hint: ""
 ---
-1. Chạy `aisdlc eval`. Lệnh chạy `go build`, `go test` (unit test), khởi động Postgres (và Kafka nếu cấu hình) qua Docker rồi chạy toàn bộ bộ case của tính năng. Cần Docker chạy được; không có thì harness báo lỗi khởi động (ví dụ "không khởi động được Postgres: ...") và các case đều ERROR. Chép nguyên văn lỗi đó cho dev, không tự sửa môi trường.
-2. Tóm tắt ngắn kết quả: ĐẠT hay KHÔNG ĐẠT.
-3. Kết quả nằm ở `aisdlc/features/<KEY>/eval/report.json`, `report.md`, `diff-by-step.md`; log harness ở `.aisdlc/run/<KEY>/harness.log`. Đọc chúng khi cần chi tiết.
-4. Nếu không đạt, liệt kê từng hard check fail (tên check và nguyên nhân chính). Không tự sửa code ngoài bước đang mở.
+Run `aisdlc status` first. Its first line is `Locale: vi|en`: reply to the dev in that language (`vi` = Vietnamese, `en` = English).
+
+1. Run `aisdlc eval`. It runs `go build`, `go test` (unit tests), starts Postgres (and Kafka if configured) in Docker, then runs the feature's whole case suite. Docker must work; without it the harness reports a startup error (e.g. "cannot start Postgres: ..." / "không khởi động được Postgres: ...") and every case is ERROR. Copy that error verbatim for the dev; do not try to fix the environment yourself.
+2. Summarize the result briefly: PASS or FAIL.
+3. Results are in `aisdlc/features/<KEY>/eval/report.json`, `report.md`, `diff-by-step.md`; the harness log is `.aisdlc/run/<KEY>/harness.log`. Read them when you need details.
+4. If it fails, list each failed hard check (check name and main cause). Do not change code outside the open step.

@@ -9,7 +9,13 @@ import { applyLocaleChoice } from "./LocaleSwitch";
 import { RiskRequirements } from "./RiskRequirements";
 
 // Ghim chữ tiếng Việt như trước khi tách chuỗi (locale vi phải ra đúng chữ cũ).
-const text = (html: string) => html.replace(/<[^>]+>/g, "");
+// Bỏ thẻ HTML lặp tới khi không đổi (một lượt thay thế có thể để lại thẻ ghép từ phần còn sót).
+const stripTags = (html: string) => {
+  let prev;
+  do { prev = html; html = html.replace(/<[^>]*>/g, ""); } while (html !== prev);
+  return html;
+};
+const text = (html: string) => stripTags(html);
 
 afterEach(() => { setLocale("vi"); vitest.unstubAllGlobals(); resetSession(); });
 

@@ -23,13 +23,13 @@ const (
 var sectionOrder = []SectionID{SecGoal, SecInScope, SecOutOfScope, SecRules, SecAcceptance, SecAssumptions, SecOpenQuestions}
 
 var headings = map[SectionID]struct{ VI, EN string }{
-	SecGoal:          {"Mục tiêu", "Goal"},
-	SecInScope:       {"Trong phạm vi", "In scope"},
-	SecOutOfScope:    {"Ngoài phạm vi", "Out of scope"},
-	SecRules:         {"Quy tắc nghiệp vụ", "Business rules"},
-	SecAcceptance:    {"Tiêu chí chấp nhận", "Acceptance criteria"},
-	SecAssumptions:   {"Giả định", "Assumptions"},
-	SecOpenQuestions: {"Câu hỏi mở", "Open questions"},
+	SecGoal:          {"Mục tiêu", "Goal"},                          // i18n:data tiêu đề mục song ngữ
+	SecInScope:       {"Trong phạm vi", "In scope"},                 // i18n:data tiêu đề mục song ngữ
+	SecOutOfScope:    {"Ngoài phạm vi", "Out of scope"},             // i18n:data tiêu đề mục song ngữ
+	SecRules:         {"Quy tắc nghiệp vụ", "Business rules"},       // i18n:data tiêu đề mục song ngữ
+	SecAcceptance:    {"Tiêu chí chấp nhận", "Acceptance criteria"}, // i18n:data tiêu đề mục song ngữ
+	SecAssumptions:   {"Giả định", "Assumptions"},                   // i18n:data tiêu đề mục song ngữ
+	SecOpenQuestions: {"Câu hỏi mở", "Open questions"},              // i18n:data tiêu đề mục song ngữ
 }
 
 // Heading trả tiêu đề của mục theo locale.
@@ -67,10 +67,10 @@ func SectionsByID(md string) map[SectionID]string {
 
 // AssumptionSources là các nguồn hợp lệ của một giả định, theo từng ngôn ngữ.
 var AssumptionSources = []struct{ ID, VI, EN string }{
-	{"own", "tự chọn", "own choice"},
-	{"inferred", "suy ra từ BRD", "inferred from BRD"},
-	{"answered", "câu hỏi mở đã trả lời", "answered open question"},
-	{"outOfScope", "ngoài phạm vi", "out of scope"},
+	{"own", "tự chọn", "own choice"},                                // i18n:data nguồn giả định song ngữ
+	{"inferred", "suy ra từ BRD", "inferred from BRD"},              // i18n:data nguồn giả định song ngữ
+	{"answered", "câu hỏi mở đã trả lời", "answered open question"}, // i18n:data nguồn giả định song ngữ
+	{"outOfScope", "ngoài phạm vi", "out of scope"},                 // i18n:data nguồn giả định song ngữ
 }
 
 // SourceID trả ID chuẩn của nguồn giả định (khớp không phân biệt hoa thường); không khớp thì "".
@@ -84,5 +84,5 @@ func SourceID(s string) string {
 	return ""
 }
 
-// BoundaryTags là thẻ đánh dấu quy tắc biên trong BRD.
-var BoundaryTags = []string{"[biên]", "[boundary]"}
+// BoundaryTags là thẻ đánh dấu quy tắc biên trong BRD (nhận cả hai ngôn ngữ; review/docfacts dựng regex từ đây).
+var BoundaryTags = []string{"[biên]", "[boundary]"} // i18n:data thẻ biên song ngữ trong BRD

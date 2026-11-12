@@ -47,7 +47,7 @@ type DesignDoc struct {
 var (
 	bulletRe     = regexp.MustCompile(`^\s*[-*]\s+(.*\S)\s*$`)
 	ruleRe       = regexp.MustCompile(`^\**(?i:br)-(\d+)\**\s*:\s*\**\s*(.*)$`)
-	boundaryRe   = regexp.MustCompile(`^(.*\S)\s*\[(?:biên|boundary)\]\s*$`)
+	boundaryRe   = regexp.MustCompile(`^(.*\S)\s*(?:` + alternation(spec.BoundaryTags) + `)\s*$`)
 	answeredRe   = regexp.MustCompile(`^\[[xX]\]\s*(.*)$`)
 	sourceTailRe = regexp.MustCompile(`^(.*\S)\s*\(([^()]*)\)\s*$`)
 	apiLineRe    = regexp.MustCompile(`\b(GET|POST|PUT|PATCH|DELETE)\s+/\S*`)
@@ -55,6 +55,15 @@ var (
 	threeDigitRe = regexp.MustCompile(`^\d{3}$`)
 	listMarkRe   = regexp.MustCompile(`^[-*]\s+`)
 )
+
+// alternation nối các chuỗi (đã quote) bằng "|" để dùng trong regex.
+func alternation(ss []string) string {
+	q := make([]string, len(ss))
+	for i, s := range ss {
+		q[i] = regexp.QuoteMeta(s)
+	}
+	return strings.Join(q, "|")
+}
 
 // lines tách theo \n, \r hoặc \r\n, không trả dòng rỗng cuối (như String.lines của Java).
 func lines(s string) []string {

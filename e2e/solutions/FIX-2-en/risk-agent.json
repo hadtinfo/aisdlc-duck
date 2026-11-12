@@ -1,0 +1,14 @@
+{
+  "inputsHash": "<replaced with the inputsHash of aisdlc risk inputs>",
+  "level": "low",
+  "matched": [],
+  "notMatched": [
+    {"rule": "G1", "reason": "Only fixes the rounding of the fee returned by GET /api/v1/fees; no money moves and no balance changes."},
+    {"rule": "G2", "reason": "Scope is internal/fee/** only, no migration."},
+    {"rule": "G3", "reason": "No change to authentication or authorization."},
+    {"rule": "G4", "reason": "No external calls and no new endpoint."},
+    {"rule": "E1", "reason": "Does not block transactions by limit."}
+  ],
+  "override": null,
+  "summary": "Fixes fee rounding in internal/fee: no rule matches, level low."
+}

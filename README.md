@@ -30,11 +30,13 @@ BRD ──▶ Design ──▶ Cases ──▶ Code step by step S1…Sn ──�
   gates (BRD and Review are always approved by hand).
 - **Web (optional):** a feature board, live view of the running agent, approving gates on the web, pausing the agent,
   sending instructions, accepting steps / allowing files from the browser.
+- **Languages:** English and Vietnamese. Each repo picks one with `locale: en|vi` in `aisdlc/config.yaml`
+  (`aisdlc setup --locale en`; no key means `vi`), and the CLI, hooks, templates, review card, eval report and the
+  agent's documents follow it. Each web user picks their own UI language (EN/VI switch). Details: section 2.3 of the
+  [user guide](docs/user-guide.md).
 
-> **Language note:** the CLI messages, slash-command prompts and web UI are currently in Vietnamese. The documentation
-> is in English. Contributions that add English localisation are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
-> Vietnamese documentation: [README.vi.md](README.vi.md), [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md),
-> [docs/van-hanh-web.md](docs/van-hanh-web.md).
+Vietnamese documentation: [README.vi.md](README.vi.md), [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md),
+[docs/van-hanh-web.md](docs/van-hanh-web.md).
 
 ## Components
 
@@ -45,7 +47,7 @@ BRD ──▶ Design ──▶ Cases ──▶ Code step by step S1…Sn ──�
 | `cmd/aisdlc-web` | Web server: API, embedded React UI, embedded goose migrations, user administration (`aisdlc-web user ...`) |
 | `internal/` | Shared logic: gates and artifact hashes, steps and scopes, BRD/design/case validators, review card, hook policy, risk, eval, harness, Ed25519 signed envelopes, web |
 | `plugin/` | Claude Code plugin: `/aisdlc:*` slash commands, hooks, the `aisdlc-reviewer` subagent, the `bin/aisdlc` launcher, `install.sh` |
-| `templates/` | Templates for `config.yaml`, `gitlab-ci.aisdlc.yml`, BRD, design and cases that `aisdlc setup` and `aisdlc init` copy out |
+| `templates/` | English (`templates/en/`) and Vietnamese (`templates/vi/`) templates for `config.yaml`, `gitlab-ci.aisdlc.yml`, BRD, design and cases that `aisdlc setup` and `aisdlc init` copy out |
 | `web/ui/` | React UI for the web server |
 | `e2e/` | End-to-end tests on the sample service `e2e/fixture-service` with solutions `e2e/solutions/PAY-1`, `FIX-2`, `FEE-3` |
 | `docs/` | Developer guide, web operations, specs and plans; `docs/legacy-java/` holds documents of the old Java version |
@@ -71,7 +73,7 @@ Playwright install.
    /plugin install aisdlc@aisdlc
    ```
 
-2. **Attach it to a service repo** (in its own MR): run `aisdlc setup` at the repo root, then check the `service` and
+2. **Attach it to a service repo** (in its own MR): run `aisdlc setup --locale en` (or `vi`) at the repo root, then check the `service` and
    `migrations` sections of `aisdlc/config.yaml` (main package, environment variable names, health check, goose
    directory). Details: section 2.2 of the [user guide](docs/user-guide.md).
 

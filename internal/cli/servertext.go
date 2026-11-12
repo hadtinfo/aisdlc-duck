@@ -1,11 +1,23 @@
 package cli
 
-import "aisdlc/internal/i18n"
+import (
+	"encoding/json"
 
-// webNotWeb là câu 409 của server khi repo không ở chế độ duyệt trên web (MsgNotWeb của internal/web/gates). Đây là
-// dữ liệu để so khớp, không phải chữ CLI tự in: server trả câu tiếng Việt này, hoặc bản tiếng Anh của nó trong catalog
-// khi server dịch theo Accept-Language.
-const webNotWeb = "Repo không ở chế độ duyệt trên web"
+	"aisdlc/internal/i18n"
+	"aisdlc/internal/snapshot"
+	"aisdlc/internal/webclient"
+)
 
-// isNotWeb: câu lỗi của server là "repo không ở chế độ duyệt trên web" (ở bất kỳ locale nào).
-func isNotWeb(e string) bool { return e == webNotWeb || e == i18n.EN.T(webNotWeb) }
+// isNotWeb: lỗi 409 của server là "repo không ở chế độ duyệt trên web". Server mới gửi mã NOT_WEB_MODE trong JSON
+// lỗi; server cũ chỉ có câu (tiếng Việt, hoặc bản tiếng Anh trong catalog khi dịch theo Accept-Language), nên câu là
+// đường lùi. msg là câu đã qua webError.
+func isNotWeb(r webclient.Response, msg string) bool {
+	var e struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(r.Body, &e) == nil && e.Code == snapshot.ErrCodeNotWebMode {
+		return true
+	}
+	notWeb := i18n.VI.T("Repo không ở chế độ duyệt trên web")
+	return msg == notWeb || msg == i18n.EN.T(notWeb)
+}

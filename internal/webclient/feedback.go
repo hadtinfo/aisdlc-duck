@@ -14,6 +14,7 @@ import (
 
 var (
 	// tiêu đề mục do gate.Service ghi theo locale của repo: nhận cả hai ngôn ngữ (repo có thể đổi locale giữa chừng)
+	// i18n:data regex đọc tiêu đề feedback.md của cả hai ngôn ngữ
 	feedbackHeader = regexp.MustCompile(`^## (\w+) — (trả lại|mở lại|rejected|reopened) (?:bởi|by) (.+) (?:lúc|at) (\S+)\s*$`)
 	// FeedbackMarker là dòng đánh dấu id feedback từ web (<!-- aisdlc-fb:<id> -->), không thuộc nội dung góp ý.
 	FeedbackMarker = regexp.MustCompile(`^<!-- aisdlc-fb:(\d+) -->\s*$`)
@@ -66,7 +67,7 @@ func LastFeedback(feedbackMd string, g gate.Gate) (Feedback, bool, error) {
 			}
 			at, by = t.UTC(), m[3]
 			kind = "REOPENED"
-			if m[2] == "trả lại" || m[2] == "rejected" {
+			if rejected := i18n.VI.T("trả lại"); m[2] == rejected || m[2] == i18n.EN.T(rejected) {
 				kind = "REJECTED"
 			}
 		}

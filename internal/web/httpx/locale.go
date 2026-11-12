@@ -76,6 +76,7 @@ func Tf(format string, args ...any) Text { return Text{key: format, args: append
 type Error struct {
 	Status int
 	Text   Text
+	Code   string // mã máy đọc ổn định, ghi ra JSON {"code": …} khi khác rỗng; không dịch
 }
 
 func (e *Error) Error() string { return e.Text.String() }
@@ -83,13 +84,22 @@ func (e *Error) Error() string { return e.Text.String() }
 // Err tạo lỗi nghiệp vụ với status và câu dịch được.
 func Err(status int, t Text) *Error { return &Error{Status: status, Text: t} }
 
-// Fail ghi lỗi theo locale của r: *Error → status + {"error": câu đã dịch}; *ApiError (DecodeJSON, giới hạn body…)
-// → status + câu tiếng Việt của nó đã dịch qua catalog; lỗi khác → WriteError (500 {"error":"internal"} và log).
+// ErrCode như Err, kèm mã máy đọc (client so mã thay vì so câu, câu đổi theo locale).
+func ErrCode(status int, code string, t Text) *Error {
+	return &Error{Status: status, Text: t, Code: code}
+}
+
+// Fail ghi lỗi theo locale của r: *Error → status + {"error": câu đã dịch} (thêm "code" khi có mã); *ApiError
+// (DecodeJSON, giới hạn body…) → status + câu tiếng Việt của nó đã dịch qua catalog; lỗi khác → WriteError (500 {"error":"internal"} và log).
 func Fail(w http.ResponseWriter, r *http.Request, err error) {
 	loc := LocaleFrom(r.Context())
 	var te *Error
 	if errors.As(err, &te) {
-		WriteJSON(w, te.Status, map[string]string{"error": te.Text.In(loc)})
+		body := map[string]string{"error": te.Text.In(loc)}
+		if te.Code != "" {
+			body["code"] = te.Code
+		}
+		WriteJSON(w, te.Status, body)
 		return
 	}
 	var ae *ApiError

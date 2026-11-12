@@ -112,3 +112,21 @@ func TestLimitBodyTooLargeLocalized(t *testing.T) {
 		}
 	}
 }
+
+func TestFailWritesStableCode(t *testing.T) {
+	h := httpx.Localize(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpx.Fail(w, r, httpx.ErrCode(409, "SOME_CODE", httpx.Tf("Thiếu %s", "repo")))
+	}))
+	for lang, want := range map[string]string{
+		"en": `{"code":"SOME_CODE","error":"Missing repo"}`,
+		"vi": `{"code":"SOME_CODE","error":"Thiếu repo"}`,
+	} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("Accept-Language", lang)
+		h.ServeHTTP(w, r)
+		if got := strings.TrimSpace(w.Body.String()); w.Code != 409 || got != want {
+			t.Errorf("Accept-Language %q: %d %s, muốn 409 %s", lang, w.Code, got, want)
+		}
+	}
+}

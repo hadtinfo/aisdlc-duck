@@ -27,6 +27,10 @@ BRD ──▶ Thiết kế ──▶ Case ──▶ Code từng bước S1…Sn 
   thống tự duyệt các cổng Thiết kế, Case và bước khi nộp sạch (BRD và Review luôn duyệt tay).
 - **Web (tùy chọn):** bảng theo dõi tính năng, xem agent chạy trực tiếp, duyệt cổng trên web, tạm dừng agent, gửi chỉ
   dẫn, accept bước / cho phép file từ trình duyệt.
+- **Ngôn ngữ:** tiếng Việt và tiếng Anh. Mỗi repo chọn một ngôn ngữ bằng `locale: vi|en` trong `aisdlc/config.yaml`
+  (`aisdlc setup --locale en`; thiếu khóa là `vi`), và CLI, hook, template, review card, báo cáo eval cùng tài liệu
+  agent viết đều theo đó. Mỗi người dùng web tự chọn ngôn ngữ giao diện (bộ chọn EN/VI). Chi tiết: mục 2.3 của
+  [hướng dẫn sử dụng](docs/huong-dan-su-dung.md).
 
 ## Thành phần
 
@@ -37,7 +41,7 @@ BRD ──▶ Thiết kế ──▶ Case ──▶ Code từng bước S1…Sn 
 | `cmd/aisdlc-web` | Server web: API, UI React nhúng, migration goose nhúng, quản trị user (`aisdlc-web user ...`) |
 | `internal/` | Logic dùng chung: cổng và hash artifact, bước và phạm vi, validator BRD/thiết kế/case, review card, chính sách hook, rủi ro, eval, harness, phong bì ký Ed25519, web |
 | `plugin/` | Plugin Claude Code: slash command `/aisdlc:*`, hook, subagent `aisdlc-reviewer`, launcher `bin/aisdlc`, `install.sh` |
-| `templates/` | Mẫu `config.yaml`, `gitlab-ci.aisdlc.yml`, BRD, thiết kế, case mà `aisdlc setup` và `aisdlc init` chép ra |
+| `templates/` | Mẫu tiếng Việt (`templates/vi/`) và tiếng Anh (`templates/en/`) cho `config.yaml`, `gitlab-ci.aisdlc.yml`, BRD, thiết kế, case mà `aisdlc setup` và `aisdlc init` chép ra |
 | `web/ui/` | UI React của web |
 | `e2e/` | Kiểm thử đầu-cuối trên dịch vụ mẫu `e2e/fixture-service` với lời giải `e2e/solutions/PAY-1`, `FIX-2`, `FEE-3` |
 | `docs/` | Hướng dẫn cho dev, vận hành web, spec và plan; `docs/legacy-java/` là tài liệu của bản cũ |
@@ -62,7 +66,7 @@ E2E cần thêm `jq`, `curl`, `script`, Node + npm và mạng cho lần cài Pla
    /plugin install aisdlc@aisdlc
    ```
 
-2. **Gắn vào repo dịch vụ** (một MR riêng): chạy `aisdlc setup` ở gốc repo, rồi kiểm mục `service` và `migrations`
+2. **Gắn vào repo dịch vụ** (một MR riêng): chạy `aisdlc setup` ở gốc repo (thêm `--locale en` cho repo tiếng Anh), rồi kiểm mục `service` và `migrations`
    trong `aisdlc/config.yaml` (package main, tên biến môi trường, health check, thư mục goose). Chi tiết: mục 2.2 của
    [hướng dẫn sử dụng](docs/huong-dan-su-dung.md).
 

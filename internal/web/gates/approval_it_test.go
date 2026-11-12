@@ -48,7 +48,7 @@ func TestRule1OnlyOwnerOrLeadMayApproveInWebMode(t *testing.T) {
 	// repo local: không duyệt trên web được
 	fx.exec(t, "UPDATE repo_settings SET approvals = 'local' WHERE repo_id = 'r/ap-1'")
 	local := f.approve(fx.ownerS, "DESIGN")
-	if local.Status != 409 || fx.errOf(t, local) != "Repo không ở chế độ duyệt trên web" {
+	if local.Status != 409 || fx.errOf(t, local) != "Repo không ở chế độ duyệt trên web" || local.JSON(t)["code"] != "NOT_WEB_MODE" {
 		t.Fatal(local.Status, local.Body)
 	}
 }

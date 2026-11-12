@@ -60,7 +60,8 @@ ci:
 	$(MAKE) check && $(MAKE) ui && $(MAKE) ui-test
 
 # E2E toàn bộ (cần Go, Docker, git, jq, curl, script, Node + npm): repo đầu (PAY-1 FULL, FIX-2 LITE, âm tính), web
-# (server Go + Postgres docker run, Playwright), flow, session. Log ở e2e/out/. Chạy lại liền nhiều lần được.
+# (server Go + Postgres docker run, Playwright), flow, session, en (FIX-2 LITE trên repo locale: en, UI web tiếng Anh).
+# Log ở e2e/out/. Chạy lại liền nhiều lần được.
 e2e:
 	bash e2e/run-e2e.sh
 

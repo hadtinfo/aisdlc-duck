@@ -27,6 +27,7 @@ To run without Docker: `make build-web` (builds the UI, then `bin/aisdlc-web`).
 | `AISDLC_SIGNING_KEY_FILE` | `/data/signing-key` | Ed25519 signing key file (PEM). Generated automatically if missing (mode 0600) |
 | `AISDLC_SIGNING_PREVIOUS_KEY_FILE` | empty | Previous signing key during key rotation: the server signs an endorsement of the new key with the old one so CLIs that pinned the old key switch over automatically |
 | `TZ` | `UTC` | Time zone for the daily purge (section 5) |
+| `AISDLC_LOCALE` | `vi` | Operator language (`vi` or `en`) of the server log, startup errors and the `aisdlc-web user ...` commands. It does not affect what users see: a browser session uses the user's saved choice, else `Accept-Language`; token requests (CLI/CI) use `Accept-Language`; default `vi` |
 
 `AISDLC_WEB_URL` and `AISDLC_WEB_TOKEN` belong to the CLI/CI, not the server.
 
@@ -52,6 +53,7 @@ postgres://aisdlc-db:5432/aisdlc?sslmode=require&pool_max_conns=20&pool_min_conn
 - Keep the password in `AISDLC_DB_PASSWORD` (from a secret), not in the URL.
 - **Migrations run automatically** at startup (goose, embedded in the binary) under a Postgres session advisory lock: replicas starting at the same time migrate one after another instead of racing. No separate migrate step is needed. If a migration fails the server does not start and the log names the failing file.
 - The `aisdlc-web user ...` command also migrates before running.
+- Migration `00002_user_locale.sql` adds the nullable column `users.locale` (`vi` or `en`; `NULL` = not chosen yet), which stores each user's UI language from the EN/VI switch (`PUT /api/me/locale`). Existing users keep `NULL` and see the UI in the language last picked in that browser, or else the browser's language, until they choose.
 
 ## 5. Purging old data
 

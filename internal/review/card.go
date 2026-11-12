@@ -377,16 +377,20 @@ func levelOrdinal(l Level) int {
 	return 3
 }
 
-// NewFlags là các cờ của cur có mã chưa có trong prev (so thẻ nộp lại). Cờ so theo Code: cùng mã mà chỉ đổi thông
-// điệp (ví dụ repo đổi locale) không phải cờ mới.
+// NewFlags là các cờ của cur chưa có trong prev (so thẻ nộp lại). Cờ so theo (Code, Level, Refs), không theo thông
+// điệp: cùng mã, cùng mức, cùng refs mà chỉ đổi chữ (ví dụ repo đổi locale) không phải cờ mới; cùng mã nhưng nâng mức
+// hoặc chỉ sang chỗ khác thì là cờ mới.
 func NewFlags(prev, cur []ReviewFlag) []ReviewFlag {
+	key := func(f ReviewFlag) string {
+		return f.Code + "\x00" + string(f.Level) + "\x00" + strings.Join(f.Refs, "\x00")
+	}
 	seen := map[string]bool{}
 	for _, f := range prev {
-		seen[f.Code] = true
+		seen[key(f)] = true
 	}
 	var out []ReviewFlag
 	for _, f := range cur {
-		if !seen[f.Code] {
+		if !seen[key(f)] {
 			out = append(out, f)
 		}
 	}

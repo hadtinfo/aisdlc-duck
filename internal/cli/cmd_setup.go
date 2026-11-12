@@ -44,7 +44,7 @@ func newSetupCmd(ctx *Context) *cobra.Command {
 		"Nơi duyệt cổng ghi vào aisdlc/config.yaml: web hoặc local. Mặc định web nếu máy đã"+
 			" `aisdlc web login`, ngược lại local.")
 	c.Flags().StringVar(&locale, "locale", "",
-		"Ngôn ngữ của template và tài liệu: vi hoặc en. Mặc định lấy AISDLC_LOCALE, không có thì vi.")
+		"Ngôn ngữ của template và tài liệu: vi hoặc en. Mặc định theo locale của repo (aisdlc/config.yaml); chưa có config thì AISDLC_LOCALE, không có thì vi.")
 	c.RunE = Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
 		return setup(ctx, preset, approvals, cmd.Flags().Changed("approvals"), locale, cmd.Flags().Changed("locale"))
 	})

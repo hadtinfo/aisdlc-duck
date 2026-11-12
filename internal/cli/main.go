@@ -65,8 +65,9 @@ func runWith(ctx *Context, extra []func(*Context) *cobra.Command, args ...string
 	ctx.withArgs(args)
 	loc, err := repoLocale(ctx)
 	if err != nil {
-		fmt.Fprintf(ctx.err, "Lỗi: %v\n", err)
-		return ExitUsage
+		// locale sai trong config: không chặn mọi lệnh (kể cả --version, hook fail-open); lệnh đọc config tự báo
+		// lỗi như mọi khóa sai khác (model.LoadRepoConfig).
+		loc = i18n.FromEnv(ctx.Env)
 	}
 	i18n.SetDefault(loc)
 	root := newRoot(ctx)

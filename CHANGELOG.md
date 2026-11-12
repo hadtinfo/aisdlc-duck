@@ -23,8 +23,11 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - Locale foundation (English/Vietnamese): the `locale` key (`vi` or `en`) in `aisdlc/config.yaml`, the
-  `AISDLC_LOCALE` environment variable (a wrong value is ignored) and `aisdlc setup --locale vi|en`. A repo without
-  the key stays Vietnamese, byte for byte.
+  `AISDLC_LOCALE` environment variable (a wrong value is ignored) and `aisdlc setup --locale vi|en`. Inside a repo
+  with `aisdlc/config.yaml` the language comes only from its `locale` key (missing or empty means `vi`; the
+  environment variable is ignored); `AISDLC_LOCALE` applies only outside such a repo. A repo without the key stays
+  Vietnamese, byte for byte. A wrong `locale` value is an error for commands that read the config but no longer
+  blocks `--version` or the fail-open hooks.
 - English templates (`templates/en/`) for `brd.md`, `design.md`, `design.yaml`, `cases.yaml`, `config.yaml`,
   `CLAUDE.md` and the CI job; `aisdlc init` uses the repo locale. The Vietnamese templates are unchanged except for
   the new `locale: vi` line in `config.yaml`.

@@ -38,9 +38,25 @@ func TestStatusLocaleFromConfig(t *testing.T) {
 	eq(t, i18n.Default(), i18n.EN)
 }
 
-func TestStatusLocaleFromEnvWhenKeyMissing(t *testing.T) {
+func TestStatusLocaleIgnoresEnvWhenKeyMissing(t *testing.T) {
 	r := localeRepo(t, "", map[string]string{"AISDLC_LOCALE": "en"})
 	eq(t, r.run("status"), 0)
+	eq(t, firstLine(r.out), "Locale: vi")
+}
+
+func TestStatusLocaleNullOrEmptyKeyIsVi(t *testing.T) {
+	for _, line := range []string{"locale:", `locale: ""`} {
+		r := localeRepo(t, line, map[string]string{"AISDLC_LOCALE": "en"})
+		eq(t, r.run("status"), 0)
+		eq(t, firstLine(r.out), "Locale: vi")
+	}
+}
+
+func TestStatusLocaleFromEnvOutsideRepo(t *testing.T) {
+	t.Cleanup(func() { i18n.SetDefault(i18n.VI) })
+	r := newTestRepo(t) // chưa setup: không có aisdlc/config.yaml
+	r.env = map[string]string{"AISDLC_LOCALE": "en"}
+	eq(t, r.run("status"), 2)
 	eq(t, firstLine(r.out), "Locale: en")
 }
 
@@ -61,8 +77,11 @@ func TestBadLocaleInConfigExits2(t *testing.T) {
 	r := localeRepo(t, "locale: fr", nil)
 	eq(t, r.run("status"), 2)
 	contains(t, r.err, "fr")
-	eq(t, r.run("hook", "pre-tool-use"), 2)
-	contains(t, r.err, "fr")
+	// hook fail-open (UserPromptSubmit, Stop) không thoát 2 chỉ vì locale sai
+	eq(t, r.run("hook", "user-prompt-submit") != 2, true)
+	eq(t, r.run("hook", "stop") != 2, true)
+	eq(t, r.run("--version"), 0)
+	contains(t, r.out, "aisdlc")
 }
 
 func TestBadValueElsewhereDoesNotFailLocaleStep(t *testing.T) {

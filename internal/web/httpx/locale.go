@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -32,42 +30,18 @@ func LocaleFrom(ctx context.Context) i18n.Locale {
 	return i18n.VI
 }
 
-// ParseAcceptLanguage đọc dịu header Accept-Language: xếp các tag theo q giảm dần (giữ thứ tự gốc khi bằng nhau), tag
-// đầu tiên có primary subtag vi hoặc en quyết định; không có tag nào như vậy (hay header thiếu/hỏng) thì vi.
-// CLI gửi đúng "vi" hoặc "en".
+// ParseAcceptLanguage đọc dịu header Accept-Language theo hợp đồng: chỉ xét tag ĐẦU TIÊN (bỏ qua q); primary subtag
+// là en thì en, còn lại (vi, ngôn ngữ khác, thiếu, hỏng) là vi. CLI gửi đúng "vi" hoặc "en". Cùng luật với
+// navigator.language của UI (en* → en).
 func ParseAcceptLanguage(h string) i18n.Locale {
-	type tag struct {
-		lang string
-		q    float64
+	first, _, _ := strings.Cut(h, ",")
+	tag, _, _ := strings.Cut(first, ";")
+	lang := strings.ToLower(strings.TrimSpace(tag))
+	if i := strings.IndexAny(lang, "-_"); i >= 0 {
+		lang = lang[:i]
 	}
-	var tags []tag
-	for _, part := range strings.Split(h, ",") {
-		fields := strings.Split(part, ";")
-		lang := strings.ToLower(strings.TrimSpace(fields[0]))
-		if i := strings.IndexAny(lang, "-_"); i >= 0 {
-			lang = lang[:i]
-		}
-		q := 1.0
-		for _, p := range fields[1:] {
-			k, v, ok := strings.Cut(strings.TrimSpace(p), "=")
-			if ok && strings.EqualFold(strings.TrimSpace(k), "q") {
-				if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
-					q = f
-				}
-			}
-		}
-		if lang != "" && q > 0 {
-			tags = append(tags, tag{lang, q})
-		}
-	}
-	sort.SliceStable(tags, func(i, j int) bool { return tags[i].q > tags[j].q })
-	for _, t := range tags {
-		switch t.lang {
-		case "en":
-			return i18n.EN
-		case "vi":
-			return i18n.VI
-		}
+	if lang == "en" {
+		return i18n.EN
 	}
 	return i18n.VI
 }

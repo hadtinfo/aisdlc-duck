@@ -18,10 +18,11 @@ func TestParseAcceptLanguage(t *testing.T) {
 		"EN-us":                    i18n.EN,
 		"en_GB":                    i18n.EN,
 		"vi-VN,vi;q=0.9,en;q=0.8":  i18n.VI,
-		"fr-FR,fr;q=0.9,en;q=0.8":  i18n.EN, // tag đầu tiên là vi|en quyết định
+		"fr-FR,fr;q=0.9,en;q=0.8":  i18n.VI, // chỉ tag đầu tiên quyết định
 		"fr, de":                   i18n.VI,
-		"vi;q=0.5, en;q=0.9":       i18n.EN, // theo q
-		"en;q=0, vi":               i18n.VI, // q=0 là không nhận
+		"vi;q=0.5, en;q=0.9":       i18n.VI, // bỏ qua q
+		"en;q=0.1, vi":             i18n.EN,
+		"en-US,en;q=0.9":           i18n.EN,
 		"*":                        i18n.VI,
 		";;;,,":                    i18n.VI,
 		"english":                  i18n.VI,

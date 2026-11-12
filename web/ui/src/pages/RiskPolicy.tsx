@@ -169,7 +169,8 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
           </nav>
           {stale && (
             <div className="rk-note warn" style={{ marginBottom: 16 }}>
-              <div className="grow">{t("rp.staleDraft", { base: draft!.baseVersion, live: view.version })}</div>
+              <div className="grow">{t("rp.staleOn")} <b>v{draft!.baseVersion}</b>{t("rp.staleLive")} <b>v{view.version}</b>.{" "}
+                {t("rp.staleRest", { live: view.version })}</div>
               <button type="button" className="ghost" onClick={() => rebase(view)}>{t("rp.continueOn", { v: view.version })}</button>
             </div>
           )}

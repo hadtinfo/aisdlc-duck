@@ -32,7 +32,7 @@ export function Assumptions({ items, section, storageKey, onChange }: {
                 </li>
               ))}
             </ul>
-            <p className="progress">{t("assume.seen")} <b>{done}/{items.length}</b></p>
+            <p className="progress">{t("assume.seenBefore")} <b>{done}/{items.length}</b> {t("assume.seenAfter")}</p>
           </>
         )}
     </section>

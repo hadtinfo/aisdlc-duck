@@ -118,10 +118,10 @@ function Panel({ title, src, children }: { title: string; src?: ReactNode; child
 }
 
 function DesignCard({ card, snap }: { card: ReviewCardData; snap: Snapshot }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const d = card.design;
-  const map = useMemo(() => stepMap(card), [card]);
-  const er = useMemo(() => (d ? erLayout(d.tables ?? []) : null), [d]);
+  const map = useMemo(() => stepMap(card), [card, locale]);
+  const er = useMemo(() => (d ? erLayout(d.tables ?? []) : null), [d, locale]);
   const createOnly = (card.flags ?? []).find((f) => f.code === "DB_CREATE_ONLY");
   const sql = dbFiles(snap);
   return (
@@ -240,7 +240,7 @@ function StepMain({ step, snap }: { step: StepData; snap: Snapshot }) {
             </dd>
             <dt>{t("step.casesPassed")}</dt>
             <dd>{check.casesPassed ?? 0}/{step.caseIds.length}
-              {(check.casesNotPassed?.length ?? 0) > 0 && <span className="pill bad">{t("step.notPassed", { list: check.casesNotPassed!.join(", ") })}</span>}</dd>
+              {(check.casesNotPassed?.length ?? 0) > 0 && <span className="pill bad">{t("rvw.notPassed", { list: check.casesNotPassed!.join(", ") })}</span>}</dd>
             {(check.outOfScope?.length ?? 0) > 0 && (
               <><dt>{t("tile.outOfScope")}</dt><dd>{check.outOfScope!.map((p) => <div key={p}><code>{p}</code></div>)}</dd></>
             )}
@@ -396,7 +396,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
           <span>{snap.repo.id} · {snap.repo.branch}</span>
           <span>{t("rvw.owner", { owner: detail.owner ?? "—" })}</span>
           <span>{t("rvw.synced", { ago: ago(detail.syncedAt, now) })}</span>
-          {detail.clockSkew && <span className="warn" title={t("card.clockSkew")}>{t("rvw.skew")}</span>}
+          {detail.clockSkew && <span className="warn" title={t("rvw.skewTitle")}>{t("rvw.skew")}</span>}
           {detail.approvalsMode === "web" && <span className="tag" title={t("rvw.webModeTitle")}>{t("rvw.webMode")}</span>}
           <Link to={featureHref(repoId, featureKey, true)}>{t("rvw.watchAgent")} →</Link>
         </div>

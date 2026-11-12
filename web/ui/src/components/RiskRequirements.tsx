@@ -74,7 +74,7 @@ export function RiskRequirements({ policy, base, onChange }: { policy: Policy; b
       <section className="box">
         <div className="rk-head"><h2>{t("rq.flowTitle")}</h2></div>
         <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-          <code>auto</code>: {t("rq.flowAuto")} <code>manual</code>: {t("rq.flowManual")}
+          <code>auto</code>: {t("rq.flowAuto")} <code>manual</code>: {t("rq.flowManual")}{" "}
           {t("rq.flowDefault")} <code>manual</code>. <b>{t("rq.reviewManual")}</b>.
         </p>
         <table className="grid rk-matrix">

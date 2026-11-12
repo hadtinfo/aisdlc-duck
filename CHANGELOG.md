@@ -33,8 +33,28 @@ All notable changes to this project are documented here. The format follows
   the new `locale: vi` line in `config.yaml`.
 - The BRD validator accepts English section headings (`Goal`, `In scope`, `Out of scope`, `Business rules`,
   `Acceptance criteria`, `Assumptions`, `Open questions`) as well as the Vietnamese ones.
-- `aisdlc status` prints a `Locale:` line. CLI messages, the web UI and the plugin are still Vietnamese; they are
-  translated in later waves.
+- `aisdlc status` always prints a `Locale: vi|en` first line, which the plugin prompts read.
+- CLI and hooks in the repo's language: command output, cobra help and usage errors, and hook messages, including
+  the block reasons the agent reads (the hook takes the locale of the repo in the `cwd` of its JSON input).
+  `aisdlc-harness` receives the locale through `AISDLC_LOCALE`.
+- Harness, eval, review card and risk in the repo's language: case messages, `eval/report.md` and eval messages,
+  risk policy messages, and the review card (flags and card text). The card has a `locale` field, written only for
+  `en`, so Vietnamese card JSON is unchanged; when a gate is resubmitted, flags are compared by code, level and refs, so
+  a message that changed only because the locale changed is not a new flag.
+- The CLI sends `Accept-Language: vi|en` (from the repo locale) on every web request, and the server answers API
+  errors in that language.
+- Web UI in English and Vietnamese, chosen per user: an EN/VI switch in the user menu and on the sign-in page. The
+  choice is stored in the new column `users.locale` (migration `00002_user_locale.sql`, `NULL` = not chosen), set
+  with `PUT /api/me/locale` and returned by `GET /api/me`; before signing in or choosing, the UI uses the browser's
+  saved choice, then `navigator.language` (`en*` → English). Server-generated text (inbox, API errors, auto-approval
+  labels) follows the viewer. Text already stored in the DB (import reasons, pending-action reasons) stays in
+  Vietnamese and is translated when displayed. The server log, startup errors and `aisdlc-web user ...` follow the
+  server's `AISDLC_LOCALE`.
+- Plugin prompts in English: the `/aisdlc:*` commands and the `aisdlc-reviewer` and `aisdlc-risk-classifier`
+  subagents tell the agent to read the `Locale:` line of `aisdlc status` and to write documents and reply to the dev
+  in that language; command descriptions are bilingual (`English / Tiếng Việt`).
+- Documentation: a "Language / Ngôn ngữ" section in `docs/user-guide.md` and `docs/huong-dan-su-dung.md`; the README
+  lists the supported languages; `docs/docs-check.sh` runs each guide on a `vi` repo and an `en` repo.
 - Project site on GitHub Pages (`site/`, English and Vietnamese) with a guided tour and screenshots, assembled by
   `make site` and published by the `Pages` workflow.
 - Subagent `aisdlc-risk-classifier` (read-only): decides which policy rules match a feature's documents, with verbatim

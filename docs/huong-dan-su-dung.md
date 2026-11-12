@@ -2,7 +2,9 @@
 
 > English: [user-guide.md](user-guide.md).
 
-Cập nhật: 2026-11-11
+Cập nhật: 2026-11-12
+
+AISDLC chạy bằng tiếng Việt hoặc tiếng Anh, chọn theo repo (mục 2.3). Output CLI trích trong hướng dẫn này lấy từ repo tiếng Việt (`vi`, mặc định); trong repo `en` các thông báo đó in bằng tiếng Anh.
 
 ## 1. AISDLC là gì
 
@@ -105,7 +107,7 @@ Lệnh tạo `aisdlc/config.yaml`, `aisdlc/risk-policy.yaml`, `aisdlc/gitlab-ci.
 
 Chế độ duyệt: mặc định `web` nếu máy chạy `setup` đã `aisdlc web login` (mục 6), ngược lại `local`. Chọn hẳn bằng `--approvals web` hoặc `--approvals local`. `config.yaml` đã có thì setup không đổi chế độ.
 
-Các khóa chính của `aisdlc/config.yaml` (mẫu đầy đủ, có chú thích: `templates/config.yaml`):
+Các khóa chính của `aisdlc/config.yaml` (mẫu đầy đủ, có chú thích: `templates/vi/config.yaml`; tiếng Anh: `templates/en/`):
 
 | Khóa | Mặc định | Ý nghĩa |
 | --- | --- | --- |
@@ -138,6 +140,27 @@ Sau đó kiểm dịch vụ đáp ứng hợp đồng với harness:
 5. Build và `go test` trên `unitTest.packages` phải chạy sạch ở gốc repo.
 
 Merge MR setup trước, rồi mới bật CI ở MR sau (mục 5). MR setup sửa `config.yaml` mà không thuộc tính năng nào, nên job eval sẽ đánh fail nó.
+
+### 2.3. Language / Ngôn ngữ
+
+AISDLC có tiếng Anh (`en`) và tiếng Việt (`vi`). Ngôn ngữ là thuộc tính của **repo**: mỗi team chọn một ngôn ngữ và dùng nó từ `setup` tới cổng Review. Riêng giao diện web thì mỗi người dùng tự chọn.
+
+**Chọn ngôn ngữ của repo.**
+
+- `locale: en` hoặc `locale: vi` trong `aisdlc/config.yaml` là nguồn duy nhất bên trong repo. Thiếu khóa (hoặc rỗng) nghĩa là `vi`, nên repo đang dùng không đổi gì. Giá trị khác là lỗi cấu hình, do các lệnh đọc config báo; `--version` vẫn chạy và hook vẫn chạy, nhưng hook PreToolUse chặn mọi thao tác sửa kèm lỗi cấu hình cho tới khi sửa giá trị (thao tác đọc vẫn được phép).
+- `aisdlc setup --locale en|vi` ghi template theo ngôn ngữ đó, kể cả dòng `locale:` của `config.yaml` mới. Không có `--locale` thì setup theo locale của repo, chưa có config thì theo `AISDLC_LOCALE`, không có thì `vi`. Nếu `config.yaml` đã có với locale khác, setup giữ nguyên, in cảnh báo và chỉ ghi file mới theo `--locale`. Muốn đổi ngôn ngữ của repo đang dùng thì tự sửa dòng `locale:`.
+- `AISDLC_LOCALE=en|vi` **chỉ có tác dụng ngoài repo** có `aisdlc/config.yaml` (ví dụ `aisdlc web login`, hoặc `setup` khi chưa có config). Trong repo như vậy biến này bị bỏ qua.
+- Dòng đầu của `aisdlc status` luôn là `Locale: vi` hoặc `Locale: en`. Các lệnh `/aisdlc:*` đọc dòng này, truyền nó cho subagent, rồi viết tài liệu và trả lời dev bằng ngôn ngữ đó. Trước `aisdlc init` chưa có tính năng đang làm nên `status` thoát mã 2, nhưng vẫn in dòng `Locale:` trước tiên.
+
+**Theo locale của repo:** thông báo và trợ giúp của CLI, thông báo của hook (kể cả lý do chặn mà agent đọc), output của harness và eval (`eval/report.md`), template mà `aisdlc init` chép ra (BRD, thiết kế, case), mục AISDLC trong `CLAUDE.md`, thông báo rủi ro, `feedback.md`, và review card (cờ và chữ trên thẻ; thẻ tạo trong repo `en` có `"locale": "en"`). CLI truyền locale xuống `aisdlc-harness` qua `AISDLC_LOCALE`.
+
+**Validator nhận cả hai ngôn ngữ.** Tiêu đề mục BRD/thiết kế (`Mục tiêu`/`Goal`, `Quy tắc nghiệp vụ`/`Business rules`, `Giả định`/`Assumptions`, `Câu hỏi mở`/`Open questions`, …), thẻ biên `[biên]`/`[boundary]` và nguồn giả định (`tự chọn`/`own choice`, `suy ra từ BRD`/`inferred from BRD`, `câu hỏi mở đã trả lời`/`answered open question`, `ngoài phạm vi`/`out of scope`) đều được nhận ở cả hai ngôn ngữ; thông báo "thiếu mục" dùng tiêu đề của repo. Đổi locale giữa chừng một tính năng thì được: file đã có không bị chuyển đổi và vẫn qua validator. Mã (mã lỗi, mã cờ, tên cổng, khóa JSON/YAML, nhãn verdict như `DAT`/`CAN_SUA`/`NGHIEM_TRONG`) không bao giờ dịch. Mô tả luật trong các mẫu chính sách rủi ro có sẵn viết bằng tiếng Việt; subagent rủi ro hiểu được ở cả hai ngôn ngữ, và bạn có thể viết lại bằng tiếng Anh trong `aisdlc/risk-policy.yaml` của mình.
+
+**Theo người xem (web).** Giao diện web có bộ chọn EN/VI trong menu người dùng và trên trang đăng nhập. Lựa chọn lưu theo người dùng trên server (`users.locale`, đặt bằng `PUT /api/me/locale`, trả về trong `GET /api/me`). Trước khi đăng nhập, hoặc khi người dùng chưa chọn, UI dùng lựa chọn đã lưu trong trình duyệt, rồi ngôn ngữ trình duyệt (`en*` → tiếng Anh, còn lại → tiếng Việt). Chữ do server sinh (inbox, lỗi API) theo ngôn ngữ của người xem. Nội dung do CLI tạo (review card, `eval/report.md`) giữ ngôn ngữ của repo.
+
+**CLI → web.** Mọi request từ CLI mang `Accept-Language: vi` hoặc `en` theo locale của repo, nên lỗi web hiện trong terminal theo ngôn ngữ của repo. Phía server, phiên trình duyệt dùng lựa chọn đã lưu của người dùng, không có thì theo `Accept-Language`; request bằng token (CLI/CI) luôn theo `Accept-Language`, kể cả khi người dùng của token đã chọn ngôn ngữ; mặc định là `vi`.
+
+**Chữ server đã lưu** (ví dụ lý do import, lý do của lệnh chờ) vẫn lưu tiếng Việt như cũ và được dịch khi hiển thị, nên cả dòng lưu từ trước cũng hiện theo ngôn ngữ của người xem.
 
 ## 3. Làm một tính năng
 
@@ -199,7 +222,7 @@ Mỗi session Claude Code nhớ tính năng riêng của mình: hook SessionStar
 
 **FULL** (mặc định): BRD → Thiết kế → Case → Code từng bước → Review, như mục 3. Ví dụ trọn vẹn ở mục 3.4.
 
-**LITE** (`--lite`): cho sửa lỗi hoặc thay đổi nhỏ, không đổi DB hay API. Bỏ BRD và thiết kế; còn ba cổng CASES → code → REVIEW. `cases.yaml` tự khai `scope`, `budget` (và `invariants` khi repo có chính sách rủi ro) và có đúng một bước `S1`. Mẫu: `templates/cases.lite.yaml`; ví dụ thật: `e2e/solutions/FIX-2/cases.yaml`.
+**LITE** (`--lite`): cho sửa lỗi hoặc thay đổi nhỏ, không đổi DB hay API. Bỏ BRD và thiết kế; còn ba cổng CASES → code → REVIEW. `cases.yaml` tự khai `scope`, `budget` (và `invariants` khi repo có chính sách rủi ro) và có đúng một bước `S1`. Mẫu: `templates/vi/cases.lite.yaml`; ví dụ thật: `e2e/solutions/FIX-2/cases.yaml`.
 
 ```bash
 # chạy-được
@@ -349,7 +372,7 @@ aisdlc policy show
 
 ### 3.6. Viết `cases.yaml`
 
-Một case gồm `given` (SQL dọn và nạp dữ liệu, tên stub), `when` (một request HTTP), `then` (status, body, DB, message). Mẫu đầy đủ: `templates/cases.full.yaml`. Ví dụ thật trong repo: `e2e/solutions/PAY-1` (luồng FULL: BRD, thiết kế, `cases.yaml`, code từng bước), `e2e/solutions/FIX-2` (LITE: `cases.yaml` và code) và `e2e/solutions/FEE-3` (BRD, thiết kế, `cases.yaml`).
+Một case gồm `given` (SQL dọn và nạp dữ liệu, tên stub), `when` (một request HTTP), `then` (status, body, DB, message). Mẫu đầy đủ: `templates/vi/cases.full.yaml`. Ví dụ thật trong repo: `e2e/solutions/PAY-1` (luồng FULL: BRD, thiết kế, `cases.yaml`, code từng bước), `e2e/solutions/FIX-2` (LITE: `cases.yaml` và code) và `e2e/solutions/FEE-3` (BRD, thiết kế, `cases.yaml`).
 
 ```yaml
 reset_sql: ["DELETE FROM account"]
@@ -738,6 +761,6 @@ Các giới hạn khác:
 | `aisdlc web status` / `aisdlc web push` | Kiểm hàng đợi gửi web / gửi bù |
 | `aisdlc eval [--ci --base <ref>]` | Chạy eval (cần Docker) |
 
-Mọi lệnh theo tính năng nhận `--feature <KEY>` (`-f`). `aisdlc help <lệnh>` hoặc `aisdlc <lệnh> --help` in trợ giúp tiếng Việt.
+Mọi lệnh theo tính năng nhận `--feature <KEY>` (`-f`). `aisdlc help <lệnh>` hoặc `aisdlc <lệnh> --help` in trợ giúp theo ngôn ngữ của repo (mục 2.3).
 
 Vận hành server web: [van-hanh-web.md](van-hanh-web.md).

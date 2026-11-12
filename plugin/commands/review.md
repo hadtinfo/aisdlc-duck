@@ -1,13 +1,13 @@
 ---
-description: Eval, review độc lập bằng subagent và nộp cổng review
+description: Eval, independent subagent review and submit the review gate / Eval, review độc lập bằng subagent và nộp cổng review
 argument-hint: ""
 ---
-Thực hiện theo thứ tự, `<KEY>` là Jira key của tính năng đang làm (xem `aisdlc status`).
+Do these in order; `<KEY>` is the Jira key of the current feature (see `aisdlc status`). The first line of `aisdlc status` is `Locale: vi|en`: reply to the dev in that language (`vi` = Vietnamese, `en` = English).
 
-1. Chạy `aisdlc eval`. Nếu không đạt, báo dev và dừng.
-2. Dùng `aisdlc/features/<KEY>/eval/diff-by-step.md` do `aisdlc eval` vừa sinh (đã kèm patch), không tạo lại.
-3. Gọi subagent `aisdlc-reviewer` (agent `aisdlc:aisdlc-reviewer`) với **chỉ** các đường dẫn: `brd.md` (nếu có), `design.md`, `design.yaml`, `cases.yaml` trong `aisdlc/features/<KEY>/` và `eval/diff-by-step.md`. Không tóm tắt quá trình code, không kể lý do vì sao code như vậy.
-4. Ghi JSON subagent trả về, nguyên văn (bỏ rào ``` nếu subagent bọc JSON trong khối code, chỉ giữ JSON thuần), vào `aisdlc/features/<KEY>/review-agent.json` (cùng thư mục với brd.md, không phải eval/).
-5. Chạy `aisdlc submit review`. Nếu báo JSON không hợp lệ, gọi lại subagent và ghi lại.
-6. **Dừng.** Nói với dev: "Trước khi duyệt, `aisdlc review review` in review card (cờ đỏ, giả định, tóm tắt). Dev duyệt bằng `aisdlc approve review` ở terminal riêng."
-   Nếu `aisdlc status` báo "Duyệt trong Claude Code: bật", nhắc thêm: "hoặc gõ `/aisdlc:approve review` để duyệt ngay trong Claude Code (hiện hộp xác nhận), hoặc duyệt trên web". Không tự duyệt khi dev chưa yêu cầu trong cuộc trò chuyện này.
+1. Run `aisdlc eval`. If it fails, tell the dev and stop.
+2. Use `aisdlc/features/<KEY>/eval/diff-by-step.md` that `aisdlc eval` just generated (patches included); do not regenerate it.
+3. Call the subagent `aisdlc-reviewer` (agent `aisdlc:aisdlc-reviewer`) with **only** the paths `brd.md` (if present), `design.md`, `design.yaml`, `cases.yaml` in `aisdlc/features/<KEY>/` and `eval/diff-by-step.md`, plus the `Locale:` line. Do not summarize how the code was written or why.
+4. Write the JSON it returns, verbatim (strip the ``` fence if the subagent wrapped the JSON in a code block, keep only plain JSON), to `aisdlc/features/<KEY>/review-agent.json` (same folder as brd.md, not eval/).
+5. Run `aisdlc submit review`. If it reports invalid JSON, call the subagent again and rewrite the file.
+6. **Stop.** Tell the dev: "Before approving, `aisdlc review review` prints the review card (red flags, assumptions, summary). Approve with `aisdlc approve review` in a separate terminal."
+   If `aisdlc status` shows approval inside Claude Code as on (`Approval inside Claude Code: on` / `Duyệt trong Claude Code: bật`), add: "or type `/aisdlc:approve review` to approve inside Claude Code (shows a confirmation box), or approve on the web". Never approve unless the dev asked for it in this conversation.

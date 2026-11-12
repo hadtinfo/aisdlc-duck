@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"aisdlc/internal/i18n"
 )
 
 var missing = []byte("<missing>")
@@ -59,7 +61,7 @@ func Contents(repoRoot string, files []string) ([]Content, error) {
 			}
 		case os.IsNotExist(err):
 		default:
-			return nil, fmt.Errorf("Không đọc được %s: %v", f, err)
+			return nil, fmt.Errorf(i18n.T("Không đọc được %s: %v"), f, err)
 		}
 		out = append(out, Content{Path: filepath.ToSlash(rel), Data: data})
 	}

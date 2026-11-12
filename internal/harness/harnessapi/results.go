@@ -41,7 +41,7 @@ func ReadResults(outDir string, selected []spec.CaseSpec) []run.CaseResult {
 			}
 			for _, c := range selected {
 				if !seen[c.ID] {
-					out = append(out, run.CaseResult{ID: c.ID, Step: c.Step, Outcome: run.CaseOutcomeError, Message: NoRow})
+					out = append(out, run.CaseResult{ID: c.ID, Step: c.Step, Outcome: run.CaseOutcomeError, Message: NoRowText()})
 				}
 			}
 			return out
@@ -49,7 +49,7 @@ func ReadResults(outDir string, selected []spec.CaseSpec) []run.CaseResult {
 	}
 	out := make([]run.CaseResult, 0, len(selected))
 	for _, c := range selected {
-		out = append(out, run.CaseResult{ID: c.ID, Step: c.Step, Outcome: run.CaseOutcomeError, Message: NoResults})
+		out = append(out, run.CaseResult{ID: c.ID, Step: c.Step, Outcome: run.CaseOutcomeError, Message: NoResultsText()})
 	}
 	return out
 }

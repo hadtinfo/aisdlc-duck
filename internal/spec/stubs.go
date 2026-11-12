@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"aisdlc/internal/i18n"
 )
 
 // Tập con khóa WireMock mà stub server của AISDLC hỗ trợ.
@@ -24,16 +26,16 @@ func sortedKeys(m map[string]any) []string {
 }
 
 func unsupported(id, path string, allowed []string) Finding {
-	return Finding{"CASES_STUB_UNSUPPORTED", fmt.Sprintf("Stub %s: khóa \"%s\" không được hỗ trợ (chỉ hỗ trợ %s).",
+	return Finding{"CASES_STUB_UNSUPPORTED", fmt.Sprintf(i18n.T("Stub %s: khóa \"%s\" không được hỗ trợ (chỉ hỗ trợ %s)."),
 		id, path, strings.Join(allowed, ", "))}
 }
 
 func wrongShape(id, path, shape string) Finding {
-	return Finding{"CASES_STUB_UNSUPPORTED", fmt.Sprintf("Stub %s: \"%s\" sai cấu trúc (%s).", id, path, shape)}
+	return Finding{"CASES_STUB_UNSUPPORTED", fmt.Sprintf(i18n.T("Stub %s: \"%s\" sai cấu trúc (%s)."), id, path, shape)}
 }
 
 func matcherShape(allowed []string) string {
-	return "đúng một khóa trong " + strings.Join(allowed, ", ")
+	return i18n.Tf("đúng một khóa trong %s", strings.Join(allowed, ", "))
 }
 
 // checkExactlyOne kiểm một matcher: map có đúng một khóa thuộc allowed.
@@ -69,7 +71,7 @@ func validateStub(st StubSpec) []Finding {
 		case "queryParameters", "headers":
 			m, ok := st.Request[k].(map[string]any)
 			if !ok {
-				out = append(out, wrongShape(st.ID, path, "map tên → matcher, mỗi matcher "+matcherShape(stubMatcherKeys)))
+				out = append(out, wrongShape(st.ID, path, i18n.Tf("map tên → matcher, mỗi matcher %s", matcherShape(stubMatcherKeys))))
 				continue
 			}
 			for _, name := range sortedKeys(m) {
@@ -78,7 +80,7 @@ func validateStub(st StubSpec) []Finding {
 		case "bodyPatterns":
 			list, ok := st.Request[k].([]any)
 			if !ok {
-				out = append(out, wrongShape(st.ID, path, "danh sách, mỗi phần tử "+matcherShape(stubBodyKeys)))
+				out = append(out, wrongShape(st.ID, path, i18n.Tf("danh sách, mỗi phần tử %s", matcherShape(stubBodyKeys))))
 				continue
 			}
 			for i, el := range list {

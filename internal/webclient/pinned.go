@@ -3,16 +3,23 @@ package webclient
 import (
 	"crypto/ed25519"
 	"encoding/base64"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/snapshot"
 )
 
 // ErrKeyChanged: khóa server đổi mà không được khóa đang ghim ký xác nhận.
-var ErrKeyChanged = errors.New("Khóa server đã đổi mà không được khóa cũ ký")
+var ErrKeyChanged error = keyChangedError{}
+
+// keyChangedError là lỗi so sánh được (errors.Is), thông điệp theo locale lúc in.
+type keyChangedError struct{}
+
+func (keyChangedError) Error() string {
+	return i18n.T("Khóa server đã đổi mà không được khóa cũ ký")
+}
 
 // PinnedKeyFile là file khóa công khai đã ghim của server web: <home>/.config/aisdlc/web-pubkey (base64 X.509 và
 // xuống dòng, quyền 0600).

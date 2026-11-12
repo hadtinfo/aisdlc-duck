@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/spec"
 )
 
@@ -51,8 +52,11 @@ type Fb struct {
 	Comment string    `json:"comment"`
 }
 
-// ToJSON serialize; danh sách nil thành [].
-func (g FeatureGateState) ToJSON() ([]byte, error) {
+// ToJSON serialize; danh sách nil thành []. Lỗi theo locale mặc định của tiến trình (CLI); web dùng ToJSONIn.
+func (g FeatureGateState) ToJSON() ([]byte, error) { return g.ToJSONIn(i18n.Default()) }
+
+// ToJSONIn như ToJSON, lỗi theo locale loc (web không dùng locale toàn cục).
+func (g FeatureGateState) ToJSONIn(loc i18n.Locale) ([]byte, error) {
 	if g.Submissions == nil {
 		g.Submissions = []Sub{}
 	}
@@ -72,7 +76,7 @@ func (g FeatureGateState) ToJSON() ([]byte, error) {
 	g.Submissions = subs
 	b, err := json.Marshal(g)
 	if err != nil {
-		return nil, fmt.Errorf("Không serialize được trạng thái cổng: %v", err)
+		return nil, fmt.Errorf(loc.T("Không serialize được trạng thái cổng: %v"), err)
 	}
 	return b, nil
 }
@@ -81,10 +85,10 @@ func (g FeatureGateState) ToJSON() ([]byte, error) {
 func FeatureGateStateFromJSON(b []byte) (FeatureGateState, error) {
 	var g *FeatureGateState
 	if err := json.Unmarshal(b, &g); err != nil {
-		return FeatureGateState{}, fmt.Errorf("Trạng thái cổng hỏng: %v", err)
+		return FeatureGateState{}, fmt.Errorf(i18n.T("Trạng thái cổng hỏng: %v"), err)
 	}
 	if g == nil {
-		return FeatureGateState{}, fmt.Errorf("Trạng thái cổng hỏng: rỗng")
+		return FeatureGateState{}, fmt.Errorf("%s", i18n.T("Trạng thái cổng hỏng: rỗng"))
 	}
 	return *g, nil
 }

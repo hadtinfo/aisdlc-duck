@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -13,6 +12,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/spec"
 )
 
@@ -109,7 +109,7 @@ func createTopics(ctx context.Context, brokers string, topics []string) error {
 	}
 	for _, r := range res {
 		if r.Err != nil && !errors.Is(r.Err, kerr.TopicAlreadyExists) {
-			return fmt.Errorf("tạo topic %s: %w", r.Topic, r.Err)
+			return fmt.Errorf(i18n.T("tạo topic %s: %w"), r.Topic, r.Err)
 		}
 	}
 	return nil
@@ -159,7 +159,7 @@ func (p *KafkaProbe) Reset(ctx context.Context) error {
 	}
 	cl, err := kgo.NewClient(
 		kgo.SeedBrokers(p.brokers),
-		kgo.ClientID(fmt.Sprintf("aisdlc-probe-%016x", rand.Uint64())),
+		kgo.ClientID(fmt.Sprintf("aisdlc-probe-%016x", uint64(randUint32())<<32|uint64(randUint32()))),
 		kgo.ConsumePartitions(ends.KOffsets()),
 	)
 	if err != nil {
@@ -193,7 +193,7 @@ func (p *KafkaProbe) endOffsets(ctx context.Context) (kadm.ListedOffsets, error)
 			}
 			switch {
 			case len(missing) > 0:
-				last = fmt.Errorf("chưa có topic %v", missing)
+				last = fmt.Errorf(i18n.T("chưa có topic %v"), missing)
 				if res, cerr := ad.CreateTopics(wctx, -1, -1, nil, missing...); cerr != nil {
 					last = cerr
 				} else if rerr := res.Error(); rerr != nil && !errors.Is(rerr, kerr.TopicAlreadyExists) {
@@ -211,7 +211,7 @@ func (p *KafkaProbe) endOffsets(ctx context.Context) (kadm.ListedOffsets, error)
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-wctx.Done():
-			return nil, fmt.Errorf("Kafka: không được gán partition cho %v trong %ds: %v", p.topics, int(kafkaAssignTimeout.Seconds()), last)
+			return nil, fmt.Errorf(i18n.T("Kafka: không được gán partition cho %v trong %ds: %v"), p.topics, int(kafkaAssignTimeout.Seconds()), last)
 		case <-time.After(kafkaPoll):
 		}
 	}
@@ -223,7 +223,7 @@ func (p *KafkaProbe) Check(ctx context.Context, want []spec.MessageExpect) (stri
 		return "", nil
 	}
 	if p.cl == nil {
-		return "", errors.New("Kafka: chưa reset probe hoặc topic không nằm trong bộ case")
+		return "", errors.New(i18n.T("Kafka: chưa reset probe hoặc topic không nằm trong bộ case"))
 	}
 	deadline := time.Now().Add(p.timeout)
 	for {
@@ -254,7 +254,7 @@ func (p *KafkaProbe) firstUnmatched(want []spec.MessageExpect) string {
 			}
 		}
 		if !found {
-			return fmt.Sprintf("messages[%d]: không nhận được message khớp trên topic %s trong %ds", i, e.Topic, int(p.timeout.Seconds()))
+			return i18n.Tf("messages[%d]: không nhận được message khớp trên topic %s trong %ds", i, e.Topic, int(p.timeout.Seconds()))
 		}
 	}
 	return ""

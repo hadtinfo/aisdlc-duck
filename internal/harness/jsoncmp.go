@@ -3,9 +3,12 @@ package harness
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
+
+	"aisdlc/internal/i18n"
 )
 
 // CompareJSON so expected (giá trị kiểu JSON) với actual (văn bản) theo kiểu khớp lỏng: object kỳ vọng là tập con,
@@ -13,12 +16,12 @@ import (
 func CompareJSON(expected any, actual string) string {
 	want, err := normalize(expected)
 	if err != nil {
-		return "kỳ vọng không phải JSON hợp lệ: " + err.Error()
+		return i18n.Tf("kỳ vọng không phải JSON hợp lệ: %s", err.Error())
 	}
 	got, err := decode([]byte(actual))
 	if _, isObj := want.(map[string]any); isObj || isArr(want) {
 		if err != nil {
-			return "phản hồi không phải JSON hợp lệ: " + abbreviate(actual)
+			return i18n.Tf("phản hồi không phải JSON hợp lệ: %s", abbreviate(actual))
 		}
 		return diff("$", want, got)
 	}
@@ -28,7 +31,7 @@ func CompareJSON(expected any, actual string) string {
 	if equalScalar(want, got) {
 		return ""
 	}
-	return fmt.Sprintf("mong đợi %s, nhận %s", render(want), abbreviate(actual))
+	return i18n.Tf("mong đợi %s, nhận %s", render(want), abbreviate(actual))
 }
 
 func isArr(v any) bool { _, ok := v.([]any); return ok }
@@ -49,7 +52,7 @@ func decode(b []byte) (any, error) {
 		return nil, err
 	}
 	if d.More() {
-		return nil, fmt.Errorf("dữ liệu thừa sau JSON")
+		return nil, errors.New(i18n.T("dữ liệu thừa sau JSON"))
 	}
 	return v, nil
 }
@@ -100,7 +103,7 @@ func diff(path string, want, got any) string {
 		for _, k := range keys {
 			gv, present := g[k]
 			if !present {
-				return fmt.Sprintf("%s.%s: mong đợi %s, không có trường", path, k, render(w[k]))
+				return i18n.Tf("%s.%s: mong đợi %s, không có trường", path, k, render(w[k]))
 			}
 			if m := diff(path+"."+k, w[k], gv); m != "" {
 				return m
@@ -113,7 +116,7 @@ func diff(path string, want, got any) string {
 			return mismatch(path, want, got)
 		}
 		if len(w) != len(g) {
-			return fmt.Sprintf("%s: mong đợi mảng dài %d, nhận %d", path, len(w), len(g))
+			return i18n.Tf("%s: mong đợi mảng dài %d, nhận %d", path, len(w), len(g))
 		}
 		return diffArray(path, w, g)
 	}
@@ -124,7 +127,7 @@ func diff(path string, want, got any) string {
 }
 
 func mismatch(path string, want, got any) string {
-	return fmt.Sprintf("%s: mong đợi %s, nhận %s", path, render(want), abbreviate(render(got)))
+	return i18n.Tf("%s: mong đợi %s, nhận %s", path, render(want), abbreviate(render(got)))
 }
 
 // diffArray ghép từng phần tử kỳ vọng với một phần tử thực tế khác nhau (không xét thứ tự).
@@ -155,7 +158,7 @@ func diffArray(path string, want, got []any) string {
 			if m := diff(fmt.Sprintf("%s[%d]", path, i), want[i], got[i]); m != "" {
 				return m
 			}
-			return fmt.Sprintf("%s[%d]: không có phần tử nào khớp %s", path, i, render(want[i]))
+			return i18n.Tf("%s[%d]: không có phần tử nào khớp %s", path, i, render(want[i]))
 		}
 	}
 	return ""

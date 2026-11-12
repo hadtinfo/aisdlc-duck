@@ -16,6 +16,7 @@ import (
 	"aisdlc/internal/eval"
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/lang/langs"
 	"aisdlc/internal/model"
@@ -34,6 +35,18 @@ type Abort struct {
 
 func (a *Abort) Error() string { return a.Msg }
 
+// noConsoleMsg: lệnh chỉ dev chạy mà không có console thật.
+func noConsoleMsg() string {
+	return i18n.T("Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). " +
+		"Agent không được chạy lệnh này.")
+}
+
+// noGrantMsg: lệnh chỉ dev chạy trong Claude Code mà không có phiếu xác nhận còn hạn.
+func noGrantMsg() string {
+	return i18n.T("Lệnh này chỉ dev được chạy. Không có xác nhận trong Claude Code (hoặc đã hết" +
+		" hạn). Chạy lại lệnh duyệt một mình, không kèm lệnh khác.")
+}
+
 // abort tạo *Abort dưới dạng error.
 func abort(code int, msg string) error { return &Abort{Code: code, Msg: msg} }
 
@@ -41,10 +54,6 @@ func abort(code int, msg string) error { return &Abort{Code: code, Msg: msg} }
 func asAbort(err error, a **Abort) bool { return errors.As(err, a) }
 
 const (
-	noConsoleMsg = "Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). " +
-		"Agent không được chạy lệnh này."
-	noGrantMsg = "Lệnh này chỉ dev được chạy. Không có xác nhận trong Claude Code (hoặc đã hết" +
-		" hạn). Chạy lại lệnh duyệt một mình, không kèm lệnh khác."
 	maxSessionID = 100
 )
 
@@ -295,8 +304,7 @@ func (c *Context) RepoRoot() (string, error) {
 	if r, ok := FindRepo(c.cwd); ok {
 		return r, nil
 	}
-	return "", abort(2, "Không tìm thấy aisdlc/config.yaml ở thư mục này hoặc thư mục cha. "+
-		"Chạy `aisdlc setup` ở gốc repo trước.")
+	return "", abort(2, i18n.T("Không tìm thấy aisdlc/config.yaml ở thư mục này hoặc thư mục cha. Chạy `aisdlc setup` ở gốc repo trước."))
 }
 
 // Feature là tính năng của lệnh theo FeatureResolver; nhiều tính năng đang mở thì hỏi (có console) hoặc exit 2.
@@ -319,14 +327,12 @@ func (c *Context) Feature() (*Feature, error) {
 			return nil, err
 		}
 	default:
-		return nil, abort(2, "Chưa có tính năng đang làm. Chạy `aisdlc init <KEY>` hoặc `aisdlc use <KEY>`.")
+		return nil, abort(2, i18n.T("Chưa có tính năng đang làm. Chạy `aisdlc init <KEY>` hoặc `aisdlc use <KEY>`."))
 	}
 	paths := model.FeaturePaths{RepoRoot: root, Key: key}
 	if !exists(paths.Meta()) {
 		// .aisdlc/active và gắn kết session không theo git: sau khi đổi nhánh có thể trỏ tới tính năng không có ở đây
-		return nil, abort(2, "Tính năng đang làm "+key.String()+" không có trên nhánh này (thiếu "+
-			paths.Rel(paths.Meta())+"). Chạy `aisdlc use <KEY>` (tính năng đã có) hoặc "+
-			"`aisdlc init <KEY>` (tính năng mới).")
+		return nil, abort(2, i18n.Tf("Tính năng đang làm %s không có trên nhánh này (thiếu %s). Chạy `aisdlc use <KEY>` (tính năng đã có) hoặc `aisdlc init <KEY>` (tính năng mới).", key.String(), paths.Rel(paths.Meta())))
 	}
 	c.FeatureBanner(key)
 	return c.FeatureAt(root, key)
@@ -335,16 +341,16 @@ func (c *Context) Feature() (*Feature, error) {
 func (c *Context) choose(open []model.FeatureKey) (model.FeatureKey, error) {
 	names := make([]string, len(open))
 	var prompt strings.Builder
-	prompt.WriteString("Có nhiều tính năng đang mở:\n")
+	prompt.WriteString(i18n.T("Có nhiều tính năng đang mở:\n"))
 	for i, k := range open {
 		names[i] = k.String()
 		fmt.Fprintf(&prompt, "  %d) %s\n", i+1, k)
 	}
-	prompt.WriteString("Chọn số (hoặc dùng --feature <KEY>): ")
+	prompt.WriteString(i18n.T("Chọn số (hoặc dùng --feature <KEY>): "))
 	list := strings.Join(names, ", ")
 	typed, ok := c.console.ReadLine(prompt.String())
 	if !ok {
-		return "", abort(2, "Có nhiều tính năng đang mở: "+list+". Ghi rõ --feature <KEY>.")
+		return "", abort(2, i18n.Tf("Có nhiều tính năng đang mở: %s. Ghi rõ --feature <KEY>.", list))
 	}
 	t := strings.TrimSpace(typed)
 	if n, err := strconv.Atoi(t); err == nil && n >= 1 && n <= len(open) {
@@ -355,7 +361,7 @@ func (c *Context) choose(open []model.FeatureKey) (model.FeatureKey, error) {
 			return k, nil
 		}
 	}
-	return "", abort(2, "Lựa chọn không hợp lệ: \""+t+"\" (các tính năng đang mở: "+list+").")
+	return "", abort(2, i18n.Tf("Lựa chọn không hợp lệ: \"%s\" (các tính năng đang mở: %s).", t, list))
 }
 
 // FeatureBanner in [KEY] làm dòng đầu stdout, một lần mỗi lệnh (không in ở hook và lệnh --json).
@@ -371,7 +377,7 @@ func (c *Context) FeatureBanner(key model.FeatureKey) {
 func (c *Context) FeatureAt(root string, key model.FeatureKey) (*Feature, error) {
 	paths := model.FeaturePaths{RepoRoot: root, Key: key}
 	if !exists(paths.Meta()) {
-		return nil, abort(2, "Không có tính năng "+key.String()+" (thiếu "+paths.Rel(paths.Meta())+").")
+		return nil, abort(2, i18n.Tf("Không có tính năng %s (thiếu %s).", key.String(), paths.Rel(paths.Meta())))
 	}
 	cfg, err := model.LoadRepoConfig(root)
 	if err != nil {
@@ -402,8 +408,7 @@ func (c *Context) FeatureAt(root string, key model.FeatureKey) (*Feature, error)
 	if c.network && f.Mode == gate.ModeWeb {
 		if !f.Web.LoggedIn() {
 			if !c.loginWarned {
-				c.Eprintln("Chưa `aisdlc web login` trên máy này: repo duyệt trên web, mọi cổng coi như" +
-					" chưa duyệt.")
+				c.Eprintln(i18n.T("Chưa `aisdlc web login` trên máy này: repo duyệt trên web, mọi cổng coi như chưa duyệt."))
 			}
 			c.loginWarned = true
 		} else if _, err := refreshGates(c, f); err != nil {
@@ -429,7 +434,7 @@ func GateOf(name string) (gate.Gate, error) {
 	case gate.BRD, gate.DESIGN, gate.CASES, gate.REVIEW:
 		return g, nil
 	}
-	return "", abort(2, "Cổng không hợp lệ: "+name+" (brd, design, cases, review).")
+	return "", abort(2, i18n.Tf("Cổng không hợp lệ: %s (brd, design, cases, review).", name))
 }
 
 // ConfirmDev xác nhận lệnh chỉ dev. Có console thật: bắt gõ lại đúng feature key (kênh terminal, trả ""). Không có
@@ -437,9 +442,9 @@ func GateOf(name string) (gate.Gate, error) {
 // Claude Code — khớp session, tính năng, lệnh (action) và gateHash ("" với lệnh không gắn cổng) — rồi trả
 // gate.ApprovalClaudeCode. action rỗng (Verb == ""): lệnh không có phiếu, chỉ console thật. Không thì exit 3.
 func (c *Context) ConfirmDev(key model.FeatureKey, action policy.DevCommand, gateHash string) (string, error) {
-	if typed, ok := c.console.ReadLine("Gõ lại feature key (" + key.String() + ") để xác nhận: "); ok {
+	if typed, ok := c.console.ReadLine(i18n.Tf("Gõ lại feature key (%s) để xác nhận: ", key.String())); ok {
 		if t := strings.TrimSpace(typed); t != key.String() {
-			return "", abort(3, "Key không khớp ("+t+" ≠ "+key.String()+"); đã hủy.")
+			return "", abort(3, i18n.Tf("Key không khớp (%s ≠ %s); đã hủy.", t, key.String()))
 		}
 		return "", nil
 	}
@@ -448,22 +453,22 @@ func (c *Context) ConfirmDev(key model.FeatureKey, action policy.DevCommand, gat
 		return "", err
 	}
 	if action.Verb == "" {
-		return "", abort(3, noConsoleMsg)
+		return "", abort(3, noConsoleMsg())
 	}
 	cfg, err := model.LoadRepoConfig(root)
 	if err != nil {
 		return "", err
 	}
 	if !model.ReadSessionApprove(c.std, c.Git(root), cfg).Enabled {
-		return "", abort(3, noConsoleMsg)
+		return "", abort(3, noConsoleMsg())
 	}
 	session, ok := c.ResolveSession()
 	if !ok {
-		return "", abort(3, noGrantMsg)
+		return "", abort(3, noGrantMsg())
 	}
 	granted, err := policy.ConsumeGrant(root, session, key.String(), action.GrantKey(), gateHash, c.now())
 	if err != nil || !granted { // như DevGrants.consume: mọi lỗi là không có phiếu
-		return "", abort(3, noGrantMsg)
+		return "", abort(3, noGrantMsg())
 	}
 	return gate.ApprovalClaudeCode, nil
 }
@@ -472,7 +477,7 @@ func (c *Context) ConfirmDev(key model.FeatureKey, action policy.DevCommand, gat
 func (c *Context) AskDev(prompt string) (string, error) {
 	typed, ok := c.console.ReadLine(prompt)
 	if !ok {
-		return "", abort(3, noConsoleMsg)
+		return "", abort(3, noConsoleMsg())
 	}
 	return strings.TrimSpace(typed), nil
 }
@@ -481,11 +486,11 @@ func (c *Context) AskDev(prompt string) (string, error) {
 func (c *Context) AskDevSecret(prompt string) (string, error) {
 	sc, ok := c.console.(SecretConsole)
 	if !ok {
-		return "", abort(3, noConsoleMsg)
+		return "", abort(3, noConsoleMsg())
 	}
 	typed, ok := sc.ReadSecret(prompt)
 	if !ok {
-		return "", abort(3, noConsoleMsg)
+		return "", abort(3, noConsoleMsg())
 	}
 	return strings.TrimSpace(typed), nil
 }
@@ -497,11 +502,10 @@ func (c *Context) Approver(root string) (string, error) {
 		name = ""
 	}
 	if strings.TrimSpace(name) == "" {
-		return "", abort(2, "Chưa cấu hình `git config user.name`; cần tên người duyệt.")
+		return "", abort(2, i18n.T("Chưa cấu hình `git config user.name`; cần tên người duyệt."))
 	}
 	if strings.EqualFold(strings.TrimSpace(name), gate.ApprovalAuto) {
-		return "", abort(2, "Tên người duyệt \""+strings.TrimSpace(name)+"\" (git config user.name) dành cho bản"+
-			" tự duyệt; đặt tên thật của dev bằng `git config user.name \"<tên>\"` rồi chạy lại.")
+		return "", abort(2, i18n.Tf("Tên người duyệt \"%s\" (git config user.name) dành cho bản tự duyệt; đặt tên thật của dev bằng `git config user.name \"<tên>\"` rồi chạy lại.", strings.TrimSpace(name)))
 	}
 	return name, nil
 }
@@ -672,14 +676,14 @@ func (f *Feature) applyControl() {
 		if r.Status == step.PendingApplied {
 			f.snapshotPending = true
 			if c.network && a != nil {
-				what := "đã accept " + a.Step
+				what := i18n.Tf("đã accept %s", a.Step)
 				if a.Kind == "ALLOW_SCOPE" {
-					what = "đã cho phép " + a.Path + " ở " + a.Step
+					what = i18n.Tf("đã cho phép %s ở %s", a.Path, a.Step)
 				}
-				c.Eprintln("Áp dụng từ web: " + what + " (" + a.By + ")")
+				c.Eprintln(i18n.Tf("Áp dụng từ web: %s (%s)", what, a.By))
 			}
 		} else if c.network {
-			c.Eprintln("Lệnh từ web hết hiệu lực: " + r.Reason)
+			c.Eprintln(i18n.Tf("Lệnh từ web hết hiệu lực: %s", r.Reason))
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 )
 
 // SessionApproveSetting cho biết có được duyệt cổng trong Claude Code hay không.
@@ -16,7 +17,7 @@ type SessionApproveSetting struct {
 // để agent không tự bật bằng cách sửa config cục bộ. Không bao giờ trả lỗi.
 func ReadSessionApprove(ctx context.Context, git *gitx.Repo, working RepoConfig) SessionApproveSetting {
 	ref := working.BaseRef
-	unreadable := SessionApproveSetting{Reason: "không đọc được aisdlc/config.yaml ở " + ref}
+	unreadable := SessionApproveSetting{Reason: i18n.Tf("không đọc được aisdlc/config.yaml ở %s", ref)}
 	yaml, ok, err := git.FileAt(ctx, ref, "aisdlc/config.yaml")
 	if err != nil || !ok {
 		return unreadable
@@ -26,7 +27,7 @@ func ReadSessionApprove(ctx context.Context, git *gitx.Repo, working RepoConfig)
 		return unreadable
 	}
 	if c.SessionApprove {
-		return SessionApproveSetting{Enabled: true, Reason: "theo " + ref}
+		return SessionApproveSetting{Enabled: true, Reason: i18n.Tf("theo %s", ref)}
 	}
-	return SessionApproveSetting{Reason: "chưa bật ở " + ref}
+	return SessionApproveSetting{Reason: i18n.Tf("chưa bật ở %s", ref)}
 }

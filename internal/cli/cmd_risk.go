@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/policy"
 	"aisdlc/internal/risk"
 )
@@ -15,7 +16,7 @@ import (
 func newRiskCmd(ctx *Context) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "risk",
-		Short: "Đầu vào cho subagent xếp loại rủi ro; chỉ dev: đổi mức hoặc áp kết quả xếp loại mới (cần console thật).",
+		Short: i18n.T("Đầu vào cho subagent xếp loại rủi ro; chỉ dev: đổi mức hoặc áp kết quả xếp loại mới (cần console thật)."),
 		Args:  cobra.NoArgs,
 		RunE: Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
 			fmt.Fprint(ctx.Err(), cmd.UsageString())
@@ -26,11 +27,11 @@ func newRiskCmd(ctx *Context) *cobra.Command {
 	var reason string
 	set := &cobra.Command{
 		Use:   "set <level>",
-		Short: "Chỉ dev: đặt mức rủi ro tay (hạ mức phải có --reason).",
+		Short: i18n.T("Chỉ dev: đặt mức rủi ro tay (hạ mức phải có --reason)."),
 		Args:  cobra.ExactArgs(1),
 	}
 	setFo.AddTo(set)
-	set.Flags().StringVar(&reason, "reason", "", "Lý do (bắt buộc khi hạ mức)")
+	set.Flags().StringVar(&reason, "reason", "", i18n.T("Lý do (bắt buộc khi hạ mức)"))
 	set.RunE = Wrap(ctx, func(_ *cobra.Command, args []string) (int, error) {
 		f, err := setFo.Feature(ctx)
 		if err != nil {
@@ -40,7 +41,7 @@ func newRiskCmd(ctx *Context) *cobra.Command {
 	})
 	reclassify := &cobra.Command{
 		Use:   "reclassify",
-		Short: "Chỉ dev: áp kết quả risk-agent.json mới (sau khi chạy lại subagent), bỏ mức đổi tay.",
+		Short: i18n.T("Chỉ dev: áp kết quả risk-agent.json mới (sau khi chạy lại subagent), bỏ mức đổi tay."),
 		Args:  cobra.NoArgs,
 	}
 	reFo.AddTo(reclassify)
@@ -52,10 +53,9 @@ func newRiskCmd(ctx *Context) *cobra.Command {
 		return riskReclassify(ctx, f)
 	})
 	inputs := &cobra.Command{
-		Use: "inputs",
-		Short: "In các file đầu vào và inputsHash cho subagent aisdlc-risk-classifier; ghi chính sách có hiệu lực ra " +
-			EffectivePolicyFile + ".",
-		Args: cobra.NoArgs,
+		Use:   "inputs",
+		Short: i18n.Tf("In các file đầu vào và inputsHash cho subagent aisdlc-risk-classifier; ghi chính sách có hiệu lực ra %s.", EffectivePolicyFile),
+		Args:  cobra.NoArgs,
 	}
 	inFo.AddTo(inputs)
 	inputs.RunE = Wrap(ctx, func(*cobra.Command, []string) (int, error) {
@@ -104,15 +104,14 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 		return 0, err
 	}
 	if !ok {
-		return 0, abort(2, "Chưa có "+f.Paths.Rel(f.Paths.Risk())+": mức rủi ro được tính lúc `aisdlc submit"+
-			" design` (luồng lite: `aisdlc submit cases`).")
+		return 0, abort(2, i18n.Tf("Chưa có %s: mức rủi ro được tính lúc `aisdlc submit design` (luồng lite: `aisdlc submit cases`).", f.Paths.Rel(f.Paths.Risk())))
 	}
 	approved, err := f.Gates.HasApproval(gate.CASES)
 	if err != nil {
 		return 0, err
 	}
 	if approved {
-		return 0, abort(2, "Cổng Case đã duyệt; mở lại cổng Case trước (`aisdlc reopen cases`).")
+		return 0, abort(2, i18n.T("Cổng Case đã duyệt; mở lại cổng Case trước (`aisdlc reopen cases`)."))
 	}
 	l, err := FeaturePolicy(ctx, f, false)
 	if err != nil {
@@ -121,27 +120,25 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 	p := l.Policy
 	// mức và yêu cầu chỉ so được trong cùng bản chính sách đã dùng để phân loại
 	if cur.Policy.Hash == "" || p.Hash() != cur.Policy.Hash {
-		return 0, abort(2, "Chính sách đã đổi kể từ lần phân loại; chạy `aisdlc risk reclassify` trước.")
+		return 0, abort(2, i18n.T("Chính sách đã đổi kể từ lần phân loại; chạy `aisdlc risk reclassify` trước."))
 	}
 	scale := "[" + strings.Join(p.Levels, ", ") + "]"
 	if p.Rank(cur.Level) < 0 {
-		return 0, abort(2, "Mức hiện tại '"+cur.Level+"' trong "+f.Paths.Rel(f.Paths.Risk())+
-			" không có trong thang "+scale+"; chạy `aisdlc risk reclassify`.")
+		return 0, abort(2, i18n.Tf("Mức hiện tại '%s' trong %s không có trong thang %s; chạy `aisdlc risk reclassify`.", cur.Level, f.Paths.Rel(f.Paths.Risk()), scale))
 	}
 	if p.Rank(level) < 0 {
-		return 0, abort(2, "Mức '"+level+"' không có trong thang "+scale+".")
+		return 0, abort(2, i18n.Tf("Mức '%s' không có trong thang %s.", level, scale))
 	}
 	if level == cur.Level {
-		return 0, abort(2, "Mức rủi ro hiện tại đã là "+level+".")
+		return 0, abort(2, i18n.Tf("Mức rủi ro hiện tại đã là %s.", level))
 	}
 	why := strings.TrimSpace(reason)
 	lower := p.Rank(level) < p.Rank(cur.Level)
 	if lower && p.Classification.DevLower == risk.DevLowerNever {
-		return 0, abort(2, "Chính sách không cho dev hạ mức (classification.devLower: never).")
+		return 0, abort(2, i18n.T("Chính sách không cho dev hạ mức (classification.devLower: never)."))
 	}
 	if lower && why == "" {
-		return 0, abort(2, "Hạ mức ("+cur.Level+" → "+level+") phải ghi lý do: `aisdlc risk set "+level+
-			" --reason \"…\"`.")
+		return 0, abort(2, i18n.Tf("Hạ mức (%s → %s) phải ghi lý do: `aisdlc risk set %s --reason \"…\"`.", cur.Level, level, level))
 	}
 	cases, err := f.Gates.State(gate.CASES)
 	if err != nil {
@@ -149,9 +146,9 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 	}
 	note := ""
 	if why != "" {
-		note = " (lý do: " + why + ")"
+		note = i18n.Tf(" (lý do: %s)", why)
 	}
-	ctx.Println("Đổi mức rủi ro " + f.Key.String() + ": " + cur.Level + " → " + level + note)
+	ctx.Println(i18n.Tf("Đổi mức rủi ro %s: %s → %s%s", f.Key.String(), cur.Level, level, note))
 	if err := confirmRisk(ctx, f, invocation(ctx, "risk set")); err != nil {
 		return 0, err
 	}
@@ -164,7 +161,7 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 		return 0, err
 	}
 	riskOverridden(ctx, f, cur.Level, level, why)
-	ctx.Println("Đã đổi mức rủi ro thành " + level + ". Yêu cầu: " + requirementIDs(next.Requirements))
+	ctx.Println(i18n.Tf("Đã đổi mức rủi ro thành %s. Yêu cầu: %s", level, requirementIDs(next.Requirements)))
 	if _, err := supersede(ctx, f, &p, cur.Level, next); err != nil {
 		return 0, err
 	}
@@ -175,7 +172,7 @@ func riskSet(ctx *Context, f *Feature, level, reason string) (int, error) {
 				return 0, err
 			}
 		}
-		ctx.Println("Cổng Case cần nộp lại: `aisdlc submit cases`.")
+		ctx.Println(i18n.T("Cổng Case cần nộp lại: `aisdlc submit cases`."))
 	}
 	ctx.AfterCommand(f, "risk set "+level)
 	return ExitOK, nil
@@ -212,24 +209,23 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 		return 0, err
 	}
 	if len(findings) > 0 {
-		ctx.Println(fmt.Sprintf("Không áp được kết quả xếp loại (%d phát hiện):", len(findings)))
+		ctx.Println(fmt.Sprintf(i18n.T("Không áp được kết quả xếp loại (%d phát hiện):"), len(findings)))
 		for _, x := range findings {
 			ctx.Println("  - " + x.Code + ": " + x.Message)
 		}
 		return ExitFindings, nil
 	}
-	from, versions, reqs := "(chưa có)", "", ""
+	from, versions, reqs := i18n.T("(chưa có)"), "", ""
 	if hasOld {
 		from = old.Level
 		versions = "v" + strconv.Itoa(old.Policy.Version) + " → "
 		reqs = requirementIDs(old.Requirements) + " → "
 	}
-	ctx.Println("Tính lại mức rủi ro " + f.Key.String() + ": " + from + " → " + fresh.Level + " (chính sách " +
-		versions + "v" + strconv.Itoa(p.Version) + ")")
-	ctx.Println("Yêu cầu: " + reqs + requirementIDs(fresh.Requirements))
-	ctx.Println("Rule khớp: " + matchedText(fresh.Matched))
+	ctx.Println(i18n.Tf("Tính lại mức rủi ro %s: %s → %s (chính sách %sv%s)", f.Key.String(), from, fresh.Level, versions, strconv.Itoa(p.Version)))
+	ctx.Println(i18n.Tf("Yêu cầu: %s%s", reqs, requirementIDs(fresh.Requirements)))
+	ctx.Println(i18n.Tf("Rule khớp: %s", matchedText(fresh.Matched)))
 	if reopen {
-		ctx.Println("Cổng Case đã duyệt: lệnh này sẽ mở lại cổng Case.")
+		ctx.Println(i18n.T("Cổng Case đã duyệt: lệnh này sẽ mở lại cổng Case."))
 	}
 	if err := confirmRisk(ctx, f, policy.DevCommand{}); err != nil { // reclassify: chỉ console thật (không có phiếu)
 		return 0, err
@@ -253,9 +249,9 @@ func riskReclassify(ctx *Context, f *Feature) (int, error) {
 	riskClassified(ctx, f, fresh)
 	tail := ""
 	if reopen {
-		tail = " Cổng Case đã mở lại; nộp lại `aisdlc submit cases`."
+		tail = i18n.T(" Cổng Case đã mở lại; nộp lại `aisdlc submit cases`.")
 	}
-	ctx.Println("Đã ghi " + f.Paths.Rel(f.Paths.Risk()) + " mức " + fresh.Level + "." + tail)
+	ctx.Println(i18n.Tf("Đã ghi %s mức %s.%s", f.Paths.Rel(f.Paths.Risk()), fresh.Level, tail))
 	before := ""
 	if hasOld {
 		before = old.Level
@@ -281,14 +277,14 @@ func confirmRisk(ctx *Context, f *Feature, action policy.DevCommand) error {
 func readRisk(f *Feature) (risk.RiskFile, bool, error) {
 	r, ok, err := risk.ReadRiskFile(f.Paths.Risk())
 	if err != nil {
-		return risk.RiskFile{}, false, abort(2, "Không đọc được "+f.Paths.Rel(f.Paths.Risk())+": "+err.Error())
+		return risk.RiskFile{}, false, abort(2, i18n.Tf("Không đọc được %s: %s", f.Paths.Rel(f.Paths.Risk()), err.Error()))
 	}
 	return r, ok, nil
 }
 
 func requirementIDs(reqs []risk.Requirement) string {
 	if len(reqs) == 0 {
-		return "(không có)"
+		return i18n.T("(không có)")
 	}
 	ids := make([]string, len(reqs))
 	for i, q := range reqs {

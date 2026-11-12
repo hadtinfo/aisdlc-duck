@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/spec"
 )
 
@@ -57,7 +58,7 @@ func (s *Server) Register(all []spec.StubSpec, ids []string) error {
 			}
 		}
 		if !found {
-			return fmt.Errorf("stub không tồn tại: %s", id)
+			return fmt.Errorf(i18n.T("stub không tồn tại: %s"), id)
 		}
 	}
 	s.mu.Lock()
@@ -79,7 +80,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
-	b, _ := json.Marshal(map[string]string{"error": "không có stub khớp", "method": r.Method, "url": r.URL.RequestURI()})
+	b, _ := json.Marshal(map[string]string{"error": i18n.T("không có stub khớp"), "method": r.Method, "url": r.URL.RequestURI()})
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- JSON lỗi của stub (json.Marshal), Content-Type JSON, không phải HTML
 	_, _ = w.Write(b)
 }
 
@@ -206,5 +208,6 @@ func respond(w http.ResponseWriter, resp map[string]any) {
 		status = n
 	}
 	w.WriteHeader(status)
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- JSON stub do dev khai báo trả cho dịch vụ đang test, Content-Type JSON, không phải HTML
 	_, _ = w.Write(out)
 }

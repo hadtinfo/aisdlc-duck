@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"aisdlc/internal/i18n"
 )
 
 // Port BoardRulesTest (16).
@@ -26,7 +28,7 @@ var runnable = regexp.MustCompile(`^aisdlc [a-z]+( [a-z]+)?( [A-Za-z0-9._/@+=:,-
 func commands(t *testing.T, snap any) string {
 	t.Helper()
 	var cmds []string
-	for _, i := range Inbox(snap) {
+	for _, i := range Inbox(snap, i18n.VI) {
 		if !runnable.MatchString(i.Command) {
 			t.Fatalf("command không chạy được: %q", i.Command)
 		}
@@ -40,17 +42,17 @@ func has(list []string, s string) bool { return slices.Contains(list, s) }
 func TestFullBrdAwaitingApproval(t *testing.T) {
 	s := js(t, `{"feature":{"flow":"FULL"},"gates":[{"gate":"BRD","state":"AWAITING_APPROVAL"}]}`)
 	if Column(s) != "BRD" || !has(Labels(s), "AWAITING_APPROVAL:BRD") || !strings.Contains(commands(t, s), "aisdlc approve brd") {
-		t.Fatal(Column(s), Labels(s), Inbox(s))
+		t.Fatal(Column(s), Labels(s), Inbox(s, i18n.VI))
 	}
 }
 
 func TestFullDesignStale(t *testing.T) {
 	s := js(t, `{"feature":{"flow":"FULL"},"gates":[{"gate":"BRD","state":"APPROVED"},{"gate":"DESIGN","state":"STALE"}]}`)
 	if Column(s) != "DESIGN" || !has(Labels(s), "STALE:DESIGN") || !strings.Contains(commands(t, s), "aisdlc submit design") {
-		t.Fatal(Column(s), Labels(s), Inbox(s))
+		t.Fatal(Column(s), Labels(s), Inbox(s, i18n.VI))
 	}
-	if !slices.ContainsFunc(Inbox(s), func(i InboxItem) bool { return strings.Contains(i.Text, "`aisdlc reopen design`") }) {
-		t.Fatal(Inbox(s))
+	if !slices.ContainsFunc(Inbox(s, i18n.VI), func(i InboxItem) bool { return strings.Contains(i.Text, "`aisdlc reopen design`") }) {
+		t.Fatal(Inbox(s, i18n.VI))
 	}
 }
 
@@ -92,7 +94,7 @@ func TestAwaitingDevStepWithOutOfScope(t *testing.T) {
 		t.Fatal(Labels(s))
 	}
 	commands(t, s)
-	items := Inbox(s)
+	items := Inbox(s, i18n.VI)
 	var cmds []string
 	for _, i := range items {
 		cmds = append(cmds, i.Command)
@@ -116,7 +118,7 @@ func TestOutOfScopeOneAllowCommandPerFileQuotedWhenNeeded(t *testing.T) {
 	   "outOfScope":["docs/a b.txt","src/x/Y.java"]}}}]}`)
 	commands(t, s)
 	var got []string
-	for _, i := range Inbox(s) {
+	for _, i := range Inbox(s, i18n.VI) {
 		if i.Kind == "OUT_OF_SCOPE" {
 			got = append(got, i.Command)
 		}
@@ -148,7 +150,7 @@ func TestCasesNotPassedOnAwaitingStepSuggestsRestart(t *testing.T) {
 	 "steps":[{"id":"S1","status":"AWAITING_DEV","record":{"check":{"casesNotPassed":["C2"],"outOfScope":[]}}}]}`)
 	commands(t, s)
 	var hit []InboxItem
-	for _, i := range Inbox(s) {
+	for _, i := range Inbox(s, i18n.VI) {
 		if i.Kind == "CASES_NOT_PASSED" {
 			hit = append(hit, i)
 		}
@@ -165,8 +167,8 @@ func TestCasesNotPassedAndCodingLabel(t *testing.T) {
 	if !has(Labels(s), "CODING:S1") {
 		t.Fatal(Labels(s))
 	}
-	if !slices.ContainsFunc(Inbox(s), func(i InboxItem) bool { return i.Kind == "CASES_NOT_PASSED" && strings.Contains(i.Text, "C2") }) {
-		t.Fatal(Inbox(s))
+	if !slices.ContainsFunc(Inbox(s, i18n.VI), func(i InboxItem) bool { return i.Kind == "CASES_NOT_PASSED" && strings.Contains(i.Text, "C2") }) {
+		t.Fatal(Inbox(s, i18n.VI))
 	}
 }
 
@@ -183,7 +185,7 @@ func TestFindingsAndOpenQuestions(t *testing.T) {
 	s := js(t, `{"feature":{"flow":"FULL"},"gates":[{"gate":"BRD","state":"SUBMITTED_WITH_FINDINGS"}],
 	 "openQuestions":[{"gate":"BRD","text":"Hạn mức?"}]}`)
 	if !has(Labels(s), "FINDINGS:BRD") || !strings.Contains(commands(t, s), "aisdlc submit brd") {
-		t.Fatal(Labels(s), Inbox(s))
+		t.Fatal(Labels(s), Inbox(s, i18n.VI))
 	}
 }
 
@@ -191,7 +193,7 @@ func TestEvalFailAndSummary(t *testing.T) {
 	s := js(t, `{"feature":{"flow":"LITE"},"gates":[],"eval":{"passed":false,"hard":[
 	 {"id":"CASES_ALL_PASS","passed":false,"detail":"5/6 case pass"}]}}`)
 	if !has(Labels(s), "EVAL_FAIL") || !strings.Contains(commands(t, s), "aisdlc eval") {
-		t.Fatal(Labels(s), Inbox(s))
+		t.Fatal(Labels(s), Inbox(s, i18n.VI))
 	}
 	e := EvalSummaryOf(s)
 	if e == nil || e.Passed || e.CasesPassed == nil || *e.CasesPassed != 5 || e.CasesTotal == nil || *e.CasesTotal != 6 {

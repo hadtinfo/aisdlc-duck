@@ -23,13 +23,16 @@ import (
 	"aisdlc/internal/web/store"
 )
 
-// Câu lỗi nghiệp vụ (ControlService.java).
+// Câu lỗi nghiệp vụ (ControlService.java), dịch theo locale của request khi ghi ra.
+var (
+	MsgNotAllowed     = httpx.T("Chỉ chủ tính năng hoặc lead được điều khiển agent")
+	MsgBadInstruction = httpx.T("Chỉ dẫn phải từ 1 đến 2000 ký tự")
+	MsgStepChanged    = httpx.T("Bước đã đổi kể từ lúc bạn xem; tải lại trang")
+)
+
 const (
-	MsgNotAllowed     = "Chỉ chủ tính năng hoặc lead được điều khiển agent"
-	MsgBadInstruction = "Chỉ dẫn phải từ 1 đến 2000 ký tự"
-	MsgStepChanged    = "Bước đã đổi kể từ lúc bạn xem; tải lại trang"
-	MaxInstruction    = 2000
-	actionTTL         = 7 * 24 * time.Hour
+	MaxInstruction = 2000
+	actionTTL      = 7 * 24 * time.Hour
 )
 
 // Service là tạm dừng, chỉ dẫn, lệnh chờ áp dụng theo tính năng. Ghi: chủ tính năng hoặc lead, ở cả hai chế độ duyệt.
@@ -59,7 +62,7 @@ func (s *Service) publish(repo, feature string) {
 	}
 }
 
-func bad(msg string) error { return httpx.NewError(http.StatusBadRequest, msg) }
+func bad(msg httpx.Text) error { return httpx.Err(http.StatusBadRequest, msg) }
 
 // ---- view
 
@@ -138,6 +141,9 @@ func (s *Service) view(ctx context.Context, d querier, repo, feature string) (Vi
 		}
 		i.At = httpx.Instant(at)
 		i.DeliveredAt = instantPtr(del)
+		if i.Source == "feedback" {
+			i.Text = gates.LocalizeFeedback(i.Text, httpx.LocaleFrom(ctx))
+		}
 		v.Instructions = append(v.Instructions, i)
 	}
 	rows.Close()
@@ -161,6 +167,10 @@ func (s *Service) view(ctx context.Context, d querier, repo, feature string) (Vi
 		a.At = httpx.Instant(at)
 		a.ExpiresAt = httpx.Instant(exp)
 		a.ResolvedAt = instantPtr(res)
+		if a.Reason != nil { // lý do do CLI gửi lên, lưu nguyên văn: dịch được khi là câu trong catalog
+			r := httpx.LocaleFrom(ctx).T(*a.Reason)
+			a.Reason = &r
+		}
 		v.Actions = append(v.Actions, a)
 	}
 	rows.Close()
@@ -201,7 +211,7 @@ func (s *Service) inTx(ctx context.Context, p httpx.Principal, repo, feature str
 		err := tx.QueryRow(ctx, "SELECT snapshot::text, first_sender_login FROM features WHERE repo_id = $1 AND feature_key = $2",
 			repo, feature).Scan(&raw, &first)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return httpx.NewError(http.StatusNotFound, "Không tìm thấy tính năng")
+			return httpx.Err(http.StatusNotFound, httpx.T("Không tìm thấy tính năng"))
 		}
 		if err != nil {
 			return err
@@ -212,7 +222,7 @@ func (s *Service) inTx(ctx context.Context, p httpx.Principal, repo, feature str
 		}
 		owner := board.Owner(tree, emails, &first)
 		if !gates.IsOwnerOrLead(p, owner) {
-			return httpx.NewError(http.StatusForbidden, MsgNotAllowed)
+			return httpx.Err(http.StatusForbidden, MsgNotAllowed)
 		}
 		return fn(tx, tree, s.now())
 	})
@@ -288,15 +298,15 @@ func (s *Service) Instruct(ctx context.Context, p httpx.Principal, ip, repo, fea
 // Action thêm lệnh ACCEPT_STEP (kèm endTree trang đang hiện) hoặc ALLOW_SCOPE (kèm path). path nil = không có.
 func (s *Service) Action(ctx context.Context, p httpx.Principal, ip, repo, feature, kind, stepID string, path, seenEndTree *string) (ViewJSON, error) {
 	if kind != "ACCEPT_STEP" && kind != "ALLOW_SCOPE" {
-		return ViewJSON{}, bad("Loại lệnh không hợp lệ: " + kind)
+		return ViewJSON{}, bad(httpx.Tf("Loại lệnh không hợp lệ: %s", kind))
 	}
 	accept := kind == "ACCEPT_STEP"
 	if !accept && (path == nil || !step.ValidScopePath(*path)) {
-		return ViewJSON{}, bad("Đường dẫn không hợp lệ: cần đường dẫn file cụ thể, tương đối trong repo " +
-			"(không glob, '..', '\\', .aisdlc/), tối đa 500 ký tự")
+		return ViewJSON{}, bad(httpx.T("Đường dẫn không hợp lệ: cần đường dẫn file cụ thể, tương đối trong repo " +
+			"(không glob, '..', '\\', .aisdlc/), tối đa 500 ký tự"))
 	}
 	if accept && (seenEndTree == nil || strings.TrimSpace(*seenEndTree) == "") {
-		return ViewJSON{}, bad("Thiếu endTree của bước đang xem; tải lại trang")
+		return ViewJSON{}, bad(httpx.T("Thiếu endTree của bước đang xem; tải lại trang"))
 	}
 	err := s.inTx(ctx, p, repo, feature, func(tx pgx.Tx, tree any, now time.Time) error {
 		st := findStep(tree, stepID)
@@ -308,21 +318,21 @@ func (s *Service) Action(ctx context.Context, p httpx.Principal, ip, repo, featu
 		var storedPath *string
 		if accept {
 			if status != "AWAITING_DEV" {
-				return httpx.NewError(http.StatusConflict, "Bước "+stepID+" không ở trạng thái chờ accept (AWAITING_DEV)")
+				return httpx.Err(http.StatusConflict, httpx.Tf("Bước %s không ở trạng thái chờ accept (AWAITING_DEV)", stepID))
 			}
 			rec, _ := st["record"].(map[string]any)
 			t, _ := rec["endTree"].(string)
 			if t == "" {
-				return httpx.NewError(http.StatusConflict, "Bước "+stepID+" chưa có cây code kết thúc để accept")
+				return httpx.Err(http.StatusConflict, httpx.Tf("Bước %s chưa có cây code kết thúc để accept", stepID))
 			}
 			// dev accept đúng cây code đã xem: agent làm lại bước sau khi trang được tải thì từ chối
 			if t != *seenEndTree {
-				return httpx.NewError(http.StatusConflict, MsgStepChanged)
+				return httpx.Err(http.StatusConflict, MsgStepChanged)
 			}
 			endTree = &t
 		} else {
 			if status != "IN_PROGRESS" && status != "AWAITING_DEV" {
-				return httpx.NewError(http.StatusConflict, "Bước "+stepID+" không ở trạng thái đang làm hoặc chờ accept (IN_PROGRESS|AWAITING_DEV)")
+				return httpx.Err(http.StatusConflict, httpx.Tf("Bước %s không ở trạng thái đang làm hoặc chờ accept (IN_PROGRESS|AWAITING_DEV)", stepID))
 			}
 			storedPath = path
 		}

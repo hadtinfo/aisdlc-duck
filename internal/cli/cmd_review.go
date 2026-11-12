@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/review"
 	"aisdlc/internal/review/cardbuild"
 )
@@ -20,11 +21,11 @@ func newReviewCmd(ctx *Context) *cobra.Command {
 	var asJSON bool
 	c := &cobra.Command{
 		Use:   "review <gate>",
-		Short: "In review card của một cổng (cờ đỏ, giả định, tóm tắt); không đổi trạng thái.",
+		Short: i18n.T("In review card của một cổng (cờ đỏ, giả định, tóm tắt); không đổi trạng thái."),
 		Args:  cobra.ExactArgs(1),
 	}
 	fo.AddTo(c)
-	c.Flags().BoolVar(&asJSON, "json", false, "In JSON thay vì chữ")
+	c.Flags().BoolVar(&asJSON, "json", false, i18n.T("In JSON thay vì chữ"))
 	c.RunE = Wrap(ctx, func(_ *cobra.Command, args []string) (int, error) {
 		if asJSON {
 			ctx.WithoutBanner()
@@ -54,7 +55,7 @@ func newReviewCmd(ctx *Context) *cobra.Command {
 		if err != nil {
 			// không bao giờ in stack trace: một dòng lỗi là đủ
 			msg, _, _ := strings.Cut(err.Error(), "\n")
-			return 0, abort(1, "Không dựng được review card: "+msg)
+			return 0, abort(1, i18n.Tf("Không dựng được review card: %s", msg))
 		}
 		fmt.Fprint(ctx.Out(), text)
 		return ExitOK, nil

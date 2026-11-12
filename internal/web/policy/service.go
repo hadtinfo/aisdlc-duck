@@ -13,14 +13,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/web/auth"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/signing"
 )
 
-// ImportReason là lý do ghi cho phiên bản nhập lần đầu.
-const ImportReason = "Nhập từ aisdlc/risk-policy.yaml"
+// ImportReason là lý do ghi cho phiên bản nhập lần đầu. Lưu tiếng Việt như cũ (cả dòng đã lưu từ trước); dịch lúc
+// hiển thị (Versions) theo locale của người xem.
+var ImportReason = i18n.VI.T("Nhập từ aisdlc/risk-policy.yaml")
 
 // Service là phiên bản chính sách rủi ro của repo.
 type Service struct {
@@ -33,8 +35,11 @@ type Service struct {
 // Conflict: có bản mới hơn (hoặc bằng) khi xuất bản.
 type Conflict struct{ Latest int }
 
-func (c *Conflict) Error() string {
-	return "Đã có phiên bản mới hơn (v" + strconv.Itoa(c.Latest) + "); tải lại để xem."
+func (c *Conflict) Error() string { return c.MessageIn(i18n.VI) }
+
+// MessageIn là câu lỗi theo locale l.
+func (c *Conflict) MessageIn(l i18n.Locale) string {
+	return l.Tf("Đã có phiên bản mới hơn (v%d); tải lại để xem.", c.Latest)
 }
 
 // Row là một hàng risk_policy_versions.
@@ -129,11 +134,12 @@ func (s *Service) audit(ctx context.Context, tx pgx.Tx, e auth.AuditEntry) error
 // ImportFirst nhập lần đầu. YAML hỏng hoặc còn schema 1 → *risk.PolicyError (schema 1: thông điệp của Usable, nhắc
 // chạy `aisdlc policy migrate` trước); đã có phiên bản → không đổi gì (created=false).
 func (s *Service) ImportFirst(ctx context.Context, repo, yaml, author, ip string) (created bool, version int, err error) {
-	p, err := risk.ParsePolicy(yaml)
+	loc := httpx.LocaleFrom(ctx)
+	p, err := risk.ParsePolicyIn(loc, yaml)
 	if err != nil {
 		return false, 0, err
 	}
-	if err := p.Usable(); err != nil {
+	if err := p.UsableIn(loc); err != nil {
 		return false, 0, err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
@@ -154,7 +160,7 @@ func (s *Service) ImportFirst(ctx context.Context, repo, yaml, author, ip string
 		}
 		created, version = ok, 1
 		if !ok {
-			return errors.New("policy: nhập lần đầu bị trùng dù đã khóa")
+			return errors.New(httpx.OpLocale().T("policy: nhập lần đầu bị trùng dù đã khóa"))
 		}
 		return s.audit(ctx, tx, auth.AuditEntry{Login: author, IP: ip, Channel: "cli", Action: "policy.import",
 			Repo: repo, Target: "1", Detail: map[string]any{"version": 1}})
@@ -217,15 +223,16 @@ type View struct {
 
 // ViewOf trả nil khi repo chưa có chính sách.
 func (s *Service) ViewOf(ctx context.Context, repo string) (*View, error) {
+	loc := httpx.LocaleFrom(ctx)
 	r, err := latest(ctx, s.Pool, repo)
 	if err != nil || r == nil {
 		return nil, err
 	}
-	p, err := risk.ParsePolicy(r.Body)
+	p, err := risk.ParsePolicyIn(loc, r.Body)
 	if err != nil {
 		return nil, err
 	}
-	pu, err := presetUpdate(p)
+	pu, err := presetUpdate(loc, p)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +255,7 @@ func (s *Service) ViewOf(ctx context.Context, repo string) (*View, error) {
 		return nil, err
 	}
 	return &View{Version: r.Version, Policy: json.RawMessage(p.ToJSON()), Hash: r.Hash, YAML: r.Body,
-		PresetUpdate: pu, PresetRuleIDs: presetRuleIDs(p), FeatureCounts: counts}, nil
+		PresetUpdate: pu, PresetRuleIDs: presetRuleIDs(loc, p), FeatureCounts: counts}, nil
 }
 
 // VersionJSON là một mục của GET /api/policy/versions.
@@ -263,6 +270,7 @@ type VersionJSON struct {
 
 // Versions liệt kê các phiên bản, mới nhất trước, kèm thay đổi so với bản liền trước.
 func (s *Service) Versions(ctx context.Context, repo string) ([]VersionJSON, error) {
+	loc := httpx.LocaleFrom(ctx)
 	rs, err := s.Pool.Query(ctx, "SELECT "+cols+" FROM risk_policy_versions WHERE repo_id = $1 ORDER BY version DESC", repo)
 	if err != nil {
 		return nil, err
@@ -284,17 +292,21 @@ func (s *Service) Versions(ctx context.Context, repo string) ([]VersionJSON, err
 	for i, r := range rows {
 		ch := []risk.PolicyChange{}
 		if i+1 < len(rows) {
-			prev, err := risk.ParsePolicy(rows[i+1].Body)
+			prev, err := risk.ParsePolicyIn(loc, rows[i+1].Body)
 			if err != nil {
 				return nil, err
 			}
-			cur, err := risk.ParsePolicy(r.Body)
+			cur, err := risk.ParsePolicyIn(loc, r.Body)
 			if err != nil {
 				return nil, err
 			}
-			ch = risk.DiffPolicies(prev, cur)
+			ch = risk.DiffPoliciesIn(loc, prev, cur)
 		}
-		out = append(out, VersionJSON{Version: r.Version, Author: r.Author, Reason: r.Reason, Source: r.Source,
+		reason := r.Reason
+		if reason == ImportReason {
+			reason = loc.T(ImportReason)
+		}
+		out = append(out, VersionJSON{Version: r.Version, Author: r.Author, Reason: reason, Source: r.Source,
 			CreatedAt: httpx.Instant(r.CreatedAt), Changes: changes(ch)})
 	}
 	return out, nil
@@ -314,7 +326,7 @@ func hasPreset(p risk.RiskPolicy) bool {
 
 // presetUpdate: thông báo mẫu mới; nil khi không có preset hoặc đã dùng bản mới nhất đi kèm. "policy" là bản mẫu mới
 // (JSON như GET /api/policy) để UI áp từng thay đổi vào nháp.
-func presetUpdate(live risk.RiskPolicy) (map[string]any, error) {
+func presetUpdate(loc i18n.Locale, live risk.RiskPolicy) (map[string]any, error) {
 	if live.Schema == 1 || !hasPreset(live) { // schema 1 chỉ đọc: chuyển sang schema 2 thay vì cập nhật mẫu
 		return nil, nil
 	}
@@ -324,12 +336,12 @@ func presetUpdate(live risk.RiskPolicy) (map[string]any, error) {
 	if to == from {
 		return nil, nil
 	}
-	latestP, err := risk.LatestPreset(name)
+	latestP, err := risk.LatestPresetIn(loc, name)
 	if err != nil {
 		return nil, err
 	}
 	baseMissing := false
-	base, err := risk.LoadPreset(name, from)
+	base, err := risk.LoadPresetIn(loc, name, from)
 	if err != nil {
 		var pe *risk.PolicyError
 		if !errors.As(err, &pe) {
@@ -338,7 +350,7 @@ func presetUpdate(live risk.RiskPolicy) (map[string]any, error) {
 		base, baseMissing = live, true
 	}
 	m := map[string]any{"name": name, "from": from, "to": to,
-		"changes": changes(risk.DiffPolicies(base, latestP)), "policy": json.RawMessage(latestP.ToJSON())}
+		"changes": changes(risk.DiffPoliciesIn(loc, base, latestP)), "policy": json.RawMessage(latestP.ToJSON())}
 	if baseMissing {
 		m["baseMissing"] = true
 	}
@@ -346,12 +358,12 @@ func presetUpdate(live risk.RiskPolicy) (map[string]any, error) {
 }
 
 // presetRuleIDs: id rule của đúng phiên bản mẫu mà chính sách ghi trong preset; rỗng khi không có hoặc không đi kèm.
-func presetRuleIDs(live risk.RiskPolicy) []string {
+func presetRuleIDs(loc i18n.Locale, live risk.RiskPolicy) []string {
 	out := []string{}
 	if !hasPreset(live) {
 		return out
 	}
-	p, err := risk.LoadPreset(live.Preset.Name, live.Preset.Version)
+	p, err := risk.LoadPresetIn(loc, live.Preset.Name, live.Preset.Version)
 	if err != nil {
 		return out
 	}
@@ -364,11 +376,12 @@ func presetRuleIDs(live risk.RiskPolicy) []string {
 // Publish xuất bản phiên bản kế tiếp; trả {version, loosening}. Lỗi chính sách → *risk.PolicyError, bản cũ → *Conflict.
 func (s *Service) Publish(ctx context.Context, repo string, base int, policyJSON string, reason string, fromPreset bool,
 	author, ip string) (map[string]any, error) {
-	p, err := risk.PolicyFromJSON(policyJSON)
+	loc := httpx.LocaleFrom(ctx)
+	p, err := risk.PolicyFromJSONIn(loc, policyJSON)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.Usable(); err != nil { // schema 1 chỉ đọc: không xuất bản thêm
+	if err := p.UsableIn(loc); err != nil { // schema 1 chỉ đọc: không xuất bản thêm
 		return nil, err
 	}
 	var out map[string]any
@@ -389,11 +402,11 @@ func (s *Service) Publish(ctx context.Context, repo string, base int, policyJSON
 			return &Conflict{Latest: cur}
 		}
 		if live != nil {
-			old, err := risk.ParsePolicy(live.Body)
+			old, err := risk.ParsePolicyIn(loc, live.Body)
 			if err != nil {
 				return err
 			}
-			for _, c := range changes(risk.DiffPolicies(old, p)) {
+			for _, c := range changes(risk.DiffPoliciesIn(loc, old, p)) {
 				if c.Loosening {
 					loosening = append(loosening, c)
 				}
@@ -424,9 +437,10 @@ func (s *Service) Publish(ctx context.Context, repo string, base int, policyJSON
 
 // Validate trả lỗi kiểm tra (nếu có) và thay đổi so với bản đang hiệu lực của repo (rỗng khi repo=nil hoặc chưa có).
 func (s *Service) Validate(ctx context.Context, repo *string, policyJSON string) (map[string]any, error) {
-	p, err := risk.PolicyFromJSON(policyJSON)
+	loc := httpx.LocaleFrom(ctx)
+	p, err := risk.PolicyFromJSONIn(loc, policyJSON)
 	if err == nil {
-		err = p.Usable()
+		err = p.UsableIn(loc)
 	}
 	if err != nil {
 		var pe *risk.PolicyError
@@ -442,11 +456,11 @@ func (s *Service) Validate(ctx context.Context, repo *string, policyJSON string)
 			return nil, err
 		}
 		if r != nil {
-			old, err := risk.ParsePolicy(r.Body)
+			old, err := risk.ParsePolicyIn(loc, r.Body)
 			if err != nil {
 				return nil, err
 			}
-			ch = risk.DiffPolicies(old, p)
+			ch = risk.DiffPoliciesIn(loc, old, p)
 		}
 	}
 	return map[string]any{"errors": []string{}, "changes": changes(ch)}, nil
@@ -454,30 +468,31 @@ func (s *Service) Validate(ctx context.Context, repo *string, policyJSON string)
 
 // migrateDraft chuyển chính sách schema 1 sang schema 2 và trả JSON bản nháp cùng danh sách thay đổi so với bản gốc.
 // Schema 2 sẵn thì không có gì để chuyển (400).
-func migrateDraft(old risk.RiskPolicy) (string, []ChangeJSON, error) {
+func migrateDraft(loc i18n.Locale, old risk.RiskPolicy) (string, []ChangeJSON, error) {
 	if old.Schema != 1 {
-		return "", nil, &risk.PolicyError{Errors: []string{"Chính sách đã dùng schema 2, không cần chuyển"}}
+		return "", nil, &risk.PolicyError{Errors: []string{loc.T("Chính sách đã dùng schema 2, không cần chuyển")}}
 	}
-	n, err := risk.MigrateToV2(old)
+	n, err := risk.MigrateToV2In(loc, old)
 	if err != nil {
 		return "", nil, err
 	}
-	return n.ToJSON(), changes(risk.DiffPolicies(old, n)), nil
+	return n.ToJSON(), changes(risk.DiffPoliciesIn(loc, old, n)), nil
 }
 
 // MigrateDraft tạo bản nháp schema 2 từ chính sách đang hiệu lực (schema 1) của repo; không ghi gì vào DB. Người có
 // quyền sửa xem lại rồi xuất bản như mọi phiên bản. Repo chưa có chính sách → 404.
 func (s *Service) MigrateDraft(ctx context.Context, repo string) (string, []ChangeJSON, error) {
+	loc := httpx.LocaleFrom(ctx)
 	r, err := latest(ctx, s.Pool, repo)
 	if err != nil {
 		return "", nil, err
 	}
 	if r == nil {
-		return "", nil, httpx.NewError(404, "Repo chưa có chính sách")
+		return "", nil, httpx.Err(404, httpx.T("Repo chưa có chính sách"))
 	}
-	old, err := risk.ParsePolicy(r.Body)
+	old, err := risk.ParsePolicyIn(loc, r.Body)
 	if err != nil {
 		return "", nil, err
 	}
-	return migrateDraft(old)
+	return migrateDraft(loc, old)
 }

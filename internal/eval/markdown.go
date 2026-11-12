@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/review"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/run"
@@ -45,31 +46,31 @@ func splitLines(s string) []string {
 // RenderReport dựng bản tóm tắt eval/report.md (tối đa 40 dòng, dùng làm mô tả MR).
 func RenderReport(r EvalReport, notPassed []run.CaseResult) string {
 	var lines []string
-	pass := "KHÔNG ĐẠT"
+	pass := i18n.T("KHÔNG ĐẠT")
 	if r.Passed {
-		pass = "ĐẠT"
+		pass = i18n.T("ĐẠT")
 	}
-	lines = append(lines, "Eval "+r.Feature+": "+pass, "", "Chế độ "+r.Mode+" · "+review.InstantString(r.At), "")
+	lines = append(lines, "Eval "+r.Feature+": "+pass, "", i18n.Tf("Chế độ %s · %s", r.Mode, review.InstantString(r.At)), "")
 	if r.Risk != nil {
 		lines = addRisk(lines, *r.Risk)
 	}
-	lines = append(lines, "| Kiểm tra cứng | Kết quả | Chi tiết |", "|---|---|---|")
+	lines = append(lines, i18n.T("| Kiểm tra cứng | Kết quả | Chi tiết |"), "|---|---|---|")
 	for _, h := range r.Hard {
-		res := "KHÔNG ĐẠT"
+		res := i18n.T("KHÔNG ĐẠT")
 		if h.Passed {
-			res = "ĐẠT"
+			res = i18n.T("ĐẠT")
 		}
 		lines = append(lines, row(h.ID, res, h.Detail))
 	}
-	lines = append(lines, "", "| Chỉ số mềm | Mức | Chi tiết |", "|---|---|---|")
+	lines = append(lines, "", softHeader(i18n.Default())+" "+i18n.T("Mức | Chi tiết |"), "|---|---|---|")
 	for _, s := range r.Soft {
 		lines = append(lines, row(s.ID, s.Level, s.Detail))
 	}
 	lines = append(lines, "")
 	if len(notPassed) == 0 {
-		lines = append(lines, "Case không pass: không có.")
+		lines = append(lines, i18n.T("Case không pass: không có."))
 	} else {
-		lines = append(lines, "Case không pass:")
+		lines = append(lines, i18n.T("Case không pass:"))
 		room := maxMarkdownLines - len(lines)
 		shown := max(0, room-1)
 		if len(notPassed) <= room {
@@ -79,25 +80,25 @@ func RenderReport(r EvalReport, notPassed []run.CaseResult) string {
 			lines = append(lines, "- "+c.ID+" ("+c.Step+", "+string(c.Outcome)+"): "+oneLine(c.Message))
 		}
 		if shown < len(notPassed) {
-			lines = append(lines, "- … và "+strconv.Itoa(len(notPassed)-shown)+" case khác")
+			lines = append(lines, i18n.Tf("- … và %d case khác", len(notPassed)-shown))
 		}
 	}
 	if len(lines) > maxMarkdownLines {
 		cut := append([]string{}, lines[:maxMarkdownLines-1]...)
-		cut = append(cut, "… (đã cắt bớt, xem eval/report.json)")
+		cut = append(cut, i18n.T("… (đã cắt bớt, xem eval/report.json)"))
 		return strings.Join(cut, "\n") + "\n"
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
 
 func addRisk(lines []string, k RiskSection) []string {
-	lines = append(lines, "## Rủi ro", "")
-	head := "Mức " + k.Level + " · chính sách v" + strconv.Itoa(k.PolicyVersion)
+	lines = append(lines, i18n.T("## Rủi ro"), "")
+	head := i18n.Tf("Mức %s · chính sách v%d", k.Level, k.PolicyVersion)
 	if len(k.Matched) > 0 {
-		head += " · khớp: " + strings.Join(k.Matched, ", ")
+		head += i18n.Tf(" · khớp: %s", strings.Join(k.Matched, ", "))
 	}
 	if k.Override != nil {
-		head += " · đổi tay: " + *k.Override
+		head += i18n.Tf(" · đổi tay: %s", *k.Override)
 	}
 	lines = append(lines, oneLine(head), "")
 	for _, s := range k.Requirements {
@@ -131,7 +132,8 @@ func WithSoftRow(md string, s SoftCheck) string {
 	}
 	header := -1
 	for i, l := range lines {
-		if strings.HasPrefix(l, "| Chỉ số mềm |") {
+		// report.md có thể viết lúc repo còn locale khác: nhận tiêu đề bảng của cả hai ngôn ngữ
+		if strings.HasPrefix(l, softHeader(i18n.VI)) || strings.HasPrefix(l, softHeader(i18n.EN)) {
 			header = i
 		}
 	}
@@ -146,10 +148,13 @@ func WithSoftRow(md string, s SoftCheck) string {
 	if len(lines) > maxMarkdownLines {
 		// bỏ bớt dòng cuối (danh sách case không pass), giữ dòng báo cắt
 		cut := append([]string{}, lines[:maxMarkdownLines-1]...)
-		lines = append(cut, "… (đã cắt bớt, xem eval/report.json)")
+		lines = append(cut, i18n.T("… (đã cắt bớt, xem eval/report.json)"))
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
+
+// softHeader là ô đầu của tiêu đề bảng chỉ số mềm trong report.md.
+func softHeader(loc i18n.Locale) string { return loc.T("| Chỉ số mềm |") }
 
 // DiffByStep là diff nhóm theo bước, cùng định dạng aisdlc diff --by-step [--patch].
 func DiffByStep(records []step.StepRecord, titles map[string]string, git *gitx.Repo, patch bool) (string, error) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 )
 
@@ -61,7 +62,7 @@ func refreshWebPolicy(ctx *Context, f *Feature) error {
 	}
 	var err error
 	if f.Web.unreachable() {
-		err = errors.New("Không lấy được chính sách từ web: web đang không truy cập được (thử lại sau).")
+		err = errors.New(i18n.T("Không lấy được chính sách từ web: web đang không truy cập được (thử lại sau)."))
 	} else {
 		_, err = f.Web.PolicyPull()
 	}
@@ -72,8 +73,7 @@ func refreshWebPolicy(ctx *Context, f *Feature) error {
 	if !ok {
 		return err
 	}
-	ctx.Eprintln("Cảnh báo: " + strings.TrimSuffix(oneLineErr(err), ".") + "; dùng bản v" + strconv.Itoa(c.Version) +
-		" đã lưu trên máy (có thể đã cũ).")
+	ctx.Eprintln(i18n.Tf("Cảnh báo: %s; dùng bản v%s đã lưu trên máy (có thể đã cũ).", strings.TrimSuffix(oneLineErr(err), "."), strconv.Itoa(c.Version)))
 	return nil
 }
 
@@ -83,9 +83,9 @@ func loadPolicy(ctx *Context, root string, fromWeb, quiet bool) (LoadedPolicy, e
 		c, ok := web.Policy()
 		if !ok {
 			return LoadedPolicy{}, abort(2,
-				"Chưa có chính sách rủi ro từ web (hoặc chữ ký sai). Chạy: aisdlc policy pull")
+				i18n.T("Chưa có chính sách rủi ro từ web (hoặc chữ ký sai). Chạy: aisdlc policy pull"))
 		}
-		p, err := parsePolicy(c.YAML, "Chính sách rủi ro v"+strconv.Itoa(c.Version)+" trên web")
+		p, err := parsePolicy(c.YAML, i18n.Tf("Chính sách rủi ro v%s trên web", strconv.Itoa(c.Version)))
 		if err != nil {
 			return LoadedPolicy{}, err
 		}
@@ -95,8 +95,7 @@ func loadPolicy(ctx *Context, root string, fromWeb, quiet bool) (LoadedPolicy, e
 	f := filepath.Join(root, RepoPolicyFile)
 	if st, err := os.Stat(f); err != nil || !st.Mode().IsRegular() {
 		if !quiet {
-			ctx.Eprintln("Chưa có " + RepoPolicyFile + "; dùng mẫu generic. Chạy aisdlc setup --preset <" +
-				strings.Join(risk.PresetNames(), "|") + "> để chép mẫu vào repo.")
+			ctx.Eprintln(i18n.Tf("Chưa có %s; dùng mẫu generic. Chạy aisdlc setup --preset <%s> để chép mẫu vào repo.", RepoPolicyFile, strings.Join(risk.PresetNames(), "|")))
 		}
 		p, err := risk.LatestPreset("generic")
 		if err != nil {
@@ -106,7 +105,7 @@ func loadPolicy(ctx *Context, root string, fromWeb, quiet bool) (LoadedPolicy, e
 	}
 	b, err := os.ReadFile(f)
 	if err != nil {
-		return LoadedPolicy{}, errors.New("Không đọc được " + RepoPolicyFile + ": " + err.Error())
+		return LoadedPolicy{}, errors.New(i18n.Tf("Không đọc được %s: %s", RepoPolicyFile, err.Error()))
 	}
 	p, err := parsePolicy(string(b), RepoPolicyFile)
 	if err != nil {
@@ -125,7 +124,7 @@ func parsePolicy(yaml, where string) (risk.RiskPolicy, error) {
 		return risk.RiskPolicy{}, err
 	}
 	var b strings.Builder
-	b.WriteString(where + " không hợp lệ:")
+	b.WriteString(i18n.Tf("%s không hợp lệ:", where))
 	for _, x := range pe.Errors {
 		b.WriteString("\n  - " + x)
 	}

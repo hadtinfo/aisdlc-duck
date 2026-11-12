@@ -51,7 +51,7 @@ func TestReadResultsMissingRowIsError(t *testing.T) {
 	got := ReadResults(out, sel)
 	want := []run.CaseResult{
 		{ID: "C1", Step: "S1", Outcome: run.CaseOutcomePassed},
-		{ID: "C2", Step: "S1", Outcome: run.CaseOutcomeError, Message: NoRow},
+		{ID: "C2", Step: "S1", Outcome: run.CaseOutcomeError, Message: NoRowText()},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v", got)
@@ -70,7 +70,7 @@ func TestReadResultsEmptyMakesEveryCaseError(t *testing.T) {
 
 func TestReadResultsMissingFileIsNoResults(t *testing.T) {
 	got := ReadResults(t.TempDir(), sel)
-	if len(got) != 2 || got[0].Message != NoResults || got[1].Outcome != run.CaseOutcomeError {
+	if len(got) != 2 || got[0].Message != NoResultsText() || got[1].Outcome != run.CaseOutcomeError {
 		t.Errorf("got %v", got)
 	}
 }
@@ -79,7 +79,7 @@ func TestReadResultsCorruptFileIsNoResults(t *testing.T) {
 	out := t.TempDir()
 	os.WriteFile(filepath.Join(out, "results.json"), []byte(`{"cases":[{"id":`), 0o644)
 	got := ReadResults(out, sel)
-	if len(got) != 2 || got[0].Message != NoResults {
+	if len(got) != 2 || got[0].Message != NoResultsText() {
 		t.Errorf("got %v", got)
 	}
 }

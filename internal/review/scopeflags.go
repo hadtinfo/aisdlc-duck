@@ -2,9 +2,9 @@ package review
 
 import (
 	"sort"
-	"strconv"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/step"
@@ -60,8 +60,8 @@ func ScopeFlags(steps []spec.StepSpec, files []string, s model.ReviewSettings, s
 		}
 		if wide || len(matched) > s.ScopeMaxFiles {
 			out = append(out, NewFlag("SCOPE_TOO_WIDE", WARN,
-				st.ID+": scope quá rộng ("+strconv.Itoa(len(matched))+" file đang khớp, ngưỡng "+strconv.Itoa(s.ScopeMaxFiles)+")",
-				"Thu hẹp scope về đúng package/thư mục của bước.", []string{st.ID}))
+				i18n.Tf("%s: scope quá rộng (%d file đang khớp, ngưỡng %d)", st.ID, len(matched), s.ScopeMaxFiles),
+				i18n.T("Thu hẹp scope về đúng package/thư mục của bước."), []string{st.ID}))
 		}
 		var old []string
 		for _, f := range matched {
@@ -73,14 +73,13 @@ func ScopeFlags(steps []spec.StepSpec, files []string, s model.ReviewSettings, s
 			sorted := sortedSet(old)
 			refs := append([]string{st.ID}, sorted...)
 			out = append(out, NewFlag("SCOPE_MATCHES_OLD_MIGRATION", WARN,
-				st.ID+": scope khớp migration đã có ("+strings.Join(sorted, ", ")+")",
-				"Không sửa migration đã chạy; thêm file migration mới.", refs))
+				i18n.Tf("%s: scope khớp migration đã có (%s)", st.ID, strings.Join(sorted, ", ")),
+				i18n.T("Không sửa migration đã chạy; thêm file migration mới."), refs))
 		}
 		if b := st.Budget; b != nil && (b.Files > s.BudgetMaxFiles || b.Lines > s.BudgetMaxLines) {
 			out = append(out, NewFlag("BUDGET_HIGH", WARN,
-				st.ID+": budget "+strconv.Itoa(b.Files)+" file / "+strconv.Itoa(b.Lines)+
-					" dòng vượt ngưỡng "+strconv.Itoa(s.BudgetMaxFiles)+" file / "+strconv.Itoa(s.BudgetMaxLines)+" dòng",
-				"Cân nhắc tách bước nhỏ hơn.", []string{st.ID}))
+				i18n.Tf("%s: budget %d file / %d dòng vượt ngưỡng %d file / %d dòng", st.ID, b.Files, b.Lines, s.BudgetMaxFiles, s.BudgetMaxLines),
+				i18n.T("Cân nhắc tách bước nhỏ hơn."), []string{st.ID}))
 		}
 	}
 	return out
@@ -110,16 +109,16 @@ func dropBadGlobs(steps []spec.StepSpec, out *[]ReviewFlag) []spec.StepSpec {
 				ok = append(ok, g)
 			} else {
 				*out = append(*out, NewFlag("SCOPE_BAD_GLOB", NA,
-					st.ID+": glob không hợp lệ nên bỏ qua: "+g,
-					"Sửa glob trong design.yaml.", []string{st.ID, g}))
+					i18n.Tf("%s: glob không hợp lệ nên bỏ qua: %s", st.ID, g),
+					i18n.T("Sửa glob trong design.yaml."), []string{st.ID, g}))
 			}
 		}
 		c := st
 		c.Scope = ok
 		clean = append(clean, c)
 		if len(st.Scope) == 0 {
-			*out = append(*out, NewFlag("SCOPE_NO_SCOPE", NA, st.ID+": bước không có scope",
-				"Khai báo scope trong design.yaml để kiểm tra phạm vi.", []string{st.ID}))
+			*out = append(*out, NewFlag("SCOPE_NO_SCOPE", NA, i18n.Tf("%s: bước không có scope", st.ID),
+				i18n.T("Khai báo scope trong design.yaml để kiểm tra phạm vi."), []string{st.ID}))
 		}
 	}
 	return clean
@@ -144,8 +143,8 @@ func overlap(a, b spec.StepSpec, pa, pb func(string) bool, files []string, sampl
 	refs := []string{a.ID, b.ID, area}
 	sort.SliceStable(refs, func(i, j int) bool { return NaturalCompare(refs[i], refs[j]) < 0 })
 	return NewFlag("SCOPE_OVERLAP", HIGH,
-		a.ID+" và "+b.ID+" có scope chồng lấn ở "+area,
-		"Tách scope để mỗi file chỉ thuộc một bước.", refs), true
+		i18n.Tf("%s và %s có scope chồng lấn ở %s", a.ID, b.ID, area),
+		i18n.T("Tách scope để mỗi file chỉ thuộc một bước."), refs), true
 }
 
 // sampleHit trả glob của from mà đường dẫn mẫu sinh từ nó cũng khớp scope của to.

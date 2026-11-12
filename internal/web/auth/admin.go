@@ -10,10 +10,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-)
 
-const adminUsage = "Cách dùng: user add <login> \"<Tên>\" [--email <e>] [--role dev|lead] | user role <login> dev|lead" +
-	" | user login-token <login> | user ci-token <tên> | user list"
+	"aisdlc/internal/i18n"
+	"aisdlc/internal/web/httpx"
+)
 
 var roles = map[string]bool{"dev": true, "lead": true}
 
@@ -26,24 +26,27 @@ var roles = map[string]bool{"dev": true, "lead": true}
 //
 // Audit kênh admin, không bao giờ chứa token. Lỗi DB in ra out và trả 1.
 func RunAdmin(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) int {
-	a := &admin{s: &Service{Pool: pool}, out: out}
+	a := &admin{s: &Service{Pool: pool}, out: out, loc: httpx.OpLocale()}
 	code, err := a.run(ctx, args)
 	if err != nil {
-		fmt.Fprintln(out, "Lỗi:", err)
+		fmt.Fprintln(out, a.loc.Tf("Lỗi: %v", err))
 		return 1
 	}
 	return code
 }
 
+// admin in theo ngôn ngữ của người vận hành (AISDLC_LOCALE, xem httpx.OpLocale).
 type admin struct {
 	s   *Service
 	out io.Writer
+	loc i18n.Locale
 }
 
 func (a *admin) println(s string) { fmt.Fprintln(a.out, s) }
 
 func (a *admin) usage() int {
-	a.println(adminUsage)
+	a.println(a.loc.T("Cách dùng: user add <login> \"<Tên>\" [--email <e>] [--role dev|lead] | user role <login> dev|lead" +
+		" | user login-token <login> | user ci-token <tên> | user list"))
 	return 2
 }
 
@@ -93,11 +96,11 @@ func (a *admin) add(ctx context.Context, args []string) (int, error) {
 	login := args[1]
 	if strings.HasPrefix(login, "ci:") {
 		// Tên ci:... dành cho user CI (`user ci-token`); user thường mang tên này sẽ lẫn với CI.
-		a.println("Login " + login + " dành cho user CI: dùng `user ci-token`")
+		a.println(a.loc.Tf("Login %s dành cho user CI: dùng `user ci-token`", login))
 		return 1, nil
 	}
 	if Reserved(login) {
-		a.println("Login " + login + " dành cho bản tự duyệt của server, chọn tên khác")
+		a.println(a.loc.Tf("Login %s dành cho bản tự duyệt của server, chọn tên khác", login))
 		return 1, nil
 	}
 	name := args[2]
@@ -132,7 +135,7 @@ func (a *admin) add(ctx context.Context, args []string) (int, error) {
 			Detail: map[string]any{"role": role, "tokenId": created.ID}})
 	})
 	if errors.Is(err, errDuplicate) {
-		a.println("Login đã tồn tại: " + login)
+		a.println(a.loc.Tf("Login đã tồn tại: %s", login))
 		return 1, nil
 	}
 	if err != nil {
@@ -161,10 +164,10 @@ func (a *admin) role(ctx context.Context, args []string) (int, error) {
 		return 1, err
 	}
 	if !found {
-		a.println("Không có login: " + login)
+		a.println(a.loc.Tf("Không có login: %s", login))
 		return 1, nil
 	}
-	a.println("Đã đặt vai trò " + role + " cho " + login)
+	a.println(a.loc.Tf("Đã đặt vai trò %s cho %s", role, login))
 	return 0, nil
 }
 
@@ -206,7 +209,7 @@ func (a *admin) loginToken(ctx context.Context, args []string) (int, error) {
 	login := args[1]
 	if strings.HasPrefix(login, "ci:") {
 		// Token login mở được phiên trình duyệt (duyệt được): user CI chỉ có token ci.
-		a.println("Không cấp token login cho user CI (" + login + "): dùng `user ci-token`")
+		a.println(a.loc.Tf("Không cấp token login cho user CI (%s): dùng `user ci-token`", login))
 		return 1, nil
 	}
 	var created *CreatedToken
@@ -227,7 +230,7 @@ func (a *admin) loginToken(ctx context.Context, args []string) (int, error) {
 		return 1, err
 	}
 	if created == nil {
-		a.println("Không có login: " + login)
+		a.println(a.loc.Tf("Không có login: %s", login))
 		return 1, nil
 	}
 	a.println("Token: " + created.Token)

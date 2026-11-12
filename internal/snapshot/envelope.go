@@ -9,6 +9,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+
+	"aisdlc/internal/i18n"
 )
 
 // SignedEnvelope là phong bì ký Ed25519: Payload = base64 của chính bytes được ký, Sig = base64 chữ ký trên các
@@ -62,15 +64,15 @@ func KeyID(key ed25519.PublicKey) string {
 func PublicKeyFromBase64(x509b64 string) (ed25519.PublicKey, error) {
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(x509b64))
 	if err != nil {
-		return nil, fmt.Errorf("Khóa công khai không hợp lệ: %v", err)
+		return nil, fmt.Errorf(i18n.T("Khóa công khai không hợp lệ: %v"), err)
 	}
 	k, err := x509.ParsePKIXPublicKey(raw)
 	if err != nil {
-		return nil, fmt.Errorf("Khóa công khai không hợp lệ: %v", err)
+		return nil, fmt.Errorf(i18n.T("Khóa công khai không hợp lệ: %v"), err)
 	}
 	pub, ok := k.(ed25519.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("Khóa công khai không hợp lệ: không phải Ed25519")
+		return nil, fmt.Errorf("%s", i18n.T("Khóa công khai không hợp lệ: không phải Ed25519"))
 	}
 	return pub, nil
 }

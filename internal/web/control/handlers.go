@@ -9,14 +9,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/web/httpx"
 )
 
 // maxBytes là giới hạn body của API điều khiển (ControlController.MAX_BYTES).
 const maxBytes = 64 * 1024
 
+// tooLarge là *ApiError vì LimitBodyWith nhận kiểu đó; câu tiếng Việt là khóa catalog, Fail dịch lúc ghi.
 func tooLarge() *httpx.ApiError {
-	return httpx.NewError(http.StatusRequestEntityTooLarge, "Payload quá lớn")
+	return httpx.NewError(http.StatusRequestEntityTooLarge, i18n.VI.T("Payload quá lớn"))
 }
 
 // Routes đăng ký POST /api/control/{pause,instructions,actions} (phiên + CSRF, auth.Middleware đã kiểm) và
@@ -41,7 +43,7 @@ func (s *Service) handle(fn func(r *http.Request, p httpx.Principal) (ViewJSON, 
 		p, _ := httpx.PrincipalFrom(r.Context())
 		v, err := fn(r, p)
 		if err != nil {
-			httpx.WriteError(w, err)
+			httpx.Fail(w, r, err)
 			return
 		}
 		httpx.WriteJSON(w, http.StatusOK, v)
@@ -54,22 +56,22 @@ func body(r *http.Request) (map[string]any, error) {
 		return nil, err
 	}
 	if len(bytes.TrimSpace(b)) == 0 {
-		return nil, bad("Body phải là object JSON")
+		return nil, bad(httpx.T("Body phải là object JSON"))
 	}
 	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
-		return nil, bad("JSON không hợp lệ")
+		return nil, bad(httpx.T("JSON không hợp lệ"))
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, bad("Body phải là object JSON")
+		return nil, bad(httpx.T("Body phải là object JSON"))
 	}
 	return m, nil
 }
 
 func noNul(s string) (string, error) {
 	if strings.ContainsRune(s, 0) {
-		return "", bad("Chuỗi chứa ký tự NUL (U+0000)")
+		return "", bad(httpx.T("Chuỗi chứa ký tự NUL (U+0000)"))
 	}
 	return s, nil
 }
@@ -78,7 +80,7 @@ func noNul(s string) (string, error) {
 func text(b map[string]any, field string) (string, error) {
 	s, ok := b[field].(string)
 	if !ok || strings.TrimSpace(s) == "" {
-		return "", bad("Thiếu " + field)
+		return "", bad(httpx.Tf("Thiếu %s", field))
 	}
 	return noNul(s)
 }
@@ -91,7 +93,7 @@ func optText(b map[string]any, field string) (*string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return nil, bad(field + " phải là chuỗi")
+		return nil, bad(httpx.Tf("%s phải là chuỗi", field))
 	}
 	if _, err := noNul(s); err != nil {
 		return nil, err
@@ -114,7 +116,7 @@ func (s *Service) pause(r *http.Request, p httpx.Principal) (ViewJSON, error) {
 	}
 	paused, ok := b["paused"].(bool)
 	if !ok {
-		return ViewJSON{}, bad("paused phải là true hoặc false")
+		return ViewJSON{}, bad(httpx.T("paused phải là true hoặc false"))
 	}
 	repo, feature, err := target(b)
 	if err != nil {
@@ -149,7 +151,7 @@ func (s *Service) action(r *http.Request, p httpx.Principal) (ViewJSON, error) {
 	}
 	if v, ok := b["path"]; ok && v != nil {
 		if _, isStr := v.(string); !isStr {
-			return ViewJSON{}, bad("path phải là chuỗi")
+			return ViewJSON{}, bad(httpx.T("path phải là chuỗi"))
 		}
 	}
 	repo, feature, err := target(b)
@@ -179,11 +181,11 @@ func (s *Service) cli(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	repo, feature := q.Get("repo"), q.Get("feature")
 	if strings.TrimSpace(repo) == "" {
-		httpx.WriteError(w, bad("Thiếu repo"))
+		httpx.Fail(w, r, bad(httpx.T("Thiếu repo")))
 		return
 	}
 	if strings.TrimSpace(feature) == "" {
-		httpx.WriteError(w, bad("Thiếu feature"))
+		httpx.Fail(w, r, bad(httpx.T("Thiếu feature")))
 		return
 	}
 	repo, err := noNul(repo)
@@ -191,17 +193,17 @@ func (s *Service) cli(w http.ResponseWriter, r *http.Request) {
 		feature, err = noNul(feature)
 	}
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	c, err := s.ForCLI(r.Context(), repo, feature)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
-	payload, err := c.ToJSON()
+	payload, err := c.ToJSONIn(httpx.LocaleFrom(r.Context()))
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, s.Keys.Sign(payload))

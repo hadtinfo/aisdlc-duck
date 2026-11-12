@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/spec"
 )
@@ -104,11 +105,11 @@ func (s *LocalGateStore) load() (*gatesData, error) {
 			d.Submissions, d.Approvals = map[Gate]Submission{}, map[Gate]Approval{}
 			return d, nil
 		}
-		return nil, errf("gates.json hỏng: " + s.file)
+		return nil, errf(i18n.Tf("gates.json hỏng: %s", s.file))
 	}
 	// khóa lạ bị bỏ qua, như Jackson với FAIL_ON_UNKNOWN_PROPERTIES tắt
 	if err := json.Unmarshal(b, d); err != nil {
-		return nil, errf("gates.json hỏng: " + s.file)
+		return nil, errf(i18n.Tf("gates.json hỏng: %s", s.file))
 	}
 	if d.Submissions == nil {
 		d.Submissions = map[Gate]Submission{}
@@ -130,11 +131,11 @@ func (s *LocalGateStore) save(d *gatesData) error {
 	}
 	b, err := json.Marshal(gatesData{Submissions: subs, Approvals: d.Approvals})
 	if err != nil {
-		return errf("Không ghi được " + s.file + ": " + err.Error())
+		return errf(i18n.Tf("Không ghi được %s: %s", s.file, err.Error()))
 	}
 	var buf bytes.Buffer
 	if err := json.Indent(&buf, b, "", "  "); err != nil {
-		return errf("Không ghi được " + s.file + ": " + err.Error())
+		return errf(i18n.Tf("Không ghi được %s: %s", s.file, err.Error()))
 	}
 	if err := fsx.WriteAtomic(s.file, buf.Bytes(), 0o644); err != nil {
 		return errf(err.Error())

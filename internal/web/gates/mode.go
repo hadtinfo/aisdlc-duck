@@ -106,7 +106,7 @@ func (m *ModeService) Report(ctx context.Context, p httpx.Principal, ip, repo, c
 			return err
 		}
 		if md == nil {
-			return errors.New("repo_settings biến mất sau khi ghim")
+			return errors.New(httpx.OpLocale().T("repo_settings biến mất sau khi ghim"))
 		}
 		out = *md
 		return nil

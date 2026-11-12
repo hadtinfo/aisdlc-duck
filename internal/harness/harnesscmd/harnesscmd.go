@@ -31,7 +31,9 @@ import (
 	"aisdlc/internal/model"
 )
 
-const usage = "cách dùng: aisdlc-harness run|verify --root <repo> --feature <KEY> --out <dir> [--steps S1,S2] [--mode cases]"
+func usage() string {
+	return i18n.T("cách dùng: aisdlc-harness run|verify --root <repo> --feature <KEY> --out <dir> [--steps S1,S2] [--mode cases]")
+}
 
 // Signals là nguồn tín hiệu của tiến trình; test tiêm kênh riêng. exit thoát ngay (tín hiệu thứ hai).
 type Signals struct {
@@ -58,22 +60,22 @@ func OSSignals() *Signals {
 func Main(args []string, stderr io.Writer, sig *Signals) int {
 	i18n.SetDefault(i18n.FromEnv(os.LookupEnv))
 	if len(args) == 0 || (args[0] != "run" && args[0] != "verify") {
-		fmt.Fprintln(stderr, usage)
+		fmt.Fprintln(stderr, usage())
 		return harnessapi.ExitError
 	}
 	cmd := args[0]
 	fs := flag.NewFlagSet("aisdlc-harness "+cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	root := fs.String("root", "", "thư mục gốc repo đích")
-	feature := fs.String("feature", "", "mã tính năng")
-	out := fs.String("out", "", "thư mục kết quả (bị xóa rồi tạo lại)")
-	steps := fs.String("steps", "", "các bước, phân cách bằng dấu phẩy (run; rỗng là tất cả)")
-	mode := fs.String("mode", harnessapi.ModeCases, "cases, cases-with-drafts hoặc migration-check (run)")
+	root := fs.String("root", "", i18n.T("thư mục gốc repo đích"))
+	feature := fs.String("feature", "", i18n.T("mã tính năng"))
+	out := fs.String("out", "", i18n.T("thư mục kết quả (bị xóa rồi tạo lại)"))
+	steps := fs.String("steps", "", i18n.T("các bước, phân cách bằng dấu phẩy (run; rỗng là tất cả)"))
+	mode := fs.String("mode", harnessapi.ModeCases, i18n.T("cases, cases-with-drafts hoặc migration-check (run)"))
 	if err := fs.Parse(args[1:]); err != nil {
 		return harnessapi.ExitError
 	}
 	if *root == "" || *feature == "" || *out == "" || fs.NArg() > 0 {
-		fmt.Fprintln(stderr, usage)
+		fmt.Fprintln(stderr, usage())
 		return harnessapi.ExitError
 	}
 	outDir, err := filepath.Abs(*out)
@@ -117,7 +119,7 @@ func Main(args []string, stderr io.Writer, sig *Signals) int {
 	}
 	switch {
 	case r.Panic != "":
-		fmt.Fprintln(stderr, harnessapi.PanicPrefix+r.Panic)
+		fmt.Fprintln(stderr, harnessapi.PanicPrefixText()+r.Panic)
 		return harnessapi.ExitPanic
 	case r.Error != "":
 		fmt.Fprintln(stderr, r.Error)
@@ -144,7 +146,7 @@ func trap(sig *Signals, cancel context.CancelFunc, stderr io.Writer) func() {
 			case <-ch:
 				if first {
 					first = false
-					fmt.Fprintln(stderr, "aisdlc-harness: đang dừng dịch vụ và dọn container")
+					fmt.Fprintln(stderr, i18n.T("aisdlc-harness: đang dừng dịch vụ và dọn container"))
 					cancel()
 					continue
 				}

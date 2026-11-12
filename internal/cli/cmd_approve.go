@@ -11,6 +11,7 @@ import (
 
 	"aisdlc/internal/eval"
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/policy"
 	"aisdlc/internal/review"
@@ -24,7 +25,7 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 	var fo FeatureOption
 	c := &cobra.Command{
 		Use:   "approve <gate>",
-		Short: "Chỉ dev: duyệt một cổng đã nộp (brd, design, cases, review).",
+		Short: i18n.T("Chỉ dev: duyệt một cổng đã nộp (brd, design, cases, review)."),
 		Args:  cobra.ExactArgs(1),
 	}
 	fo.AddTo(c)
@@ -48,8 +49,7 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 					auto = " (" + d + ")"
 				}
 			}
-			return 0, abort(2, "Cổng "+string(g)+" đang ở trạng thái "+string(state)+auto+
-				"; chỉ duyệt được khi AWAITING_APPROVAL (đã nộp, không có phát hiện).")
+			return 0, abort(2, i18n.Tf("Cổng %s đang ở trạng thái %s%s; chỉ duyệt được khi AWAITING_APPROVAL (đã nộp, không có phát hiện).", string(g), string(state), auto))
 		}
 		if g == gate.REVIEW {
 			x, open, err := stepsNotAccepted(f)
@@ -57,7 +57,7 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 				return 0, err
 			}
 			if open {
-				return 0, abort(1, "Không duyệt được cổng REVIEW: "+x.Code+": "+x.Message)
+				return 0, abort(1, i18n.Tf("Không duyệt được cổng REVIEW: %s: %s", x.Code, x.Message))
 			}
 			if err := requireFreshEval(f); err != nil {
 				return 0, err
@@ -82,7 +82,7 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 			if err := f.Web.Act("approve", f, g, nil, cardFlags(card), channel); err != nil {
 				return 0, err
 			}
-			ctx.Println("Đã duyệt cổng " + string(g) + " trên web (hash " + hash + ").")
+			ctx.Println(i18n.Tf("Đã duyệt cổng %s trên web (hash %s).", string(g), hash))
 			ctx.AfterCommand(f, "approve "+strings.ToLower(string(g)))
 			return ExitOK, nil
 		}
@@ -94,7 +94,7 @@ func newApproveCmd(ctx *Context) *cobra.Command {
 		if err != nil {
 			return 0, err
 		}
-		ctx.Println("Đã duyệt cổng " + string(g) + " bởi " + a.Approver + " (hash " + a.Hash + ").")
+		ctx.Println(i18n.Tf("Đã duyệt cổng %s bởi %s (hash %s).", string(g), a.Approver, a.Hash))
 		ctx.AfterCommand(f, "approve "+strings.ToLower(string(g)))
 		return ExitOK, nil
 	})
@@ -118,7 +118,7 @@ func printCard(ctx *Context, f *Feature, g gate.Gate) *review.ReviewCard {
 		return review.RenderCard(f.Key.String(), card, cardWidth, ctx.Color(), gateApprovalDisplay(f, g)), nil
 	})
 	if err != nil {
-		ctx.Println("Không dựng được review card: " + err.Error())
+		ctx.Println(i18n.Tf("Không dựng được review card: %s", err.Error()))
 		return nil
 	}
 	ctx.Println("")
@@ -150,12 +150,10 @@ func requireFreshEval(f *Feature) error {
 		stale, err = staleEval(f, r)
 	}
 	if err != nil {
-		stale = &spec.Finding{Code: "REVIEW_NO_EVAL", Message: "Không đọc được " + f.Paths.Rel(report) +
-			"; chạy lại `aisdlc eval` rồi `aisdlc submit review`."}
+		stale = &spec.Finding{Code: "REVIEW_NO_EVAL", Message: i18n.Tf("Không đọc được %s; chạy lại `aisdlc eval` rồi `aisdlc submit review`.", f.Paths.Rel(report))}
 	}
 	if stale != nil {
-		return abort(1, "Không duyệt được cổng REVIEW: "+stale.Code+": "+stale.Message+
-			" Sau đó nộp lại `aisdlc submit review`.")
+		return abort(1, i18n.Tf("Không duyệt được cổng REVIEW: %s: %s Sau đó nộp lại `aisdlc submit review`.", stale.Code, stale.Message))
 	}
 	return nil
 }
@@ -167,7 +165,7 @@ func gateInFlow(f *Feature, name string) (gate.Gate, error) {
 		return "", err
 	}
 	if !slices.Contains(gate.Sequence(f.Flow()), g) {
-		return "", abort(2, "Cổng "+string(g)+" không thuộc luồng "+string(f.Flow())+".")
+		return "", abort(2, i18n.Tf("Cổng %s không thuộc luồng %s.", string(g), string(f.Flow())))
 	}
 	return g, nil
 }
@@ -183,8 +181,8 @@ func gateSummary(ctx *Context, f *Feature, g gate.Gate) (gate.GateState, error) 
 	if err != nil {
 		return "", err
 	}
-	ctx.Println("Tính năng " + f.Key.String() + " — cổng " + string(g) + " (" + string(state) + ")")
-	ctx.Println("Hash hiện tại: " + hash)
+	ctx.Println(i18n.Tf("Tính năng %s — cổng %s (%s)", f.Key.String(), string(g), string(state)))
+	ctx.Println(i18n.Tf("Hash hiện tại: %s", hash))
 	ctx.Println("File:")
 	for _, p := range files {
 		ctx.Println("  - " + f.Paths.Rel(p))
@@ -194,17 +192,17 @@ func gateSummary(ctx *Context, f *Feature, g gate.Gate) (gate.GateState, error) 
 		return "", err
 	}
 	if ok {
-		ctx.Println("Nộp lúc " + review.InstantString(sub.At) + ", hash " + sub.Hash)
+		ctx.Println(i18n.Tf("Nộp lúc %s, hash %s", review.InstantString(sub.At), sub.Hash))
 		if len(sub.Findings) == 0 {
-			ctx.Println("Phát hiện: không có")
+			ctx.Println(i18n.T("Phát hiện: không có"))
 		} else {
-			ctx.Println("Phát hiện:")
+			ctx.Println(i18n.T("Phát hiện:"))
 		}
 		for _, x := range sub.Findings {
 			ctx.Println("  - " + x.Code + ": " + x.Message)
 		}
 	} else {
-		ctx.Println("Chưa nộp.")
+		ctx.Println(i18n.T("Chưa nộp."))
 	}
 	if g == gate.REVIEW {
 		agentReviewSummary(ctx, f)
@@ -234,6 +232,6 @@ func agentReviewSummary(ctx *Context, f *Feature) {
 		ctx.Println("  - high " + i.Step + " " + i.File + ":" + strconv.Itoa(i.Line) + ": " + i.Message)
 	}
 	if shown < len(high) {
-		ctx.Println("  - … và " + strconv.Itoa(len(high)-shown) + " lỗi high khác")
+		ctx.Println(i18n.Tf("  - … và %s lỗi high khác", strconv.Itoa(len(high)-shown)))
 	}
 }

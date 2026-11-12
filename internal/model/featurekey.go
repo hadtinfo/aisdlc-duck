@@ -7,6 +7,8 @@ import (
 	"regexp"
 
 	"gopkg.in/yaml.v3"
+
+	"aisdlc/internal/i18n"
 )
 
 var keyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
@@ -17,7 +19,7 @@ type FeatureKey string
 // ParseFeatureKey kiểm tra và trả về FeatureKey.
 func ParseFeatureKey(s string) (FeatureKey, error) {
 	if !keyPattern.MatchString(s) {
-		return "", fmt.Errorf("Feature key không hợp lệ: %s (ví dụ: PAY-123)", s)
+		return "", fmt.Errorf(i18n.T("Feature key không hợp lệ: %s (ví dụ: PAY-123)"), s)
 	}
 	return FeatureKey(s), nil
 }

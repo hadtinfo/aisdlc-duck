@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/web/httpx"
 )
@@ -20,7 +21,7 @@ const maxBytes = 256 * 1024
 // Routes đăng ký GET /api/cli/policy, POST /api/cli/policy/import, GET /api/policy, GET /api/policy/versions,
 // POST /api/policy/{publish,validate,migrate-draft}.
 func Routes(r chi.Router, s *Service) {
-	limit := httpx.LimitBodyWith(maxBytes, httpx.NewError(http.StatusRequestEntityTooLarge, "Payload quá lớn"))
+	limit := httpx.LimitBodyWith(maxBytes, httpx.NewError(http.StatusRequestEntityTooLarge, i18n.VI.T("Payload quá lớn")))
 	r.Get("/api/cli/policy", wrap(s.cliGet))
 	r.With(limit).Post("/api/cli/policy/import", wrap(s.cliImport))
 	r.Get("/api/policy", wrap(s.view))
@@ -33,41 +34,51 @@ func Routes(r chi.Router, s *Service) {
 func wrap(f func(w http.ResponseWriter, r *http.Request) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := f(w, r); err != nil {
-			writeErr(w, err)
+			writeErr(w, r, err)
 		}
 	}
 }
 
 // writeErr: RiskPolicyException → 400 {"error": lỗi đầu, "errors": [...]}; Conflict → 409 {"message","error"}.
-func writeErr(w http.ResponseWriter, err error) {
+// Chữ theo locale của request.
+func writeErr(w http.ResponseWriter, r *http.Request, err error) {
+	loc := httpx.LocaleFrom(r.Context())
 	var pe *risk.PolicyError
 	if errors.As(err, &pe) {
-		msg := "Chính sách không hợp lệ"
-		if len(pe.Errors) > 0 {
-			msg = pe.Errors[0]
-		}
-		errs := pe.Errors
-		if errs == nil {
-			errs = []string{}
+		msg := loc.T("Chính sách không hợp lệ")
+		errs := localizeAll(loc, pe.Errors)
+		if len(errs) > 0 {
+			msg = errs[0]
 		}
 		httpx.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": msg, "errors": errs})
 		return
 	}
 	var c *Conflict
 	if errors.As(err, &c) {
-		httpx.WriteJSON(w, http.StatusConflict, map[string]string{"message": c.Error(), "error": c.Error()})
+		m := c.MessageIn(loc)
+		httpx.WriteJSON(w, http.StatusConflict, map[string]string{"message": m, "error": m})
 		return
 	}
-	httpx.WriteError(w, err)
+	httpx.Fail(w, r, err)
 }
 
-func bad(msg string) error { return httpx.NewError(http.StatusBadRequest, msg) }
+// localizeAll: lỗi của gói risk giờ đã theo locale của request (hàm …In), nên với chuỗi đã dịch đây là no-op; giữ làm lưới an toàn cho
+// thông điệp tiếng Việt còn sót (khóa catalog là chính câu tiếng Việt). Luôn khác nil.
+func localizeAll(loc i18n.Locale, msgs []string) []string {
+	out := make([]string, len(msgs))
+	for i, m := range msgs {
+		out[i] = loc.T(m)
+	}
+	return out
+}
+
+func bad(msg httpx.Text) error { return httpx.Err(http.StatusBadRequest, msg) }
 
 func isBlank(s string) bool { return strings.TrimSpace(s) == "" }
 
 func noNul(s string) (string, error) {
 	if strings.ContainsRune(s, 0) {
-		return "", bad("Chuỗi chứa ký tự NUL (U+0000)")
+		return "", bad(httpx.T("Chuỗi chứa ký tự NUL (U+0000)"))
 	}
 	return s, nil
 }
@@ -83,7 +94,7 @@ func clientIP(r *http.Request) string {
 func repoParam(r *http.Request) (string, error) {
 	v := r.URL.Query().Get("repo")
 	if isBlank(v) {
-		return "", bad("Thiếu repo")
+		return "", bad(httpx.T("Thiếu repo"))
 	}
 	return noNul(v)
 }
@@ -97,15 +108,15 @@ func body(r *http.Request) (object, error) {
 		return nil, err
 	}
 	if len(bytes.TrimSpace(b)) == 0 {
-		return nil, bad("Body phải là object JSON")
+		return nil, bad(httpx.T("Body phải là object JSON"))
 	}
 	var raw json.RawMessage
 	if err := json.NewDecoder(bytes.NewReader(b)).Decode(&raw); err != nil {
-		return nil, bad("JSON không hợp lệ")
+		return nil, bad(httpx.T("JSON không hợp lệ"))
 	}
 	var o object
 	if raw[0] != '{' || json.Unmarshal(raw, &o) != nil {
-		return nil, bad("Body phải là object JSON")
+		return nil, bad(httpx.T("Body phải là object JSON"))
 	}
 	return o, nil
 }
@@ -122,7 +133,7 @@ func rawString(v json.RawMessage) (string, bool) {
 func (o object) text(field string) (string, error) {
 	s, ok := rawString(o[field])
 	if !ok || isBlank(s) {
-		return "", bad("Thiếu " + field)
+		return "", bad(httpx.Tf("Thiếu %s", field))
 	}
 	return noNul(s)
 }
@@ -130,7 +141,7 @@ func (o object) text(field string) (string, error) {
 func (o object) obj(field string) (string, error) {
 	v := o[field]
 	if len(v) == 0 || v[0] != '{' {
-		return "", bad(field + " phải là object JSON")
+		return "", bad(httpx.Tf("%s phải là object JSON", field))
 	}
 	return string(v), nil
 }
@@ -145,7 +156,7 @@ func (s *Service) cliGet(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if p == nil {
-		return httpx.NewError(http.StatusNotFound, "Repo chưa có chính sách")
+		return httpx.Err(http.StatusNotFound, httpx.T("Repo chưa có chính sách"))
 	}
 	env, err := s.Keys.SignJSON(p)
 	if err != nil {
@@ -191,7 +202,7 @@ func (s *Service) view(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if v == nil {
-		return httpx.NewError(http.StatusNotFound, "Repo chưa có chính sách")
+		return httpx.Err(http.StatusNotFound, httpx.T("Repo chưa có chính sách"))
 	}
 	httpx.WriteJSON(w, http.StatusOK, v)
 	return nil
@@ -239,11 +250,11 @@ func (s *Service) publish(w http.ResponseWriter, r *http.Request) error {
 		reason = strings.TrimFunc(rs, func(c rune) bool { return c <= ' ' })
 	}
 	if reason == "" {
-		return bad("Cần nhập lý do xuất bản")
+		return bad(httpx.T("Cần nhập lý do xuất bản"))
 	}
 	base, ok := jsonInt32(b["baseVersion"])
 	if !ok {
-		return bad("Thiếu baseVersion")
+		return bad(httpx.T("Thiếu baseVersion"))
 	}
 	policy, err := b.obj("policy")
 	if err != nil {

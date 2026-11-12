@@ -16,7 +16,7 @@ import (
 )
 
 // MsgReviewImport: luật 6 (eval đạt trên cây code hiện tại) chỉ kiểm được khi duyệt trên web.
-const MsgReviewImport = "REVIEW phải duyệt lại trên web"
+var MsgReviewImport = httpx.T("REVIEW phải duyệt lại trên web")
 
 // ImportRoutes đăng ký POST /api/cli/import (Bearer ingest, ImportController): đưa approval đã có ở local lên web. Bản
 // nhập chưa có hiệu lực (không vào phong bì) tới khi chủ tính năng xác nhận ở /api/gates/confirm-import.
@@ -42,7 +42,7 @@ type ImportRequest struct {
 
 func max200(s, field string) (string, error) {
 	if utf16Len(s) > 200 {
-		return "", bad(field + " quá dài (tối đa 200 ký tự)")
+		return "", bad(httpx.Tf("%s quá dài (tối đa 200 ký tự)", field))
 	}
 	return s, nil
 }
@@ -51,7 +51,7 @@ func max200(s, field string) (string, error) {
 var isoInstant = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2}(:\d{2})?)$`)
 
 func instant(s string) (time.Time, error) {
-	fail := bad("at không phải thời điểm ISO-8601: " + s)
+	fail := bad(httpx.Tf("at không phải thời điểm ISO-8601: %s", s))
 	if !isoInstant.MatchString(s) {
 		return time.Time{}, fail
 	}
@@ -129,7 +129,7 @@ func (s *Service) Import(ctx context.Context, p httpx.Principal, ip string, r Im
 		return out, conflict(MsgReviewImport)
 	}
 	if r.artifacts.hash() != r.Hash {
-		return out, bad("Hash không khớp nội dung")
+		return out, bad(httpx.T("Hash không khớp nội dung"))
 	}
 	if len(r.findings) > 0 {
 		return out, conflict(MsgFindings)
@@ -227,5 +227,5 @@ func (s *Service) ciApprovals(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	httpx.WriteError(w, err)
+	httpx.Fail(w, r, err)
 }

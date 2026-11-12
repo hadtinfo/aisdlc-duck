@@ -1,5 +1,6 @@
 /** Chính sách rủi ro trên web: kiểu dữ liệu, gọi /api/policy/**, logic nháp (spec §6). Thang mức do dự án đặt. */
 import { ApiError, getJson, postJson } from "./api";
+import { t } from "./i18n";
 
 export type RuleKind = "keyword" | "path" | "table" | "endpoint" | "label";
 /** Schema 2: `describe` (luật bằng lời cho subagent). Schema 1 (chỉ đọc): `kind`/`match`/`note`. */
@@ -20,7 +21,9 @@ export interface Policy {
 export type FlowUnit = "brd" | "design" | "cases" | "step";
 export type FlowMode = "auto" | "manual";
 export const FLOW_UNITS: { id: FlowUnit; name: string }[] = [
-  { id: "brd", name: "BRD" }, { id: "design", name: "Thiết kế" }, { id: "cases", name: "Case" }, { id: "step", name: "Bước" },
+  // name là getter: đọc theo locale đang dùng mỗi lần vẽ
+  { id: "brd", name: "BRD" }, { id: "design", get name() { return t("column.design"); } },
+  { id: "cases", get name() { return t("column.cases"); } }, { id: "step", get name() { return t("steps.step"); } },
 ];
 export interface PolicyChange { kind: string; key: string; before: string | null; after: string | null; loosening: boolean }
 export interface PresetUpdate {
@@ -64,24 +67,28 @@ export const migrateDraft = (repo: string) =>
 // ---- Tên hiển thị ----
 
 export const KINDS: Record<RuleKind, { name: string; where: string; ph: string }> = {
-  keyword: { name: "Từ khóa", where: "story, BRD, thiết kế", ph: "regex, ví dụ: hoàn tiền|refund" },
-  path: { name: "Đường dẫn code", where: "phạm vi các bước trong design.yaml", ph: "**/billing/**" },
-  table: { name: "Bảng / cột DB", where: "migration và ER diff", ph: "payment_*" },
-  endpoint: { name: "Endpoint API", where: "bảng API của thiết kế", ph: "POST /payments/**" },
-  label: { name: "Nhãn tác động của agent", where: "đánh giá tác động ở bước thiết kế", ph: "money-movement" },
+  keyword: { get name() { return t("rk.kind.keyword"); }, get where() { return t("rk.kind.keyword.where"); }, get ph() { return t("rk.kind.keyword.ph"); } },
+  path: { get name() { return t("rk.kind.path"); }, get where() { return t("rk.kind.path.where"); }, ph: "**/billing/**" },
+  table: { get name() { return t("rk.kind.table"); }, get where() { return t("rk.kind.table.where"); }, ph: "payment_*" },
+  endpoint: { get name() { return t("rk.kind.endpoint"); }, get where() { return t("rk.kind.endpoint.where"); }, ph: "POST /payments/**" },
+  label: { get name() { return t("rk.kind.label"); }, get where() { return t("rk.kind.label.where"); }, ph: "money-movement" },
 };
-export const AGENT_LABEL: Record<string, string> = { raise: "Chỉ được nâng mức", off: "Tắt, chỉ dùng rule" };
-export const DEV_LOWER_LABEL: Record<string, string> = { reason: "Chỉ cần ghi lý do", never: "Không cho hạ" };
+export const AGENT_LABEL: Record<string, string> = {
+  get raise() { return t("rk.agent.raise"); }, get off() { return t("rk.agent.off"); },
+};
+export const DEV_LOWER_LABEL: Record<string, string> = {
+  get reason() { return t("rk.devLower.reason"); }, get never() { return t("rk.devLower.never"); },
+};
 
 export interface ReqInfo { id: string; name: string; desc: string; param?: string; unit?: string; def?: number }
 /** Thư viện yêu cầu đi kèm AISDLC (trùng RequirementCatalog của core); `sql-zero` là yêu cầu tự viết. */
 export const REQ_CATALOG: ReqInfo[] = [
-  { id: "rule-pos-neg", name: "Case đúng và case sai cho mỗi rule BRD", desc: "Ma trận rule × case không được có ô trống" },
-  { id: "boundary", name: "Case biên cho rule gắn thẻ [biên]", desc: "Rule có thẻ [biên] trong BRD: min, max, min−1, max+1" },
-  { id: "idempotent", name: "Case gửi trùng", desc: "Cùng request gửi 2 lần, kết quả và DB như gửi 1 lần" },
-  { id: "concurrent", name: "Case đồng thời", desc: "Số luồng chạy song song trên cùng bản ghi", param: "threads", unit: "luồng", def: 4 },
-  { id: "invariant", name: "Bất biến DB sau mọi case", desc: "Khai trong design.yaml (luồng nhẹ: cases.yaml), harness kiểm sau case (từ bước step nếu khai)" },
-  { id: "coverage", name: "Coverage dòng mới tối thiểu", desc: "JaCoCo trên dòng mới của tính năng", param: "min", unit: "%", def: 80 },
+  { id: "rule-pos-neg", get name() { return t("rk.req.rule-pos-neg"); }, get desc() { return t("rk.req.rule-pos-neg.desc"); } },
+  { id: "boundary", get name() { return t("rk.req.boundary"); }, get desc() { return t("rk.req.boundary.desc"); } },
+  { id: "idempotent", get name() { return t("rk.req.idempotent"); }, get desc() { return t("rk.req.idempotent.desc"); } },
+  { id: "concurrent", get name() { return t("rk.req.concurrent"); }, get desc() { return t("rk.req.concurrent.desc"); }, param: "threads", get unit() { return t("rk.req.concurrent.unit"); }, def: 4 },
+  { id: "invariant", get name() { return t("rk.req.invariant"); }, get desc() { return t("rk.req.invariant.desc"); } },
+  { id: "coverage", get name() { return t("rk.req.coverage"); }, get desc() { return t("rk.req.coverage.desc"); }, param: "min", unit: "%", def: 80 },
 ];
 export const SQL_ZERO = "sql-zero";
 const catalog = (id: string) => REQ_CATALOG.find((r) => r.id === id);
@@ -89,7 +96,7 @@ const catalog = (id: string) => REQ_CATALOG.find((r) => r.id === id);
 /** Khóa nhận diện yêu cầu trong một mức: `sql-zero` có thể nhiều cái, phân biệt theo tên. */
 export const reqKey = (q: PolicyReq) => (q.id === SQL_ZERO ? `${SQL_ZERO}:${String(q.name ?? "")}` : q.id);
 export function reqName(q: PolicyReq): string {
-  if (q.id === SQL_ZERO) return `Tự viết: ${String(q.name ?? SQL_ZERO)}`;
+  if (q.id === SQL_ZERO) return t("rk.custom", { name: String(q.name ?? SQL_ZERO) });
   return catalog(q.id)?.name ?? q.id;
 }
 const reqOrder = (q: PolicyReq) => {
@@ -234,7 +241,7 @@ export function applyPresetChange(draft: Policy, latest: Policy, c: PolicyChange
       break;
     }
     default:
-      throw new Error(`Loại thay đổi mẫu chưa hỗ trợ: ${c.kind}`);
+      throw new Error(t("rk.unsupportedChange", { kind: c.kind }));
   }
   return out;
 }
@@ -279,28 +286,28 @@ export const flowUnits = (p: Policy) => FLOW_UNITS.filter((u) => !(p.schema >= 2
 /** Mỗi dòng là một thay đổi giữa bản đang hiệu lực và nháp, để hiện trên thanh nháp và hộp thoại xuất bản. */
 export function draftChanges(base: Policy, draft: Policy): string[] {
   const out: string[] = [];
-  if (base.schema !== draft.schema) out.push(`Chuyển chính sách từ schema ${base.schema} sang schema ${draft.schema} (luật mô tả bằng lời)`);
+  if (base.schema !== draft.schema) out.push(t("rk.dc.schema", { from: base.schema, to: draft.schema }));
   // rule
   const baseRules = new Map(base.rules.map((r) => [r.id, r]));
   const draftIds = new Set(draft.rules.map((r) => r.id));
   for (const r of draft.rules) {
     const b = baseRules.get(r.id);
     if (!b) {
-      out.push(r.describe != null ? `${r.id}: thêm (${r.describe} → ${r.level})`
-        : `${r.id}: thêm (${(r.kind && KINDS[r.kind]?.name) ?? r.kind} ${(r.match ?? []).join(", ")} → ${r.level})`);
+      out.push(r.describe != null ? t("rk.dc.ruleAdded", { id: r.id, what: r.describe, level: r.level })
+        : t("rk.dc.ruleAdded", { id: r.id, what: `${(r.kind && KINDS[r.kind]?.name) ?? r.kind} ${(r.match ?? []).join(", ")}`, level: r.level }));
       continue;
     }
     if (sameRule(b, r)) continue;
     const parts: string[] = [];
-    if (b.enabled !== r.enabled) parts.push(r.enabled ? "bật" : "tắt");
-    if (b.kind !== r.kind) parts.push(`loại ${(b.kind && KINDS[b.kind]?.name) ?? b.kind} → ${(r.kind && KINDS[r.kind]?.name) ?? r.kind}`);
-    if ((b.match ?? []).join("\n") !== (r.match ?? []).join("\n")) parts.push(`mẫu khớp ${(b.match ?? []).join(", ")} → ${(r.match ?? []).join(", ")}`);
-    if ((b.describe ?? "") !== (r.describe ?? "")) parts.push("sửa mô tả");
-    if (b.level !== r.level) parts.push(`mức ${b.level} → ${r.level}`);
-    if ((b.note ?? "") !== (r.note ?? "")) parts.push("sửa ghi chú");
+    if (b.enabled !== r.enabled) parts.push(r.enabled ? t("rk.dc.on") : t("rk.dc.off"));
+    if (b.kind !== r.kind) parts.push(t("rk.dc.kind", { from: String((b.kind && KINDS[b.kind]?.name) ?? b.kind), to: String((r.kind && KINDS[r.kind]?.name) ?? r.kind) }));
+    if ((b.match ?? []).join("\n") !== (r.match ?? []).join("\n")) parts.push(t("rk.dc.match", { from: (b.match ?? []).join(", "), to: (r.match ?? []).join(", ") }));
+    if ((b.describe ?? "") !== (r.describe ?? "")) parts.push(t("rk.dc.describe"));
+    if (b.level !== r.level) parts.push(t("rk.dc.level", { from: b.level, to: r.level }));
+    if ((b.note ?? "") !== (r.note ?? "")) parts.push(t("rk.dc.note"));
     out.push(`${r.id}: ${parts.join("; ")}`);
   }
-  for (const b of base.rules) if (!draftIds.has(b.id)) out.push(`${b.id}: xóa`);
+  for (const b of base.rules) if (!draftIds.has(b.id)) out.push(t("rk.dc.ruleRemoved", { id: b.id }));
 
   // yêu cầu theo mức
   const levels = [...new Set([...draft.levels, ...base.levels, ...Object.keys(base.requirements), ...Object.keys(draft.requirements)])];
@@ -311,43 +318,43 @@ export function draftChanges(base: Policy, draft: Policy): string[] {
       const old = a.get(k);
       const name = reqName(q);
       if (!old) {
-        out.push(`${name}: bật ở mức ${level}`);
+        out.push(t("rk.dc.reqOn", { name, level }));
         continue;
       }
       const params = new Set([...Object.keys(old), ...Object.keys(q)].filter((p) => p !== "id"));
       for (const p of params) {
         if (s(old[p]) === s(q[p])) continue;
-        if (q.id === SQL_ZERO) out.push(`${name} mức ${level}: đổi ${p === "sql" ? "SQL" : p}`);
+        if (q.id === SQL_ZERO) out.push(t("rk.dc.reqChanged", { name, level, what: p === "sql" ? "SQL" : p }));
         else {
           const unit = catalog(q.id)?.param === p ? catalog(q.id)?.unit : undefined;
-          out.push(unit ? `${name} mức ${level}: ${s(old[p])} → ${s(q[p])} ${unit}`
-            : `${name} mức ${level}: ${p} ${s(old[p])} → ${s(q[p])}`);
+          out.push(unit ? t("rk.dc.reqParamUnit", { name, level, from: s(old[p]), to: s(q[p]), unit })
+            : t("rk.dc.reqParam", { name, level, p, from: s(old[p]), to: s(q[p]) }));
         }
       }
     }
-    for (const [k, q] of a) if (!b.has(k)) out.push(`${reqName(q)}: tắt ở mức ${level}`);
+    for (const [k, q] of a) if (!b.has(k)) out.push(t("rk.dc.reqOff", { name: reqName(q), level }));
   }
 
   // quy trình theo mức
   for (const level of new Set([...draft.levels, ...base.levels])) {
     for (const u of flowUnits(draft)) {
       const a = flowOf(base, level, u.id), b = flowOf(draft, level, u.id);
-      if (a !== b) out.push(`Quy trình mức ${level}, cổng ${u.id}: ${a} → ${b}`);
+      if (a !== b) out.push(t("rk.dc.flow", { level, gate: u.id, from: a, to: b }));
     }
   }
 
   // phân loại và thang
   if (draft.schema < 2 && base.classification.agent !== draft.classification.agent) {
     const lab = (a?: string) => (a ? AGENT_LABEL[a] ?? a : "—");
-    out.push(`Đánh giá tác động của agent: ${lab(base.classification.agent)} → ${lab(draft.classification.agent)}`);
+    out.push(t("rk.dc.agent", { from: lab(base.classification.agent), to: lab(draft.classification.agent) }));
   }
   if (base.classification.devLower !== draft.classification.devLower) {
-    out.push(`Dev hạ mức so với rule hoặc agent: ${DEV_LOWER_LABEL[base.classification.devLower] ?? base.classification.devLower} → ${DEV_LOWER_LABEL[draft.classification.devLower] ?? draft.classification.devLower}`);
+    out.push(t("rk.dc.devLower", { from: DEV_LOWER_LABEL[base.classification.devLower] ?? base.classification.devLower, to: DEV_LOWER_LABEL[draft.classification.devLower] ?? draft.classification.devLower }));
   }
-  if (base.default !== draft.default) out.push(`Mức mặc định: ${base.default} → ${draft.default}`);
-  if (base.levels.join("\n") !== draft.levels.join("\n")) out.push(`Thang mức: ${base.levels.join(", ")} → ${draft.levels.join(", ")}`);
+  if (base.default !== draft.default) out.push(t("rk.dc.default", { from: base.default, to: draft.default }));
+  if (base.levels.join("\n") !== draft.levels.join("\n")) out.push(t("rk.dc.levels", { from: base.levels.join(", "), to: draft.levels.join(", ") }));
   if ((base.preset?.version ?? "") !== (draft.preset?.version ?? "") && draft.preset) {
-    out.push(`Mẫu ${draft.preset.name}: bản ${s(base.preset?.version)} → ${draft.preset.version}`);
+    out.push(t("rk.dc.preset", { name: draft.preset.name, from: s(base.preset?.version), to: draft.preset.version }));
   }
   return out;
 }
@@ -399,11 +406,11 @@ export function changeText(c: PolicyChange): string {
     case "REMOVE_RULE": return `− rule ${c.key}: ${v(c.before)}`;
     case "CHANGE_RULE": return `rule ${c.key}: ${v(c.before)} ⟶ ${v(c.after)}`;
     // after/before của yêu cầu là "id k=v …": giữ tham số
-    case "ADD_REQ": return `+ yêu cầu ${c.key.split("/")[0]}/${c.after ?? c.key.split("/")[1]}`;
-    case "REMOVE_REQ": return `− yêu cầu ${c.key.split("/")[0]}/${c.before ?? c.key.split("/")[1]}`;
+    case "ADD_REQ": return `+ ${t("rk.ch.req")} ${c.key.split("/")[0]}/${c.after ?? c.key.split("/")[1]}`;
+    case "REMOVE_REQ": return `− ${t("rk.ch.req")} ${c.key.split("/")[0]}/${c.before ?? c.key.split("/")[1]}`;
     case "CHANGE_CLASSIFICATION":
       return `${c.key === "default" ? "default" : `classification.${c.key}`}: ${v(c.before)} ⟶ ${v(c.after)}`;
-    case "SCHEMA_MIGRATED": return `chuyển schema ${v(c.before)} ⟶ ${v(c.after)}`;
+    case "SCHEMA_MIGRATED": return t("rk.ch.schema", { from: v(c.before), to: v(c.after) });
     case "CHANGE_FLOW": return `flow ${c.key}: ${v(c.before)} ⟶ ${v(c.after)}`;
     default: return `${c.key}: ${v(c.before)} ⟶ ${v(c.after)}`;
   }

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, boardQuery, login, logout, me, postJson, resetSession } from "./api";
+import { ApiError, boardQuery, getBoard, login, logout, me, postJson, resetSession, saveMyLocale } from "./api";
+import { getLocale, setLocale } from "./i18n";
 
 describe("boardQuery", () => {
   it("bỏ ẩn thì gửi 0, không bỏ param", () => expect(boardQuery({ hideDoneOlderThanDays: 0 })).toBe("?hideDoneOlderThanDays=0"));
@@ -74,5 +75,43 @@ describe("phiên + CSRF", () => {
   it("me() trả người dùng và vai trò", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json(200, { ...ME, role: "lead" })));
     expect(await me()).toEqual({ ...ME, role: "lead" });
+  });
+});
+
+describe("ngôn ngữ", () => {
+  afterEach(() => { vi.unstubAllGlobals(); resetSession(); setLocale("vi"); });
+
+  it("mọi request gửi Accept-Language theo locale giao diện", async () => {
+    const fetchMock = vi.fn(async (_path: string, _init?: RequestInit) => json(200, { me: "dev", cards: [], inbox: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await getBoard();
+    expect(headerOf(fetchMock.mock.calls[0][1], "Accept-Language")).toBe("vi");
+    setLocale("en");
+    await getBoard();
+    expect(headerOf(fetchMock.mock.calls[1][1], "Accept-Language")).toBe("en");
+    expect(fetchMock.mock.calls[1][1]?.credentials).toBe("same-origin");
+  });
+
+  it("GET /api/me có locale đã chọn thì áp dụng; null thì giữ locale hiện tại", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json(200, { ...ME, locale: null })));
+    await me();
+    expect(getLocale()).toBe("vi");
+    resetSession();
+    vi.stubGlobal("fetch", vi.fn(async () => json(200, { ...ME, locale: "en" })));
+    await me();
+    expect(getLocale()).toBe("en");
+  });
+
+  it("saveMyLocale: PUT /api/me/locale kèm CSRF", async () => {
+    const fetchMock = vi.fn(async (path: string, _init?: RequestInit) =>
+      path === "/api/me" ? json(200, ME) : json(200, { ...ME, csrf: null, locale: "en" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await saveMyLocale("en");
+    const [path, init] = fetchMock.mock.calls[1];
+    expect(path).toBe("/api/me/locale");
+    expect(init?.method).toBe("PUT");
+    expect(headerOf(init, "X-CSRF-Token")).toBe("c-1");
+    expect(init?.body).toBe(JSON.stringify({ locale: "en" }));
+    expect((await me()).locale).toBe("en");
   });
 });

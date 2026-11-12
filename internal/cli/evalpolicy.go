@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/webclient"
@@ -18,7 +19,7 @@ import (
 func localEvalPolicy(ctx *Context, f *Feature) (*risk.RiskPolicy, string) {
 	l, err := RepoFilePolicy(ctx, f.Root, true)
 	if err != nil {
-		return nil, "không nạp được chính sách rủi ro: " + oneLineErr(err)
+		return nil, i18n.Tf("không nạp được chính sách rủi ro: %s", oneLineErr(err))
 	}
 	return &l.Policy, ""
 }
@@ -36,7 +37,7 @@ func webEvalPolicy(ctx *Context, f *Feature) func(context.Context) (*risk.RiskPo
 		if err != nil {
 			return nil, &flatErr{err}
 		}
-		p, err := parsePolicy(yaml, "Chính sách rủi ro v"+strconv.Itoa(version)+" trên web")
+		p, err := parsePolicy(yaml, i18n.Tf("Chính sách rủi ro v%s trên web", strconv.Itoa(version)))
 		if err != nil {
 			return nil, &flatErr{err}
 		}

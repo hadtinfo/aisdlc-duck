@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/step"
@@ -40,7 +41,7 @@ func (c *Context) lockBudget() time.Duration {
 type ControlBusy struct{}
 
 func (*ControlBusy) Error() string {
-	return "không khóa được .aisdlc/web/control/control.lock: tiến trình aisdlc khác đang giữ"
+	return i18n.T("không khóa được .aisdlc/web/control/control.lock: tiến trình aisdlc khác đang giữ")
 }
 
 // isControlBusy: err là (hoặc bọc) ControlBusy.

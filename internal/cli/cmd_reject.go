@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 )
 
 func newRejectCmd(ctx *Context) *cobra.Command {
@@ -13,11 +14,11 @@ func newRejectCmd(ctx *Context) *cobra.Command {
 	var message string
 	c := &cobra.Command{
 		Use:   "reject <gate> -m <text>",
-		Short: "Chỉ dev: trả lại một cổng kèm góp ý (ghi vào feedback.md).",
+		Short: i18n.T("Chỉ dev: trả lại một cổng kèm góp ý (ghi vào feedback.md)."),
 		Args:  cobra.ExactArgs(1),
 	}
 	fo.AddTo(c)
-	c.Flags().StringVarP(&message, "message", "m", "", "Góp ý cho agent")
+	c.Flags().StringVarP(&message, "message", "m", "", i18n.T("Góp ý cho agent"))
 	_ = c.MarkFlagRequired("message")
 	c.RunE = Wrap(ctx, func(_ *cobra.Command, args []string) (int, error) {
 		f, err := fo.Feature(ctx)
@@ -58,7 +59,7 @@ func newRejectCmd(ctx *Context) *cobra.Command {
 				return 0, err
 			}
 		}
-		ctx.Println("Đã trả lại cổng " + string(g) + "; góp ý ghi vào " + f.Paths.Rel(f.Paths.Feedback()) + ".")
+		ctx.Println(i18n.Tf("Đã trả lại cổng %s; góp ý ghi vào %s.", string(g), f.Paths.Rel(f.Paths.Feedback())))
 		ctx.AfterCommand(f, "reject "+strings.ToLower(string(g)))
 		return ExitOK, nil
 	})

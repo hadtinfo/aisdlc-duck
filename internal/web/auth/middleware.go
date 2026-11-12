@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/web/httpx"
 )
 
@@ -47,7 +48,7 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 		}
 		ctx := r.Context()
 		var p *httpx.Principal
-		var sid string
+		var sid, chosen string
 		var err error
 		if tok, ok := bearer(r); ok {
 			p, err = s.authenticateToken(ctx, tok)
@@ -55,7 +56,7 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			if c, cerr := r.Cookie(Cookie); cerr == nil {
 				sid = c.Value
 			}
-			p, err = s.findSession(ctx, sid)
+			p, chosen, err = s.findSession(ctx, sid)
 		}
 		if err != nil {
 			s.fail(w, r, err)
@@ -75,6 +76,12 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		ctx = httpx.WithPrincipal(ctx, *p)
+		// Phiên trình duyệt: lựa chọn đã lưu của user thắng Accept-Language. Token (CLI/CI) theo Accept-Language.
+		if p.IsSession() && chosen != "" {
+			if l, err := i18n.Parse(chosen); err == nil {
+				ctx = httpx.WithLocale(ctx, l)
+			}
+		}
 		if sid != "" {
 			ctx = context.WithValue(ctx, sessionKey{}, sid)
 		}

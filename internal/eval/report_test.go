@@ -235,7 +235,7 @@ func TestReportJsonRoundTripAndNoRiskKey(t *testing.T) {
 }
 
 func TestConfigChangedKeepsJavaWording(t *testing.T) {
-	eq(t, "CONFIG_CHANGED", ConfigChanged, " bị sửa trong thay đổi này — sửa cấu hình phải ở MR riêng")
+	eq(t, "CONFIG_CHANGED", ConfigChangedText(), " bị sửa trong thay đổi này — sửa cấu hình phải ở MR riêng")
 }
 
 func TestDiffByStep(t *testing.T) {

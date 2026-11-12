@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/snapshot"
 )
 
@@ -237,7 +238,7 @@ func (p *Publisher) locked(ctx context.Context, all bool) FlushResult {
 			return err
 		}
 		if !ok {
-			p.warn("aisdlc web: tiến trình khác đang gửi; thử lại sau")
+			p.warn(i18n.T("aisdlc web: tiến trình khác đang gửi; thử lại sau"))
 			return nil
 		}
 		defer l.Close()
@@ -329,7 +330,7 @@ func (p *Publisher) doFlush(ctx context.Context, c *Client, deadline time.Time) 
 		if err == nil {
 			if snap {
 				if !json.Valid(body) {
-					err = errors.New("snapshot không phải JSON hợp lệ")
+					err = errors.New(i18n.T("snapshot không phải JSON hợp lệ"))
 				}
 			} else {
 				body, err = batchJSON(repoID, clientID, body)
@@ -402,7 +403,7 @@ func readMessage(file string) ([]byte, os.FileInfo, error) {
 		return nil, nil, err
 	}
 	if !st.Mode().IsRegular() {
-		return nil, st, errors.New("không phải file thường")
+		return nil, st, errors.New(i18n.T("không phải file thường"))
 	}
 	b, err := io.ReadAll(f)
 	return b, st, err
@@ -483,11 +484,11 @@ func ClientID(root string) (string, error) {
 	}
 	id := newUUID()
 	if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
-		return "", fmt.Errorf("Không ghi được %s: %w", f, err)
+		return "", fmt.Errorf(i18n.T("Không ghi được %s: %w"), f, err)
 	}
 	tmp := f + "." + randID(4) + ".tmp"
 	if err := os.WriteFile(tmp, []byte(id), 0o644); err != nil {
-		return "", fmt.Errorf("Không ghi được %s: %w", f, err)
+		return "", fmt.Errorf(i18n.T("Không ghi được %s: %w"), f, err)
 	}
 	err := os.Link(tmp, f) // không ghi đè bản tiến trình khác vừa tạo
 	_ = os.Remove(tmp)

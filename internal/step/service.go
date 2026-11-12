@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
 	"aisdlc/internal/spec"
@@ -51,7 +52,7 @@ func (s *Service) Start(id string) (StepRecord, error) {
 		}
 	}
 	if !ready {
-		return StepRecord{}, errf("Chưa được code: các cổng trước code chưa được duyệt.")
+		return StepRecord{}, errf(i18n.T("Chưa được code: các cổng trước code chưa được duyệt."))
 	}
 	idx, err := s.indexOf(id)
 	if err != nil {
@@ -69,16 +70,16 @@ func (s *Service) Start(id string) (StepRecord, error) {
 	}
 	for _, r := range recs {
 		if r.Status == StepInProgress || r.Status == StepAwaitingDev {
-			return StepRecord{}, errf("Bước " + r.ID + " đang dở (" + string(r.Status) + "); xong bước đó trước.")
+			return StepRecord{}, errf(i18n.Tf("Bước %s đang dở (%s); xong bước đó trước.", r.ID, string(r.Status)))
 		}
 	}
 	if existing != nil {
-		return StepRecord{}, errf("Bước " + id + " đã được làm.")
+		return StepRecord{}, errf(i18n.Tf("Bước %s đã được làm.", id))
 	}
 	if idx > 0 {
 		prev := s.specs[idx-1].ID
 		if r := find(recs, prev); r == nil || r.Status != StepAccepted {
-			return StepRecord{}, errf("Bước " + prev + " chưa được dev chấp nhận; chưa thể bắt đầu " + id + ".")
+			return StepRecord{}, errf(i18n.Tf("Bước %s chưa được dev chấp nhận; chưa thể bắt đầu %s.", prev, id))
 		}
 	}
 	tree, err := s.snapshot()
@@ -270,7 +271,7 @@ func (s *Service) indexOf(id string) (int, error) {
 			return i, nil
 		}
 	}
-	return 0, errf("Không có bước " + id + " trong thiết kế.")
+	return 0, errf(i18n.Tf("Không có bước %s trong thiết kế.", id))
 }
 
 func (s *Service) spec(id string) (spec.StepSpec, error) {
@@ -293,10 +294,10 @@ func find(recs []StepRecord, id string) *StepRecord {
 func require(recs []StepRecord, id string, status StepStatus) (StepRecord, error) {
 	r := find(recs, id)
 	if r == nil {
-		return StepRecord{}, errf("Bước " + id + " chưa bắt đầu.")
+		return StepRecord{}, errf(i18n.Tf("Bước %s chưa bắt đầu.", id))
 	}
 	if r.Status != status {
-		return StepRecord{}, errf("Bước " + id + " đang ở trạng thái " + string(r.Status) + ", cần " + string(status) + ".")
+		return StepRecord{}, errf(i18n.Tf("Bước %s đang ở trạng thái %s, cần %s.", id, string(r.Status), string(status)))
 	}
 	return *r, nil
 }
@@ -320,7 +321,7 @@ func (s *Service) load() ([]StepRecord, error) {
 	}
 	var recs []StepRecord
 	if err := json.Unmarshal(b, &recs); err != nil {
-		return nil, &corruptError{"steps.json hỏng: " + file, err}
+		return nil, &corruptError{i18n.Tf("steps.json hỏng: %s", file), err}
 	}
 	if recs == nil {
 		recs = []StepRecord{}

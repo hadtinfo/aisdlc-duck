@@ -37,7 +37,7 @@ func ValidateDesign(designMd string, spec DesignSpec) []Finding {
 	}
 	if !hasSequence {
 		findings = append(findings, Finding{"DESIGN_NO_SEQUENCE",
-			"design.md thiếu sơ đồ tuần tự (khối ```mermaid bắt đầu bằng sequenceDiagram)."})
+			i18n.T("design.md thiếu sơ đồ tuần tự (khối ```mermaid bắt đầu bằng sequenceDiagram).")})
 	} else {
 		var inDiagram []string
 		seenRef := map[string]bool{}
@@ -54,13 +54,13 @@ func ValidateDesign(designMd string, spec DesignSpec) []Finding {
 		for _, s := range spec.Steps {
 			if !seenRef[s.ID] {
 				findings = append(findings, Finding{"DESIGN_STEP_NOT_IN_DIAGRAM",
-					"Bước " + s.ID + " có trong design.yaml nhưng không xuất hiện trong sơ đồ tuần tự."})
+					i18n.Tf("Bước %s có trong design.yaml nhưng không xuất hiện trong sơ đồ tuần tự.", s.ID)})
 			}
 		}
 		for _, id := range inDiagram {
 			if !inYaml[id] {
 				findings = append(findings, Finding{"DESIGN_UNKNOWN_STEP_IN_DIAGRAM",
-					"Sơ đồ tuần tự nhắc bước " + id + " nhưng design.yaml không khai báo."})
+					i18n.Tf("Sơ đồ tuần tự nhắc bước %s nhưng design.yaml không khai báo.", id)})
 			}
 		}
 	}
@@ -68,21 +68,20 @@ func ValidateDesign(designMd string, spec DesignSpec) []Finding {
 	seen := map[string]bool{}
 	for _, s := range spec.Steps {
 		if seen[s.ID] {
-			findings = append(findings, Finding{"DESIGN_DUP_STEP", "Bước " + s.ID + " bị khai báo trùng trong design.yaml."})
+			findings = append(findings, Finding{"DESIGN_DUP_STEP", i18n.Tf("Bước %s bị khai báo trùng trong design.yaml.", s.ID)})
 		}
 		seen[s.ID] = true
 		if len(s.Scope) == 0 {
-			findings = append(findings, Finding{"DESIGN_STEP_NO_SCOPE", "Bước " + s.ID + " chưa khai báo scope."})
+			findings = append(findings, Finding{"DESIGN_STEP_NO_SCOPE", i18n.Tf("Bước %s chưa khai báo scope.", s.ID)})
 		}
 		if s.Budget == nil || !s.Budget.Valid() {
 			findings = append(findings, Finding{"DESIGN_STEP_NO_BUDGET",
-				"Bước " + s.ID + " thiếu budget hợp lệ (files và lines phải > 0)."})
+				i18n.Tf("Bước %s thiếu budget hợp lệ (files và lines phải > 0).", s.ID)})
 		}
 	}
 	for _, inv := range spec.Invariants {
 		if inv.Step != "" && !seen[inv.Step] {
-			findings = append(findings, Finding{"DESIGN_INVARIANT_STEP", "Bất biến '" + inv.Name + "' khai step " +
-				inv.Step + " nhưng design.yaml không có bước này."})
+			findings = append(findings, Finding{"DESIGN_INVARIANT_STEP", i18n.Tf("Bất biến '%s' khai step %s nhưng design.yaml không có bước này.", inv.Name, inv.Step)})
 		}
 	}
 	for _, q := range OpenQuestions(designMd) {
@@ -99,5 +98,5 @@ func ImpactDeprecationWarning(i *Impact) string {
 	if i == nil {
 		return ""
 	}
-	return "IMPACT_DEPRECATED: Khối impact không còn dùng: subagent aisdlc-risk-classifier xếp loại rủi ro; xóa khối này."
+	return i18n.T("IMPACT_DEPRECATED: Khối impact không còn dùng: subagent aisdlc-risk-classifier xếp loại rủi ro; xóa khối này.")
 }

@@ -1,6 +1,7 @@
 /** Kế hoạch nút duyệt trên web (R3, hàm thuần): cờ HIGH/WARN kèm theo, giả định đã/chưa đánh dấu, quyền thao tác. */
 import { flagTitle, sortFlags } from "./reviewModel";
 import type { GateData, ReviewCardData } from "./types";
+import { t } from "./i18n";
 
 export interface ApprovePlan {
   hashShort: string;
@@ -41,8 +42,9 @@ export function actionsFor(state: string): { approve: boolean; reject: boolean; 
 export function approvalBadge(gate: Pick<GateData, "approval" | "superseded">): string | null {
   const a = gate.approval;
   if (a) {
-    if (a.rule?.startsWith("flow:")) return `tự duyệt (mức ${a.rule.slice("flow:".length)})`;
-    return a.label?.startsWith("tự duyệt") ? a.label : null;
+    if (a.rule?.startsWith("flow:")) return t("approval.auto", { level: a.rule.slice("flow:".length) });
+    // nhãn server (theo locale người xem): "tự duyệt (mức …)" hoặc "auto-approved (level …)"
+    return a.label?.startsWith("tự duyệt") || a.label?.startsWith("auto-approved") ? a.label : null;
   }
-  return gate.superseded ? "đã thay thế" : null;
+  return gate.superseded ? t("approval.superseded") : null;
 }

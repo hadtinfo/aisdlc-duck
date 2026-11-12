@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"aisdlc/internal/i18n"
 )
 
 // Requirement là một yêu cầu chất lượng theo mức. YAML/JSON phẳng: { id: coverage, min: 90 }.
@@ -101,21 +103,24 @@ func RequirementRequiredParams(id string) []string {
 	return nil
 }
 
-// RequirementDisplayName là tên hiển thị tiếng Việt.
-func RequirementDisplayName(r Requirement) string {
+// RequirementDisplayName là tên hiển thị theo locale mặc định.
+func RequirementDisplayName(r Requirement) string { return RequirementDisplayNameIn(i18n.Default(), r) }
+
+// RequirementDisplayNameIn là tên hiển thị theo loc.
+func RequirementDisplayNameIn(loc i18n.Locale, r Requirement) string {
 	switch r.ID {
 	case ReqRulePosNeg:
-		return "Case đúng và case sai cho mỗi rule BRD"
+		return loc.T("Case đúng và case sai cho mỗi rule BRD")
 	case ReqBoundary:
-		return "Case biên cho rule gắn thẻ [biên]"
+		return loc.T("Case biên cho rule gắn thẻ [biên]")
 	case ReqIdempotent:
-		return "Case gửi trùng"
+		return loc.T("Case gửi trùng")
 	case ReqConcurrent:
-		return "Case đồng thời " + strconv.Itoa(r.IntParam("threads", 0)) + " luồng"
+		return loc.Tf("Case đồng thời %d luồng", r.IntParam("threads", 0))
 	case ReqInvariant:
-		return "Bất biến DB sau mọi case"
+		return loc.T("Bất biến DB sau mọi case")
 	case ReqCoverage:
-		return "Coverage dòng mới tối thiểu " + strconv.Itoa(r.IntParam("min", 0)) + "%"
+		return loc.Tf("Coverage dòng mới tối thiểu %d%%", r.IntParam("min", 0))
 	case ReqSQLZero:
 		if s, ok := r.StrParam("name"); ok {
 			return s

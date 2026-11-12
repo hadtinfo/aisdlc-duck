@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -17,7 +18,7 @@ type FeatureOption struct {
 // AddTo khai báo cờ trên lệnh.
 func (o *FeatureOption) AddTo(cmd *cobra.Command) {
 	o.cmd = cmd
-	cmd.Flags().StringVarP(&o.value, "feature", "f", "", "Tính năng cần làm (mặc định theo session)")
+	cmd.Flags().StringVarP(&o.value, "feature", "f", "", i18n.T("Tính năng cần làm (mặc định theo session)"))
 }
 
 // Key là key ghi trên lệnh; ok=false khi không có cờ. Key sai dạng thì exit 2.

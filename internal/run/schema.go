@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 )
 
 // SchemaSnapshot là ảnh chụp schema: tên bảng (chữ thường) -> các dòng "column:TYPE:NULL|NOT NULL" đã sắp xếp.
@@ -33,11 +34,11 @@ func NewSchemaSnapshot(tables map[string][]string) SchemaSnapshot {
 func ReadSchemaSnapshot(path string) (SchemaSnapshot, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return SchemaSnapshot{}, fmt.Errorf("Không đọc được %s: %v", path, err)
+		return SchemaSnapshot{}, fmt.Errorf(i18n.T("Không đọc được %s: %v"), path, err)
 	}
 	var s SchemaSnapshot
 	if err := json.Unmarshal(b, &s); err != nil {
-		return SchemaSnapshot{}, fmt.Errorf("Không đọc được %s: %v", path, err)
+		return SchemaSnapshot{}, fmt.Errorf(i18n.T("Không đọc được %s: %v"), path, err)
 	}
 	return NewSchemaSnapshot(s.Tables), nil
 }
@@ -49,7 +50,7 @@ func (s SchemaSnapshot) Write(path string) error {
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(NewSchemaSnapshot(s.Tables)); err != nil {
-		return fmt.Errorf("Không ghi được %s: %v", path, err)
+		return fmt.Errorf(i18n.T("Không ghi được %s: %v"), path, err)
 	}
 	return fsx.WriteAtomic(path, bytes.TrimRight(buf.Bytes(), "\n"), 0o644)
 }

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 )
 
 var (
@@ -22,13 +23,13 @@ var (
 func detail(err error) string {
 	s := yamlPrefix.ReplaceAllString(err.Error(), "")
 	s = strings.ReplaceAll(s, "unmarshal errors:\n  ", "")
-	return linePrefix.ReplaceAllString(s, "dòng $1")
+	return linePrefix.ReplaceAllString(s, i18n.T("dòng $1"))
 }
 
 // Parse giải mã YAML vào out; khóa lạ bị bỏ qua.
 func Parse(data []byte, out any) error {
 	if err := yaml.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("YAML không hợp lệ: %s", detail(err))
+		return fmt.Errorf(i18n.T("YAML không hợp lệ: %s"), detail(err))
 	}
 	return nil
 }
@@ -37,10 +38,10 @@ func Parse(data []byte, out any) error {
 func Read(path string, out any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("Không đọc được %s: %v", path, err)
+		return fmt.Errorf(i18n.T("Không đọc được %s: %v"), path, err)
 	}
 	if err := yaml.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("Không đọc được %s: %s", path, detail(err))
+		return fmt.Errorf(i18n.T("Không đọc được %s: %s"), path, detail(err))
 	}
 	return nil
 }
@@ -51,10 +52,10 @@ func Dump(v any) ([]byte, error) {
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(v); err != nil {
-		return nil, fmt.Errorf("YAML không hợp lệ: %v", err)
+		return nil, fmt.Errorf(i18n.T("YAML không hợp lệ: %v"), err)
 	}
 	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("YAML không hợp lệ: %v", err)
+		return nil, fmt.Errorf(i18n.T("YAML không hợp lệ: %v"), err)
 	}
 	return buf.Bytes(), nil
 }
@@ -63,7 +64,7 @@ func Dump(v any) ([]byte, error) {
 func Write(path string, v any) error {
 	data, err := Dump(v)
 	if err != nil {
-		return fmt.Errorf("Không ghi được %s: %v", path, err)
+		return fmt.Errorf(i18n.T("Không ghi được %s: %v"), path, err)
 	}
 	// fsx.WriteAtomic đã tạo thư mục cha và báo "Không ghi được <path>: ...".
 	return fsx.WriteAtomic(path, data, 0o644)

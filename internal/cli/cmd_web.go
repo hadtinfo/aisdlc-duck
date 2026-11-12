@@ -200,9 +200,9 @@ func webLogin(ctx *Context) (int, error) {
 	if c, ok := LoadWebConfig(ctx); ok {
 		def = c.URL
 	}
-	prompt := "URL web: "
+	prompt := i18n.T("URL web: ")
 	if def != "" {
-		prompt = "URL web [" + def + "]: "
+		prompt = i18n.Tf("URL web [%s]: ", def)
 	}
 	u, err := ctx.AskDev(prompt)
 	if err != nil {

@@ -83,6 +83,7 @@ func TestEnglishCLIFlow(t *testing.T) {
 	// stdout là review card (internal/review, đợt 3): chỉ xét stderr của CLI
 	eq(t, r.run("approve", "brd"), 3)
 	noVietnamese(t, "approve brd (stderr)", r.err)
+	noVietnamese(t, "approve brd (summary)", strings.SplitN(r.out, "Review card", 2)[0])
 	contains(t, r.err, "Only the dev may run this command, in a real terminal")
 
 	// chưa qua cổng thiết kế: step start bị từ chối
@@ -137,6 +138,12 @@ func TestEnglishOutOfScopeAndStop(t *testing.T) {
 	noVietnamese(t, "hook out of scope", r.out+r.err)
 	o := hookSpecific(t, r.out)
 	contains(t, str(o, "permissionDecisionReason"), "Outside the scope of S1", "aisdlc scope allow internal/other/nope.go")
+
+	// tiến trình hook chạy ở thư mục khác (không config, locale vi): ngôn ngữ theo repo trong cwd của JSON
+	other := newTestRepo(t)
+	other.hook("pre-tool-use", hookIn("PreToolUse", r.root, "Write", "file_path", filepath.Join(r.root, "internal/other/nope.go")))
+	noVietnamese(t, "hook from other cwd", other.out+other.err)
+	contains(t, str(hookSpecific(t, other.out), "permissionDecisionReason"), "Outside the scope of S1")
 
 	// Stop giữa bước
 	r.hook("stop", hookIn("Stop", r.root, "", "", ""))

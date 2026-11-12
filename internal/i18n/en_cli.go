@@ -554,6 +554,9 @@ Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
 
 Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
 `,
+	"URL web: ":      "Web URL: ",
+	"URL web [%s]: ": "Web URL [%s]: ",
+	"<url web>":      "<web url>",
 }
 
 func init() { register(enCLI) }

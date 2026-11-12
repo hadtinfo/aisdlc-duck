@@ -124,6 +124,11 @@ func (h *hook) read() *hookInput {
 	} else if m := headCwd.FindStringSubmatch(in.head()); m != nil {
 		in.cwd = h.absCwd(m[1])
 	}
+	// ngôn ngữ theo repo mà hook đang xét (cwd của phiên agent), không theo thư mục tiến trình; lỗi thì giữ locale đã
+	// chọn lúc khởi động để hook vẫn fail-open.
+	if l, err := localeAt(h.ctx, in.cwd); err == nil {
+		i18n.SetDefault(l)
+	}
 	return in
 }
 

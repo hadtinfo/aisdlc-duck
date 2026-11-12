@@ -547,7 +547,7 @@ func (w *WebCache) RequireApproveToken(f *Feature, g gate.Gate) error {
 	if w.approveToken() != "" {
 		return nil
 	}
-	u := "<url web>"
+	u := i18n.T("<url web>")
 	if c, ok := w.Config(); ok {
 		u = webclient.SafeURL(c.URL, c.Token) // không in userinfo hay token
 	}

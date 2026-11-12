@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { afterEach, expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
@@ -10,7 +11,7 @@ import { LocaleSwitch } from "./LocaleSwitch";
 import { RiskLLM } from "./RiskLLM";
 
 const VI_CHARS = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
-const text = (el: JSX.Element) => renderToStaticMarkup(<MemoryRouter>{el}</MemoryRouter>).replace(/<[^>]+>/g, " ");
+const text = (el: ReactElement) => renderToStaticMarkup(<MemoryRouter>{el}</MemoryRouter>).replace(/<[^>]+>/g, " ");
 
 afterEach(() => setLocale("vi"));
 

@@ -7,6 +7,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"aisdlc/internal/i18n"
 )
 
 // Mã thoát, như Main.java.
@@ -61,6 +63,12 @@ func runWith(ctx *Context, extra []func(*Context) *cobra.Command, args ...string
 		args = []string{} // nil thì cobra đọc os.Args
 	}
 	ctx.withArgs(args)
+	loc, err := repoLocale(ctx)
+	if err != nil {
+		fmt.Fprintf(ctx.err, "Lỗi: %v\n", err)
+		return ExitUsage
+	}
+	i18n.SetDefault(loc)
 	root := newRoot(ctx)
 	for _, f := range extra {
 		root.AddCommand(f(ctx))

@@ -166,6 +166,7 @@ func TestInitJiraRedirectIsNotFollowed(t *testing.T) {
 	}))
 	defer target.Close()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// nosemgrep: go.lang.security.injection.open-redirect.open-redirect -- máy chủ giả chỉ dùng trong test, đích là httptest server cố định
 		http.Redirect(w, r, target.URL+r.URL.RequestURI(), http.StatusFound)
 	}))
 	defer srv.Close()
@@ -247,7 +248,7 @@ func TestStatusTextAndJSONOfFreshFeature(t *testing.T) {
 	r := newTestRepo(t)
 	r.setupInit()
 	eq(t, r.run("status"), 0)
-	if !strings.HasPrefix(r.out, "[PAY-1]\nTính năng PAY-1 (FULL): PAY-1\n"+
+	if !strings.HasPrefix(r.out, "Locale: vi\n[PAY-1]\nTính năng PAY-1 (FULL): PAY-1\n"+
 		"Duyệt trong Claude Code: tắt (không đọc được aisdlc/config.yaml ở origin/main)\n") {
 		t.Fatalf("got:\n%s", r.out)
 	}

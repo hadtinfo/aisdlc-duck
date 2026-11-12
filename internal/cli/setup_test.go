@@ -2,7 +2,9 @@ package cli
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"aisdlc/internal/model"
@@ -134,4 +136,62 @@ func TestSetupUndetectedServiceMainHints(t *testing.T) {
 	eq(t, c.Service.Main, "./cmd/server")
 	eq(t, c.Migrations.Dir, "db/migrations")
 	contains(t, r.out, "Chưa dò được package main", "Chưa dò được thư mục migration")
+}
+
+// noGitRepo là thư mục dịch vụ chưa có git (dev chạy setup ở thư mục mới tạo).
+func noGitRepo(t *testing.T) *testRepo {
+	t.Helper()
+	hermeticGit(t)
+	r := &testRepo{t: t, root: t.TempDir(), env: map[string]string{}, now: testNow}
+	r.runner = newFakeRunner(r.root)
+	r.verifier = &fakeVerifier{runner: r.runner}
+	return r
+}
+
+func gitOut(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	c := exec.Command("git", args...)
+	c.Dir = dir
+	out, err := c.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// Thư mục chưa có git: setup tạo repo git (nhánh main, chưa commit, chưa remote) để init dùng được ngay.
+func TestSetupInitsGitWhenMissing(t *testing.T) {
+	r := noGitRepo(t)
+	eq(t, r.run("setup"), 0)
+	if st, err := os.Stat(filepath.Join(r.root, ".git")); err != nil || !st.IsDir() {
+		t.Fatalf("setup phải tạo .git: %v", err)
+	}
+	eq(t, gitOut(t, r.root, "symbolic-ref", "--short", "HEAD"), "main")
+	eq(t, gitOut(t, r.root, "remote"), "")
+	contains(t, r.out, "Đã tạo git repo", "git remote add origin")
+	eq(t, r.run("init", "ROOM-1"), 0)
+}
+
+// Repo đã có git: setup không đụng tới git.
+func TestSetupKeepsExistingGit(t *testing.T) {
+	r := setupRepo(t)
+	head := gitOut(t, r.root, "rev-parse", "HEAD")
+	eq(t, r.run("setup"), 0)
+	eq(t, gitOut(t, r.root, "rev-parse", "HEAD"), head)
+	if strings.Contains(r.out, "Đã tạo git repo") {
+		t.Fatalf("không được tạo git lần nữa:\n%s", r.out)
+	}
+}
+
+// Thư mục dịch vụ nằm trong một repo git có sẵn (monorepo): không tạo repo lồng.
+func TestSetupNoNestedGitInsideExistingRepo(t *testing.T) {
+	r := noGitRepo(t)
+	gitOut(t, r.root, "init", "-q", "-b", "main")
+	sub := filepath.Join(r.root, "svc")
+	must(t, os.MkdirAll(sub, 0o755))
+	r.root = sub
+	eq(t, r.run("setup"), 0)
+	if _, err := os.Stat(filepath.Join(sub, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("không được tạo .git lồng trong repo cha: %v", err)
+	}
 }

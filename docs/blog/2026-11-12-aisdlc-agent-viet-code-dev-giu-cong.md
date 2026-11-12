@@ -54,8 +54,35 @@ làm. Cách này đối lập với kiểu "vibe coding" muốn gì gõ nấy. �
 lần agent dùng tool. Hook `PreToolUse` có thể chặn một lời gọi tool, và lý do chặn được đưa lại cho agent đọc. Đây là
 lớp *tất định* bao quanh một agent vốn *xác suất*, và AISDLC dựng phần lớn cơ chế kiểm soát của mình trên đó.
 
-AISDLC kết hợp cả hai: quy trình theo tài liệu như spec-driven development, cộng với hook và CI để **ép** quy trình
-đó, thay vì chỉ hy vọng agent tuân theo.
+**Agent không người trông của Stripe.** Stripe kể trong hai bài viết về "Minions", agent viết code tự chạy, không
+cần người trông, từ đầu đến cuối mỗi việc
+([phần 1](https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents),
+[phần 2](https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents-part-2)). Mỗi tuần, hơn 1.300 PR
+được merge ở Stripe là do minion viết toàn bộ. Các PR đó vẫn được người review, nhưng không chứa dòng code nào do
+người viết. Vài lựa chọn thiết kế của Stripe rất đáng học:
+
+- **Hộp cát cô lập thay cho hỏi quyền.** Minion chạy trên devbox tách khỏi production và internet, nên chạy được "mà
+  không cần kiểm tra quyền của người", và mọi sai sót bị giới hạn trong phạm vi một devbox.
+- **"Blueprint": xen kẽ bước tất định và bước agentic.** Chạy linter, đẩy code, thao tác git là code thường, "không gọi
+  LLM". Chỉ những việc như "implement task" hay "fix CI failures" mới giao cho agent. Stripe gọi đó là "đặt LLM vào
+  những chiếc hộp có giới hạn".
+- **Vòng phản hồi có trần.** Lint chạy ngay khi push. CI tối đa hai lượt, vì mỗi lượt tốn token, máy và thời gian.
+  Sau lượt thứ hai, nhánh được trả về cho người.
+- **Một lưới test khổng lồ đứng sau.** Hơn ba triệu test.
+
+**"Harness" quanh agent.** Cách nhìn này đang được gọi chung là *harness*: model chỉ lo suy luận, còn lớp bao quanh
+quyết định agent được thấy dữ liệu gì, được chạm vào hệ thống nào, và kết quả được kiểm chứng ra sao. Một bài của
+XMPro, công ty bán sản phẩm harness nên đây là góc nhìn của nhà cung cấp, tóm lại thành công thức
+"Agent = Model + Harness", và nhấn mạnh rằng *ràng buộc làm tăng độ tin cậy*
+([XMPro](https://xmpro.com/your-ai-agent-needs-a-harness-heres-what-that-means-for-industrial-operations/)).
+
+AISDLC kết hợp các ý trên: quy trình theo tài liệu như spec-driven development, cộng với hook và CI để **ép** quy trình
+đó, thay vì chỉ hy vọng agent tuân theo. Theo nghĩa đó, AISDLC là một harness cho agent viết code.
+
+Khác biệt lớn với Minions nằm ở *chỗ đặt người duyệt*. Stripe để agent chạy một mạch rồi người review ở cuối. Cách đó
+hợp lý khi phía sau là hơn ba triệu test và một hạ tầng devbox dày công xây dựng. Phần lớn các team dịch vụ không có
+lưới an toàn như vậy. Vì thế AISDLC kéo người duyệt lên sớm hơn: duyệt yêu cầu, thiết kế và bộ case *trước khi* có
+code. Bộ case đã khóa đóng vai trò "bộ test của riêng tính năng", thứ mà Stripe có sẵn ở quy mô cả công ty.
 
 ## AISDLC hoạt động thế nào
 
@@ -117,6 +144,11 @@ AISDLC nói rõ giới hạn của mình, và đây là điều đáng tham kh�
 - **Token có kiểu** (`login`, `ingest`, `approve`, `ci`). Token mà CLI và hook dùng không thể duyệt gì.
 - **Chặn ghi qua Bash chỉ là heuristic.** Lớp thực thi thật là GitLab: nhánh được bảo vệ và job eval. Tài liệu liệt kê
   công khai các cách lách đã biết.
+
+So với Stripe, hai bên giải cùng một bài toán theo hai cách. Stripe cô lập *môi trường*: cho agent toàn quyền trong
+một devbox không có đường ra production. AISDLC chạy ngay trên máy dev, nơi không thể cô lập như vậy, nên giới hạn
+*hành động*: phạm vi file, file trạng thái, lệnh duyệt. Cả hai cùng chung một ý: mọi thứ phải luôn đúng thì giao cho
+code tất định (hook, linter, CI), không giao cho LLM.
 
 Cách nói thẳng "hook là lan can, CI mới là cổng" quan trọng hơn vẻ ngoài của nó. Nhiều công cụ quanh agent ngầm hứa
 một mức an toàn mà prompt không thể bảo đảm.
@@ -203,3 +235,9 @@ Rồi chạy `aisdlc setup --locale vi` (hoặc `en`) ở gốc repo dịch vụ
 - GitHub Blog, *Spec-driven development with AI: Get started with a new open source toolkit*,
   <https://github.blog/ai-and-ml/generative-ai/spec-driven-development-with-ai-get-started-with-a-new-open-source-toolkit/>
 - Claude Code docs, *Hooks reference*, <https://code.claude.com/docs/en/hooks>
+- Alistair Gray (Stripe), *Minions: Stripe's one-shot, end-to-end coding agents* (09/02/2026),
+  <https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents>, và *Part 2* (19/02/2026),
+  <https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents-part-2>
+- Nic Gould (XMPro), *Your AI Agent Needs a Harness — Here's What That Means for Industrial Operations* (19/05/2026),
+  <https://xmpro.com/your-ai-agent-needs-a-harness-heres-what-that-means-for-industrial-operations/>; bài của nhà cung
+  cấp sản phẩm harness

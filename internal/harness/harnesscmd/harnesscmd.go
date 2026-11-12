@@ -26,6 +26,7 @@ import (
 	"aisdlc/internal/buildinfo"
 	"aisdlc/internal/harness"
 	"aisdlc/internal/harness/harnessapi"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang/langs"
 	"aisdlc/internal/model"
 )
@@ -55,6 +56,7 @@ func OSSignals() *Signals {
 
 // Main chạy lệnh với args (không gồm tên chương trình) và trả mã thoát.
 func Main(args []string, stderr io.Writer, sig *Signals) int {
+	i18n.SetDefault(i18n.FromEnv(os.LookupEnv))
 	if len(args) == 0 || (args[0] != "run" && args[0] != "verify") {
 		fmt.Fprintln(stderr, usage)
 		return harnessapi.ExitError

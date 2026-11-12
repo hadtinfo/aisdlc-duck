@@ -1,0 +1,45 @@
+# AISDLC eval job. Add to .gitlab-ci.yml:  include: { local: aisdlc/gitlab-ci.aisdlc.yml }
+# Needs the CI/CD variables AISDLC_BIN and AISDLC_HARNESS_BIN: download URLs of the aisdlc and aisdlc-harness binaries
+# for linux/amd64 (internal artifacts, e.g. a package registry; `make plugin-dist` produces
+# plugin/lib/aisdlc-linux-amd64 and aisdlc-harness-linux-amd64).
+# aisdlc looks for aisdlc-harness in the same folder as itself.
+# Web mode (approvals: web in config.yaml): add the CI/CD variables AISDLC_WEB_URL (web URL) and AISDLC_CI_TOKEN (CI
+# token, set Masked); if a variable is missing or the web does not answer, the job FAILS. Local mode needs neither.
+# The harness runs Postgres/Kafka with testcontainers through Docker-in-Docker: DOCKER_HOST points to the docker:dind
+# service (no TLS, port 2375), TESTCONTAINERS_HOST_OVERRIDE=docker makes the harness reach containers through host
+# "docker", and Ryuk is off (TESTCONTAINERS_RYUK_DISABLED) because the job uses its own dind, which is destroyed when
+# the job ends. GIT_DEPTH: 0 so merge-base works (no shallow clone). With Ryuk off, containers left by a crashed job
+# are cleaned up because the dind is destroyed with the job.
+aisdlc-eval:
+  stage: test
+  image: golang:1.26
+  services:
+    - docker:dind
+  variables:
+    GIT_DEPTH: "0"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_HOST_OVERRIDE: docker
+    TESTCONTAINERS_RYUK_DISABLED: "true"
+    GOPATH: $CI_PROJECT_DIR/.go
+    GOCACHE: $CI_PROJECT_DIR/.gocache
+  cache:
+    key:
+      files:
+        - go.sum
+    paths:
+      - .go/pkg/mod/
+      - .gocache/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - test -n "$AISDLC_BIN" || { echo "Missing variable AISDLC_BIN (URL of the aisdlc binary)"; exit 1; }
+    - test -n "$AISDLC_HARNESS_BIN" || { echo "Missing variable AISDLC_HARNESS_BIN (URL of the aisdlc-harness binary)"; exit 1; }
+    - curl -fsSL -o /usr/local/bin/aisdlc "$AISDLC_BIN" && chmod +x /usr/local/bin/aisdlc
+    - curl -fsSL -o /usr/local/bin/aisdlc-harness "$AISDLC_HARNESS_BIN" && chmod +x /usr/local/bin/aisdlc-harness
+    - git fetch origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+    - aisdlc eval --ci --base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+  artifacts:
+    when: always
+    paths:
+      - aisdlc/features/*/eval/

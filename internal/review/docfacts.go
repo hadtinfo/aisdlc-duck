@@ -44,15 +44,10 @@ type DesignDoc struct {
 	APIRows            []ApiRow
 }
 
-// Sources là các nguồn hợp lệ của một giả định.
-var Sources = []string{"tự chọn", "suy ra từ BRD", "câu hỏi mở đã trả lời", "ngoài phạm vi"}
-
-const assumptionsSection = "Giả định"
-
 var (
 	bulletRe     = regexp.MustCompile(`^\s*[-*]\s+(.*\S)\s*$`)
 	ruleRe       = regexp.MustCompile(`^\**(?i:br)-(\d+)\**\s*:\s*\**\s*(.*)$`)
-	boundaryRe   = regexp.MustCompile(`^(.*\S)\s*\[biên\]\s*$`)
+	boundaryRe   = regexp.MustCompile(`^(.*\S)\s*\[(?:biên|boundary)\]\s*$`)
 	answeredRe   = regexp.MustCompile(`^\[[xX]\]\s*(.*)$`)
 	sourceTailRe = regexp.MustCompile(`^(.*\S)\s*\(([^()]*)\)\s*$`)
 	apiLineRe    = regexp.MustCompile(`\b(GET|POST|PUT|PATCH|DELETE)\s+/\S*`)
@@ -76,32 +71,33 @@ func lines(s string) []string {
 
 // ParseBRD đọc dữ kiện xác định từ brd.md; đầu vào rỗng cho kết quả rỗng.
 func ParseBRD(md string) BrdDoc {
-	_, s := spec.MarkdownSections(md)
+	s := spec.SectionsByID(md)
 	rules := []Rule{}
-	for _, b := range bullets(s["Quy tắc nghiệp vụ"]) {
+	for _, b := range bullets(s[spec.SecRules]) {
 		rules = append(rules, parseRule(b))
 	}
 	answered := []string{}
-	for _, b := range bullets(s["Câu hỏi mở"]) {
+	for _, b := range bullets(s[spec.SecOpenQuestions]) {
 		if m := answeredRe.FindStringSubmatch(b); m != nil {
 			answered = append(answered, strings.TrimSpace(m[1]))
 		}
 	}
-	_, has := s[assumptionsSection]
+	_, has := s[spec.SecAssumptions]
 	return BrdDoc{
 		Rules:              rules,
-		AcceptanceCriteria: len(bullets(s["Tiêu chí chấp nhận"])),
-		OutOfScope:         bullets(s["Ngoài phạm vi"]),
+		AcceptanceCriteria: len(bullets(s[spec.SecAcceptance])),
+		OutOfScope:         bullets(s[spec.SecOutOfScope]),
 		AnsweredQuestions:  answered,
-		Assumptions:        assumptions(s[assumptionsSection]),
+		Assumptions:        assumptions(s[spec.SecAssumptions]),
 		AssumptionsSection: has,
 	}
 }
 
 // ParseDesign đọc dữ kiện xác định từ design.md.
 func ParseDesign(md string) DesignDoc {
-	_, s := spec.MarkdownSections(md)
-	api := s["API"]
+	_, byName := spec.MarkdownSections(md)
+	s := spec.SectionsByID(md)
+	api := byName["API"]
 	apiLines := []string{}
 	rows := []ApiRow{}
 	codes := map[string]bool{}
@@ -134,9 +130,9 @@ func ParseDesign(md string) DesignDoc {
 		sc = append(sc, c)
 	}
 	sort.Strings(sc)
-	_, has := s[assumptionsSection]
+	_, has := s[spec.SecAssumptions]
 	return DesignDoc{
-		Assumptions:        assumptions(s[assumptionsSection]),
+		Assumptions:        assumptions(s[spec.SecAssumptions]),
 		AssumptionsSection: has,
 		APILines:           apiLines,
 		StatusCodes:        sc,
@@ -197,9 +193,13 @@ func assumptions(body string) []Assumption {
 
 func parseAssumption(line string) Assumption {
 	if m := sourceTailRe.FindStringSubmatch(line); m != nil {
-		for _, src := range Sources {
-			if strings.EqualFold(src, strings.TrimSpace(m[2])) {
-				return Assumption{m[1], src}
+		tail := strings.TrimSpace(m[2])
+		for _, src := range spec.AssumptionSources {
+			if strings.EqualFold(src.VI, tail) {
+				return Assumption{m[1], src.VI}
+			}
+			if strings.EqualFold(src.EN, tail) {
+				return Assumption{m[1], src.EN}
 			}
 		}
 	}

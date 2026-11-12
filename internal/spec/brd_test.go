@@ -25,7 +25,7 @@ Vượt hạn mức trả 422.
 
 func tmplText(t *testing.T, name string) string {
 	t.Helper()
-	b, err := templates.FS.ReadFile(name)
+	b, err := templates.FS.ReadFile("vi/" + name)
 	if err != nil {
 		t.Fatal(err)
 	}

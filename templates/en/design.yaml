@@ -1,0 +1,14 @@
+steps:
+  - id: S1
+    title: Validate request
+    scope: ["internal/limit/handler/**", "cmd/server/**"]
+    budget: { files: 3, lines: 120 }
+  - id: S2
+    title: Compute limit and record usage
+    scope: ["internal/limit/service/**", "db/migrations/**"]
+    budget: { files: 4, lines: 200 }
+# DB invariants checked after each case (declare them when the feature writes money or state data). Each entry is a
+# SELECT that returns the VIOLATING rows (0 rows when correct). Without `step`: checked after every case; with
+# `step: Sx`: checked only after cases of step Sx and later steps (use it when the table only exists from step Sx), e.g.:
+#   - { name: "Used total is not negative", sql: "SELECT account_id FROM transfer_limit_usage WHERE used_amount < 0", step: S2 }
+invariants: []

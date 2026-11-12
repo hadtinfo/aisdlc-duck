@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"aisdlc/internal/i18n"
 	"regexp"
 	"strings"
 )
@@ -85,7 +86,7 @@ func ValidateDesign(designMd string, spec DesignSpec) []Finding {
 		}
 	}
 	for _, q := range OpenQuestions(designMd) {
-		findings = append(findings, Finding{"DESIGN_OPEN_QUESTION", "Câu hỏi mở chưa được trả lời: " + q})
+		findings = append(findings, Finding{"DESIGN_OPEN_QUESTION", i18n.Tf("Câu hỏi mở chưa được trả lời: %s", q)})
 	}
 	return findings
 }

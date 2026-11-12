@@ -7,6 +7,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"aisdlc/internal/i18n"
 )
 
 // Mã thoát, như Main.java.
@@ -61,6 +63,13 @@ func runWith(ctx *Context, extra []func(*Context) *cobra.Command, args ...string
 		args = []string{} // nil thì cobra đọc os.Args
 	}
 	ctx.withArgs(args)
+	loc, err := repoLocale(ctx)
+	if err != nil {
+		// locale sai trong config: không chặn mọi lệnh (kể cả --version, hook fail-open); lệnh đọc config tự báo
+		// lỗi như mọi khóa sai khác (model.LoadRepoConfig).
+		loc = i18n.FromEnv(ctx.Env)
+	}
+	i18n.SetDefault(loc)
 	root := newRoot(ctx)
 	for _, f := range extra {
 		root.AddCommand(f(ctx))

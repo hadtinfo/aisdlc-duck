@@ -112,8 +112,9 @@ func TestOutputStartsWithKey(t *testing.T) {
 	r := parallelRepo(t)
 	r.initAs("", "PAY-1")
 	r.ok(noConsole(), "status")
-	first, _, _ := strings.Cut(r.out, "\n")
-	contains(t, first, "[PAY-1]")
+	lines := strings.SplitN(r.out, "\n", 3)
+	eq(t, lines[0], "Locale: vi") // dòng Locale luôn đứng đầu, kế đó mới là biểu ngữ [KEY]
+	contains(t, lines[1], "[PAY-1]")
 }
 
 func TestSameBranchSecondInitWarnsOnce(t *testing.T) {

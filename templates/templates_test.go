@@ -47,17 +47,23 @@ func eachLocale(t *testing.T, f func(t *testing.T, l i18n.Locale)) {
 
 func TestTemplatesHaveNoJavaMentions(t *testing.T) {
 	n := 0
-	fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
 		n++
-		b, _ := FS.ReadFile(p)
+		b, err := FS.ReadFile(p)
+		if err != nil {
+			return err
+		}
 		if m := javaRe.FindString(string(b)); m != "" {
 			t.Errorf("%s nhắc %q", p, m)
 		}
 		return nil
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if n < 16 {
 		t.Fatalf("chỉ thấy %d template", n)
 	}

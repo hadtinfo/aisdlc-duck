@@ -18,6 +18,8 @@ var enWeb = map[string]string{
 	"Không tìm thấy tính năng":      "Feature not found",
 	"Cổng không hợp lệ":             "Invalid gate",
 	"Server đang tắt":               "Server is shutting down",
+	"UI chưa build: chạy make ui":   "UI not built: run make ui",
+	"httpx: lỗi nội bộ: %v":         "httpx: internal error: %v",
 	"@@ file quá lớn để so @@":      "@@ file too large to diff @@",
 
 	// auth

@@ -95,3 +95,19 @@ func TestFailTranslatesApiError(t *testing.T) {
 		t.Fatal(w.Code, w.Body)
 	}
 }
+
+// LimitBody từ chối theo Content-Length: câu 413 theo locale của request.
+func TestLimitBodyTooLargeLocalized(t *testing.T) {
+	h := httpx.Localize(httpx.LimitBody(10)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
+	for lang, want := range map[string]string{"en": `{"error":"Payload exceeds 10 bytes"}`, "": `{"error":"Payload vượt 10 byte"}`} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/", strings.NewReader(strings.Repeat("x", 50)))
+		if lang != "" {
+			r.Header.Set("Accept-Language", lang)
+		}
+		h.ServeHTTP(w, r)
+		if w.Code != 413 || strings.TrimSpace(w.Body.String()) != want {
+			t.Errorf("%q: %d %s, muốn %s", lang, w.Code, w.Body, want)
+		}
+	}
+}

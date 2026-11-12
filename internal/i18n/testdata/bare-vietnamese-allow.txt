@@ -106,8 +106,6 @@ internal/spec/stubs.go  # chưa chuyển (đợt 2)
 internal/step/extras.go  # chưa chuyển (đợt 2)
 internal/step/pending.go  # chưa chuyển (đợt 2)
 internal/step/service.go  # chưa chuyển (đợt 2)
-internal/web/httpx/httpx.go  # chưa chuyển được: pre-commit Semgrep chặn mọi sửa file (no-direct-write-to-responsewriter ở WriteJSON có sẵn); câu tiếng Việt ở đây là khóa catalog, httpx.Fail dịch lúc ghi
-internal/web/spa/spa.go  # chưa chuyển được: pre-commit Semgrep chặn mọi sửa file (filepath-clean-misuse, no-direct-write-to-responsewriter ở dòng có sẵn); placeholder chỉ hiện khi chưa make ui
 internal/web/webtest/client.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng
 internal/web/webtest/trickle.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng
 internal/web/webtest/webtest.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng

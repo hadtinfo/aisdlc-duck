@@ -1,3 +1,4 @@
+import { getLocale, isLocale, Locale, setLocale, storeLocale, t } from "./i18n";
 import { encodePath } from "./routes";
 import type { ControlState, Resubmission } from "./types";
 
@@ -17,8 +18,15 @@ export interface BoardParams { repo?: string; owner?: string; hideDoneOlderThanD
 /** Lỗi 401 đã được chuyển hướng về /login; giữ lỗi để caller dừng xử lý. */
 export class UnauthorizedError extends Error {}
 
+/** Header gửi kèm mọi request: Accept-Language theo locale giao diện, để chữ do server sinh cùng ngôn ngữ. */
+function withLocale(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers);
+  headers.set("Accept-Language", getLocale());
+  return { credentials: "same-origin", ...init, headers };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { credentials: "same-origin", ...init });
+  const res = await fetch(path, withLocale(init));
   if (res.status === 401 && path !== "/api/login") {
     session = null;
     if (typeof location !== "undefined" && location.pathname !== "/login") location.assign("/login");
@@ -33,7 +41,7 @@ export function getJson<T>(path: string): Promise<T> {
   return request<T>(path);
 }
 
-/** Lỗi API có HTTP status; message là câu tiếng Việt server trả trong `{error}` (không có thì câu chung). */
+/** Lỗi API có HTTP status; message là câu server trả trong `{error}` (theo Accept-Language/locale người dùng), không có thì câu chung. */
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -48,10 +56,22 @@ async function apiError(res: Response): Promise<ApiError> {
     const b = (await res.json()) as { error?: unknown };
     if (typeof b?.error === "string") msg = b.error;
   } catch { /* body không phải JSON */ }
-  return new ApiError(res.status, msg || `Lỗi máy chủ (HTTP ${res.status})`);
+  return new ApiError(res.status, msg || t("api.serverError", { status: res.status }));
 }
 
-export interface Me { login: string; displayName: string; role: "dev" | "lead"; csrf: string | null }
+export interface Me {
+  login: string; displayName: string; role: "dev" | "lead"; csrf: string | null;
+  /** Ngôn ngữ giao diện người dùng đã chọn; null = chưa chọn (UI theo localStorage / trình duyệt). */
+  locale?: Locale | null;
+}
+
+/** Người dùng đã chọn ngôn ngữ trên server: áp dụng và nhớ trong trình duyệt. */
+function applyServerLocale(m: Me): void {
+  if (isLocale(m.locale)) {
+    setLocale(m.locale);
+    storeLocale(m.locale);
+  }
+}
 
 /** Phiên trong bộ nhớ (CSRF không lưu localStorage); mất khi tải lại trang thì lấy lại qua GET /api/me. */
 let session: Me | null = null;
@@ -67,7 +87,7 @@ export function me(): Promise<Me> {
   if (session) return Promise.resolve(session);
   if (!pending) {
     pending = request<Me>("/api/me")
-      .then((m) => { session = m; return m; })
+      .then((m) => { session = m; applyServerLocale(m); return m; })
       .finally(() => { pending = null; });
   }
   return pending;
@@ -81,6 +101,27 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
     body: JSON.stringify(body),
   });
+}
+
+/** PUT JSON bằng phiên, kèm header X-CSRF-Token. */
+async function putJson<T>(path: string, body: unknown): Promise<T> {
+  const csrf = (await me()).csrf ?? "";
+  return request<T>(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Lưu ngôn ngữ giao diện của người đang đăng nhập (PUT /api/me/locale). */
+export async function saveMyLocale(locale: Locale): Promise<void> {
+  const m = await putJson<Me>("/api/me/locale", { locale });
+  if (session) session = { ...session, locale: m.locale ?? locale };
+}
+
+/** Đã có phiên trong bộ nhớ (không gọi mạng). */
+export function hasSession(): boolean {
+  return session != null;
 }
 
 /** Chuỗi query của /api/board. hideDoneOlderThanDays=0 nghĩa là hiện tất cả (backend mặc định 7 khi vắng). */
@@ -114,15 +155,15 @@ export function getEvents(repoId: string, key: string, limit = 200): Promise<unk
 /** Trả true nếu đăng nhập được (lưu phiên + CSRF), false nếu token sai (401). */
 export async function login(token: string): Promise<boolean> {
   resetSession();
-  const res = await fetch("/api/login", {
+  const res = await fetch("/api/login", withLocale({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token }),
-    credentials: "same-origin",
-  });
+  }));
   if (res.status === 401) return false;
   if (!res.ok) throw await apiError(res);
   session = (await res.json()) as Me;
+  applyServerLocale(session);
   return true;
 }
 

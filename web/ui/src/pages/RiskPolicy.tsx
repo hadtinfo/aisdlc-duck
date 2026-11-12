@@ -13,14 +13,16 @@ import {
   saveDraft, skipAllRemaining, validate, versions,
 } from "../risk";
 import { type RiskTab, riskTab } from "../routes";
+import { Key, t as tNow, useT } from "../i18n";
 import "../risk.css";
 
-const TABS: [RiskTab, string][] = [
-  ["rules", "Rule nhận diện"], ["levels", "Yêu cầu theo mức"], ["history", "Phiên bản"],
+const TABS: [RiskTab, Key][] = [
+  ["rules", "rr.title"], ["levels", "rq.title"], ["history", "rv.versions"],
 ];
 
 /** Trang /risk/<repo>: chính sách rủi ro của repo, 3 tab theo hash, nháp lưu localStorage, dev tự xuất bản (spec §6). */
 export function RiskPolicy({ repoId }: { repoId: string }) {
+  const { t, locale } = useT();
   const tab = riskTab(useLocation().hash);
   const [view, setView] = useState<PolicyView | null>(null);
   const [state, setState] = useState<"loading" | "none" | "ok" | "error">("loading");
@@ -39,7 +41,7 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
 
   const load = useCallback(async (): Promise<PolicyView | null> => {
     versions(repoId).then((v) => { setVers(v); setVersError(""); })
-      .catch((e) => { if (!(e instanceof UnauthorizedError)) setVersError("Không tải được danh sách phiên bản"); });
+      .catch((e) => { if (!(e instanceof UnauthorizedError)) setVersError(tNow("rp.versionsFailed")); });
     try {
       const v = await loadPolicy(repoId);
       setView(v);
@@ -58,7 +60,7 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
   }, [repoId, load]);
 
   const policy: Policy | null = draft?.policy ?? view?.policy ?? null;
-  const changes = useMemo(() => (view && draft ? draftChanges(view.policy, draft.policy) : []), [view, draft]);
+  const changes = useMemo(() => (view && draft ? draftChanges(view.policy, draft.policy) : []), [view, draft, locale]);
 
   /** `fromPreset` vắng thì giữ cờ của nháp (sửa thường không đổi nguồn). */
   const update = useCallback((p: Policy, fromPreset?: boolean) => {
@@ -86,7 +88,7 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
     setDraft(null);
     setHandled({});
     setRebasedTo(null);
-    say("Đã bỏ nháp");
+    say(tNow("rp.discarded"));
   }
 
   /** Ghi bảng áp/bỏ qua mẫu mới; bản mẫu của nháp chỉ lên khi đã xem hết mọi thay đổi. */
@@ -102,7 +104,7 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
     const latest = view?.presetUpdate?.policy;
     if (!latest || !policy) return;
     handle({ ...handled, [changeId(c)]: "applied" }, applyPresetChange(policy, latest, c));
-    say("Đã áp dụng vào nháp");
+    say(tNow("rv.applied"));
   }
 
   /** Nạp bản nháp schema 2 từ server vào trình sửa; xem lại rồi xuất bản như mọi phiên bản. */
@@ -115,9 +117,9 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
       setDraft(next);
       setHandled({});
       setRebasedTo(null);
-      say("Đã nạp bản nháp schema 2; xem lại rồi xuất bản");
+      say(tNow("rp.migrated"));
     } catch (e) {
-      if (!(e instanceof UnauthorizedError)) say(e instanceof ApiError ? e.message : "Không kết nối được máy chủ");
+      if (!(e instanceof UnauthorizedError)) say(e instanceof ApiError ? e.message : tNow("common.noServer"));
     }
   }
 
@@ -129,56 +131,51 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
     <div className="page narrow rk">
       <header className="topbar">
         <Link to="/repos">← Repo</Link>
-        <h1>Chính sách rủi ro · {repoName}</h1>
+        <h1>{t("risk.policy")} · {repoName}</h1>
         <span className="spacer" />
         <UserMenu />
       </header>
-      {state === "loading" && <p className="muted">Đang tải…</p>}
-      {state === "error" && <p className="error banner" role="alert">Không tải được chính sách rủi ro</p>}
+      {state === "loading" && <p className="muted">{t("common.loading")}</p>}
+      {state === "error" && <p className="error banner" role="alert">{t("rp.loadFailed")}</p>}
       {state === "none" && (
         <section className="box">
-          <h2>Repo <code>{repoId}</code> chưa có chính sách rủi ro trên web</h2>
-          <p>Chính sách được nhập lần đầu từ <code>aisdlc/risk-policy.yaml</code> (không có thì mẫu generic) khi CLI kéo chính sách.
-            Chạy trong repo:</p>
+          <h2>Repo <code>{repoId}</code> {t("rp.noneOnWeb")}</h2>
+          <p>{t("rp.firstImport")} <code>aisdlc/risk-policy.yaml</code> {t("rp.firstImport2")}</p>
           <CopyCommand command="aisdlc policy pull" />
         </section>
       )}
       {view && policy && (
         <>
           <div className="rk-meta">
-            <span>Đang hiệu lực <b className="mono">v{view.version}</b></span>
-            {view.policy.preset && <>· <span>Gốc: <span className="tag preset">mẫu {view.policy.preset.name}</span> bản {view.policy.preset.version}</span></>}
-            · <span>{features} tính năng đang gắn phiên bản</span>
+            <span>{t("rp.live")} <b className="mono">v{view.version}</b></span>
+            {view.policy.preset && <>· <span>{t("rp.origin")} <span className="tag preset">{t("rr.preset", { name: view.policy.preset.name })}</span> {t("rp.presetVersion", { v: view.policy.preset.version })}</span></>}
+            · <span>{t("rp.featuresPinned", { n: features })}</span>
             · <span className="mono" title={repoId}>{repoId}</span>
           </div>
           {view.policy.schema === 1 && (
             <div className="rk-note warn" style={{ marginBottom: 16 }}>
-              <div className="grow">Chính sách đang hiệu lực dùng <b>schema 1</b> (luật so khớp) và chưa phân loại được.
-                Chuyển sang schema 2: mỗi luật thành một mô tả bằng lời; bản nháp nạp vào trình sửa để bạn xem lại và xuất bản
-                (cần ghi lý do vì mô tả mới có thể nới luật).</div>
-              <button type="button" onClick={() => void migrate()}>Chuyển sang schema 2</button>
+              <div className="grow">{t("rp.schema1a")} <b>schema 1</b> {t("rp.schema1b")}</div>
+              <button type="button" onClick={() => void migrate()}>{t("rp.migrate")}</button>
             </div>
           )}
-          <nav className="rk-tabs" aria-label="Chính sách rủi ro">
+          <nav className="rk-tabs" aria-label={t("risk.policy")}>
             {TABS.map(([id, name]) => (
               <Link key={id} to={{ hash: id }} aria-current={tab === id ? "page" : undefined}>
-                {name}
+                {t(name)}
                 {id === "rules" && <span className="count">{policy.rules.filter((r) => r.enabled).length}</span>}
-                {id === "history" && view.presetUpdate && <span className="count">mẫu mới</span>}
+                {id === "history" && view.presetUpdate && <span className="count">{t("rp.newPreset")}</span>}
               </Link>
             ))}
           </nav>
           {stale && (
             <div className="rk-note warn" style={{ marginBottom: 16 }}>
-              <div className="grow">Nháp này làm trên <b>v{draft!.baseVersion}</b>; bản đang hiệu lực là <b>v{view.version}</b>.
-                Danh sách thay đổi đã so với v{view.version}; xem lại rồi làm tiếp trên bản này.</div>
-              <button type="button" className="ghost" onClick={() => rebase(view)}>Làm tiếp trên v{view.version}</button>
+              <div className="grow">{t("rp.staleDraft", { base: draft!.baseVersion, live: view.version })}</div>
+              <button type="button" className="ghost" onClick={() => rebase(view)}>{t("rp.continueOn", { v: view.version })}</button>
             </div>
           )}
           {rebasedTo != null && draft && rebasedTo === view.version && (
             <div className="rk-note warn" style={{ marginBottom: 16 }}>
-              <div className="grow">Nháp đã chuyển lên v{rebasedTo}; các dòng xóa/đổi trong danh sách có thể đang ghi đè thay đổi
-                của người khác — xem kỹ trước khi xuất bản.</div>
+              <div className="grow">{t("rp.rebased", { v: rebasedTo })}</div>
             </div>
           )}
           {tab === "rules" && <RiskRules policy={policy} base={view.policy} presetRuleIds={view.presetRuleIds ?? []} onChange={update} />}
@@ -192,28 +189,28 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
       )}
 
       {view && draft && changes.length > 0 && (
-        <div className="rk-draftbar" role="region" aria-label="Bản nháp">
+        <div className="rk-draftbar" role="region" aria-label={t("rp.draft")}>
           <div className="in">
-            <div className="grow"><b>Bản nháp v{view.version + 1}: {changes.length} thay đổi</b>{" "}
-              <span className="muted">· có hiệu lực ngay khi xuất bản</span></div>
-            <button type="button" className="secondary" onClick={discard}>Bỏ nháp</button>
-            <button type="button" className="secondary" onClick={() => setDialog("diff")}>Xem thay đổi</button>
-            <button type="button" onClick={() => setDialog("publish")}>Xuất bản</button>
+            <div className="grow"><b>{t("rp.draftSummary", { v: view.version + 1, n: changes.length })}</b>{" "}
+              <span className="muted">· {t("rp.effectiveOnPublish")}</span></div>
+            <button type="button" className="secondary" onClick={discard}>{t("rp.discard")}</button>
+            <button type="button" className="secondary" onClick={() => setDialog("diff")}>{t("rp.viewChanges")}</button>
+            <button type="button" onClick={() => setDialog("publish")}>{t("rp.publish")}</button>
           </div>
         </div>
       )}
       {dialog === "diff" && (
-        <RiskDialog title="Thay đổi trong nháp" onClose={() => setDialog(null)}>
+        <RiskDialog title={t("rp.draftChanges")} onClose={() => setDialog(null)}>
           <ul>{changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
         </RiskDialog>
       )}
       {dialog === "publish" && view && draft && (
         <PublishDialog repoId={repoId} draft={draft} changes={changes} onClose={() => setDialog(null)}
-          onDone={(v) => { clearDraft(repoId); setDraft(null); setHandled({}); setRebasedTo(null); setDialog(null); void load(); say(`Đã xuất bản v${v}`); }}
+          onDone={(v) => { clearDraft(repoId); setDraft(null); setHandled({}); setRebasedTo(null); setDialog(null); void load(); say(tNow("rp.published", { v })); }}
           onReload={async () => {
             setDialog(null);
             const v = await load();
-            if (v) { rebase(v); say(`Đã tải v${v.version}; thay đổi trong nháp giờ so với v${v.version}`); }
+            if (v) { rebase(v); say(tNow("rp.reloaded", { v: v.version })); }
           }} />
       )}
       {toast && <div className="rk-toast" role="status">{toast}</div>}
@@ -225,6 +222,7 @@ export function RiskPolicy({ repoId }: { repoId: string }) {
 function PublishDialog({ repoId, draft, changes, onClose, onDone, onReload }: {
   repoId: string; draft: Draft; changes: string[]; onClose: () => void; onDone: (version: number) => void; onReload: () => void;
 }) {
+  const { t } = useT();
   const [check, setCheck] = useState<{ errors: string[]; changes: PolicyChange[] } | null>(null);
   const [checkError, setCheckError] = useState("");
   const [reason, setReason] = useState("");
@@ -239,7 +237,7 @@ function PublishDialog({ repoId, draft, changes, onClose, onDone, onReload }: {
     setCheckError("");
     validate(draft.policy, repoId)
       .then((r) => { if (live) setCheck(r); })
-      .catch((e) => { if (live) setCheckError(e instanceof ApiError ? e.message : "Không kết nối được máy chủ"); });
+      .catch((e) => { if (live) setCheckError(e instanceof ApiError ? e.message : tNow("common.noServer")); });
     return () => { live = false; };
   }, [draft, repoId, attempt]);
 
@@ -247,7 +245,7 @@ function PublishDialog({ repoId, draft, changes, onClose, onDone, onReload }: {
   const invalid = (check?.errors ?? []).length > 0;
 
   async function go() {
-    if (!reason.trim()) { setError("Ghi lý do trước khi xuất bản"); return; }
+    if (!reason.trim()) { setError(tNow("rp.needReason")); return; }
     setBusy(true);
     setError("");
     try {
@@ -255,51 +253,51 @@ function PublishDialog({ repoId, draft, changes, onClose, onDone, onReload }: {
       onDone(r.version);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) setConflict(e.message);
-      else if (!(e instanceof UnauthorizedError)) setError(e instanceof ApiError ? e.message : "Không kết nối được máy chủ");
+      else if (!(e instanceof UnauthorizedError)) setError(e instanceof ApiError ? e.message : tNow("common.noServer"));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <RiskDialog title="Xuất bản chính sách" onClose={onClose}>
+    <RiskDialog title={t("rp.publishTitle")} onClose={onClose}>
       <ul>{changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
-      {!check && !checkError && <p className="muted">Đang kiểm tra chính sách…</p>}
+      {!check && !checkError && <p className="muted">{t("rp.checking")}</p>}
       {checkError && (
         <div className="rk-note bad">
-          <div className="grow" role="alert">Không kiểm tra được chính sách: {checkError}</div>
-          <button type="button" className="secondary" onClick={() => setAttempt((n) => n + 1)}>Thử lại</button>
+          <div className="grow" role="alert">{t("rp.checkFailed", { error: checkError })}</div>
+          <button type="button" className="secondary" onClick={() => setAttempt((n) => n + 1)}>{t("rp.retry")}</button>
         </div>
       )}
       {invalid && (
         <div className="rk-note bad"><div className="grow">
-          <b>Chính sách chưa hợp lệ, sửa rồi xuất bản lại:</b>
+          <b>{t("rp.invalid")}</b>
           <ul className="rk-errors">{check!.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
         </div></div>
       )}
       {loosening.length > 0 && (
         <div className="rk-note warn"><div className="grow">
-          <h3>Thay đổi này nới yêu cầu</h3>
+          <h3>{t("rp.loosens")}</h3>
           <ul>{loosening.map((c, i) => <li key={i}>{changeText(c)}</li>)}</ul>
-          <p className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>Vẫn xuất bản được vì dev tự duyệt; kiểm lại phần bị nới.</p>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>{t("rp.loosensNote")}</p>
         </div></div>
       )}
-      <label className="rk-field"><span>Lý do thay đổi (bắt buộc)</span>
-        <input type="text" value={reason} autoFocus placeholder="Ví dụ: thêm module hoàn tiền" onChange={(e) => setReason(e.target.value)} />
+      <label className="rk-field"><span>{t("rp.reason")}</span>
+        <input type="text" value={reason} autoFocus placeholder={t("rp.reasonPh")} onChange={(e) => setReason(e.target.value)} />
       </label>
       <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-        Tính năng đang làm giữ phiên bản cũ. Tính năng mới phân loại sau thời điểm có hiệu lực dùng phiên bản này.
+        {t("rp.pinExplain")}
       </p>
       {conflict && (
         <div className="rk-note bad">
           <div className="grow" role="alert">{conflict}</div>
-          <button type="button" onClick={onReload}>Tải lại</button>
+          <button type="button" onClick={onReload}>{t("rp.reload")}</button>
         </div>
       )}
       {error && <p className="error" role="alert">{error}</p>}
       <div className="rk-row end">
-        <button type="button" className="secondary" onClick={onClose}>Hủy</button>
-        <button type="button" disabled={busy || !check || invalid || !!conflict} onClick={go}>Xuất bản</button>
+        <button type="button" className="secondary" onClick={onClose}>{t("common.cancel")}</button>
+        <button type="button" disabled={busy || !check || invalid || !!conflict} onClick={go}>{t("rp.publish")}</button>
       </div>
     </RiskDialog>
   );

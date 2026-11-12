@@ -1,4 +1,5 @@
 import { middleEllipsis, type ErBox, type ErLayout } from "../reviewModel";
+import { useT } from "../i18n";
 
 const ROW_TOP = 40, ROW_H = 26, TYPE_X = 118;
 const rowY = (b: ErBox, i: number) => b.y + ROW_TOP + ROW_H * i + ROW_H / 2;
@@ -21,11 +22,12 @@ function fkPath(a: ErBox, row: number, b: ErBox): string {
 
 /** Sơ đồ ER của SQL nháp, vẽ nguyên văn `erLayout`: bảng có sẵn bên trái, bảng mới bên phải. */
 export function ErDiagram({ layout }: { layout: ErLayout }) {
+  const { t } = useT();
   const byName = new Map(layout.boxes.map((b) => [b.name, b]));
   const aria = layout.boxes.map((b) => `${b.name} (${b.badge})`).join(", ");
   return (
     <div className="diagram">
-      <svg viewBox={`0 0 ${layout.width} ${layout.height}`} role="img" aria-label={`Sơ đồ bảng: ${aria}`}>
+      <svg viewBox={`0 0 ${layout.width} ${layout.height}`} role="img" aria-label={t("er.aria", { tables: aria })}>
         {layout.boxes.map((b) => (
           <g key={b.name}>
             <title>{`${b.name} · ${b.badge}`}</title>

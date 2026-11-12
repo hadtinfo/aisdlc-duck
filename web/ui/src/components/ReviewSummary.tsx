@@ -1,9 +1,11 @@
 import type { Tile } from "../reviewModel";
+import { useT } from "../i18n";
 
 /** Dải ô tóm tắt đầu trang (vẽ nguyên văn `summaryTiles`). */
 export function ReviewSummary({ tiles }: { tiles: Tile[] }) {
+  const { t } = useT();
   return (
-    <section className="rv-summary" aria-label="Tóm tắt">
+    <section className="rv-summary" aria-label={t("review.summary")}>
       {tiles.map((t) => (
         <div key={t.label}>
           <span className="eyebrow">{t.label}</span>

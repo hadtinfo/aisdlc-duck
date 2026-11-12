@@ -1,16 +1,18 @@
 import { Link } from "react-router-dom";
 import { InboxItem } from "../api";
+import { useT } from "../i18n";
 import { featureHref } from "../routes";
 import { CopyCommand } from "./CopyCommand";
 
 export function Inbox({ items }: { items: InboxItem[] }) {
+  const { t } = useT();
   return (
-    <section className="inbox" aria-label="Việc chờ tôi">
+    <section className="inbox" aria-label={t("inbox.title")}>
       <h2>
-        Việc chờ tôi {items.length > 0 && <span className="count">{items.length}</span>}
+        {t("inbox.title")} {items.length > 0 && <span className="count">{items.length}</span>}
       </h2>
       {items.length === 0 ? (
-        <p className="muted">Không có việc nào chờ bạn.</p>
+        <p className="muted">{t("inbox.empty")}</p>
       ) : (
         <ul>
           {items.map((it, i) => (

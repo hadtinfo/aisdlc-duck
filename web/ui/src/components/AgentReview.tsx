@@ -1,18 +1,20 @@
+import { Key, useT } from "../i18n";
 import type { AgentReviewData } from "../types";
 
-const LABEL: Record<string, [string, string]> = {
-  DAT: ["ĐẠT", "ok"], CAN_SUA: ["CẦN SỬA", "warn"], NGHIEM_TRONG: ["NGHIÊM TRỌNG", "bad"],
+const LABEL: Record<string, [Key, string]> = {
+  DAT: ["eval.pass", "ok"], CAN_SUA: ["agentReview.needsFix", "warn"], NGHIEM_TRONG: ["agentReview.severe", "bad"],
 };
 
 /** Kết quả agent review: nhãn từng tiêu chí kèm lý do, và danh sách vấn đề. */
 export function AgentReview({ review }: { review: AgentReviewData | null }) {
-  if (!review) return <p className="muted">Chưa có kết quả agent review.</p>;
+  const { t } = useT();
+  if (!review) return <p className="muted">{t("agentReview.none")}</p>;
   return (
     <div className="agent-review">
       {review.summary && <p className="summary">{review.summary}</p>}
       <ul className="criteria">
         {review.criteria.map((c) => {
-          const [text, tone] = LABEL[c.label] ?? [c.label, "warn"];
+          const [text, tone] = LABEL[c.label] ? [t(LABEL[c.label][0]), LABEL[c.label][1]] : [c.label, "warn"];
           return (
             <li key={c.id}>
               <span className={`pill ${tone}`}>{text}</span>
@@ -23,7 +25,7 @@ export function AgentReview({ review }: { review: AgentReviewData | null }) {
       </ul>
       {review.issues && review.issues.length > 0 && (
         <>
-          <h3>Vấn đề</h3>
+          <h3>{t("agentReview.issues")}</h3>
           <ul className="issues">
             {review.issues.map((x, i) => (
               <li key={i}>

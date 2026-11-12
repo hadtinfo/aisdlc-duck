@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 
 	"aisdlc/internal/snapshot"
+	"aisdlc/internal/web/httpx"
 )
 
 // Keys là khóa ký hiện tại và (nếu đang đổi khóa) khóa cũ.
@@ -34,17 +35,17 @@ type Keys struct {
 func Load(file, prevFile string) (*Keys, error) {
 	priv, err := loadOrCreate(file)
 	if err != nil {
-		return nil, fmt.Errorf("Không nạp được khóa ký %s: %w", file, err)
+		return nil, fmt.Errorf(httpx.OpLocale().T("Không nạp được khóa ký %s: %w"), file, err)
 	}
 	k := &Keys{Current: priv, pub: priv.Public().(ed25519.PublicKey)}
 	if prevFile != "" {
 		st, err := os.Stat(prevFile)
 		if err != nil || !st.Mode().IsRegular() {
-			return nil, fmt.Errorf("Không nạp được khóa ký %s: Không có file khóa ký cũ: %s", file, prevFile)
+			return nil, fmt.Errorf(httpx.OpLocale().T("Không nạp được khóa ký %s: Không có file khóa ký cũ: %s"), file, prevFile)
 		}
 		prev, err := readKey(prevFile)
 		if err != nil {
-			return nil, fmt.Errorf("Không nạp được khóa ký cũ %s: %w", prevFile, err)
+			return nil, fmt.Errorf(httpx.OpLocale().T("Không nạp được khóa ký cũ %s: %w"), prevFile, err)
 		}
 		k.Previous = prev
 		k.endorsement = base64.StdEncoding.EncodeToString(ed25519.Sign(prev, derOf(k.pub)))
@@ -62,7 +63,7 @@ func loadOrCreate(file string) (ed25519.PrivateKey, error) {
 	switch {
 	case err == nil && st.Size() > 0:
 		if st.Mode().Perm()&0o077 != 0 {
-			log.Printf("CẢNH BÁO: file khóa ký %s có quyền %v, rộng hơn 0600", file, st.Mode().Perm())
+			log.Print(httpx.OpLocale().Tf("CẢNH BÁO: file khóa ký %s có quyền %v, rộng hơn 0600", file, st.Mode().Perm()))
 		}
 		return readKey(file)
 	case err == nil || errors.Is(err, os.ErrNotExist):
@@ -146,26 +147,26 @@ func readKey(file string) (ed25519.PrivateKey, error) {
 		}
 	}
 	if privDER == nil || pubDER == nil {
-		return nil, errors.New("file khóa cần hai khối PEM PRIVATE KEY và PUBLIC KEY")
+		return nil, errors.New(httpx.OpLocale().T("file khóa cần hai khối PEM PRIVATE KEY và PUBLIC KEY"))
 	}
 	pk, err := x509.ParsePKCS8PrivateKey(privDER)
 	if err != nil {
-		return nil, fmt.Errorf("PRIVATE KEY không hợp lệ: %v", err)
+		return nil, fmt.Errorf(httpx.OpLocale().T("PRIVATE KEY không hợp lệ: %v"), err)
 	}
 	priv, ok := pk.(ed25519.PrivateKey)
 	if !ok {
-		return nil, errors.New("PRIVATE KEY không phải Ed25519")
+		return nil, errors.New(httpx.OpLocale().T("PRIVATE KEY không phải Ed25519"))
 	}
 	pubAny, err := x509.ParsePKIXPublicKey(pubDER)
 	if err != nil {
-		return nil, fmt.Errorf("PUBLIC KEY không hợp lệ: %v", err)
+		return nil, fmt.Errorf(httpx.OpLocale().T("PUBLIC KEY không hợp lệ: %v"), err)
 	}
 	pub, ok := pubAny.(ed25519.PublicKey)
 	if !ok {
-		return nil, errors.New("PUBLIC KEY không phải Ed25519")
+		return nil, errors.New(httpx.OpLocale().T("PUBLIC KEY không phải Ed25519"))
 	}
 	if !bytes.Equal(priv.Public().(ed25519.PublicKey), pub) {
-		return nil, errors.New("PRIVATE KEY và PUBLIC KEY không cùng một cặp")
+		return nil, errors.New(httpx.OpLocale().T("PRIVATE KEY và PUBLIC KEY không cùng một cặp"))
 	}
 	return priv, nil
 }
@@ -187,7 +188,7 @@ func (k *Keys) SignJSON(v any) (snapshot.SignedEnvelope, error) {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		return snapshot.SignedEnvelope{}, fmt.Errorf("Không serialize được: %w", err)
+		return snapshot.SignedEnvelope{}, fmt.Errorf(httpx.OpLocale().T("Không serialize được: %w"), err)
 	}
 	return k.Sign(bytes.TrimSuffix(buf.Bytes(), []byte("\n"))), nil
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/spec"
 )
@@ -61,7 +62,7 @@ func ovSt(t *testing.T, out any, g string) string {
 
 func TestApprovedWhenActiveApprovalMatchesCurrentHash(t *testing.T) {
 	in := ovSnap(t)
-	out := Apply(in, ovState([]snapshot.Sub{ovSub("BRD", "hB")}, []snapshot.Appr{ovAppr("BRD", "hB")}, nil))
+	out := Apply(in, ovState([]snapshot.Sub{ovSub("BRD", "hB")}, []snapshot.Appr{ovAppr("BRD", "hB")}, nil), i18n.VI)
 	if ovSt(t, out, "BRD") != "APPROVED" {
 		t.Fatal(out)
 	}
@@ -80,7 +81,7 @@ func TestApprovedWhenActiveApprovalMatchesCurrentHash(t *testing.T) {
 }
 
 func TestStaleWhenApprovalHashDiffers(t *testing.T) {
-	out := Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "cu")}, []snapshot.Appr{ovAppr("BRD", "cu")}, nil))
+	out := Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "cu")}, []snapshot.Appr{ovAppr("BRD", "cu")}, nil), i18n.VI)
 	if ovSt(t, out, "BRD") != "STALE" || ovGate(t, out, "BRD")["approval"].(map[string]any)["hash"] != "cu" ||
 		ovSt(t, out, "DESIGN") != "LOCKED_BY_PREVIOUS" {
 		t.Fatal(out)
@@ -88,7 +89,7 @@ func TestStaleWhenApprovalHashDiffers(t *testing.T) {
 }
 
 func TestAwaitingApprovalWhenLatestSubmissionMatchesAndNoFindings(t *testing.T) {
-	out := Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "x"), ovSub("BRD", "hB")}, nil, nil))
+	out := Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "x"), ovSub("BRD", "hB")}, nil, nil), i18n.VI)
 	g := ovGate(t, out, "BRD")
 	if g["state"] != "AWAITING_APPROVAL" || g["submission"].(map[string]any)["hash"] != "hB" || g["approval"] != nil {
 		t.Fatal(g)
@@ -102,7 +103,7 @@ func TestAwaitingApprovalWhenLatestSubmissionMatchesAndNoFindings(t *testing.T) 
 }
 
 func TestSubmittedWithFindings(t *testing.T) {
-	out := Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "hB", spec.Finding{Code: "BRD_X", Message: "thiếu mục"})}, nil, nil))
+	out := Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "hB", spec.Finding{Code: "BRD_X", Message: "thiếu mục"})}, nil, nil), i18n.VI)
 	g := ovGate(t, out, "BRD")
 	fs := g["submission"].(map[string]any)["findings"].([]any)
 	if g["state"] != "SUBMITTED_WITH_FINDINGS" || fs[0].(map[string]any)["code"] != "BRD_X" {
@@ -111,10 +112,10 @@ func TestSubmittedWithFindings(t *testing.T) {
 }
 
 func TestNotSubmittedWhenNothingOrSubmissionOutdated(t *testing.T) {
-	if s := ovSt(t, Apply(ovSnap(t), ovState(nil, nil, nil)), "BRD"); s != "NOT_SUBMITTED" {
+	if s := ovSt(t, Apply(ovSnap(t), ovState(nil, nil, nil), i18n.VI), "BRD"); s != "NOT_SUBMITTED" {
 		t.Fatal(s)
 	}
-	if s := ovSt(t, Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "cu")}, nil, nil)), "BRD"); s != "NOT_SUBMITTED" {
+	if s := ovSt(t, Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "cu")}, nil, nil), i18n.VI), "BRD"); s != "NOT_SUBMITTED" {
 		t.Fatal(s)
 	}
 }
@@ -122,7 +123,7 @@ func TestNotSubmittedWhenNothingOrSubmissionOutdated(t *testing.T) {
 func TestLockedByPreviousFollowsGateOrderEvenWithLaterApproval(t *testing.T) {
 	// DESIGN có approval khớp nhưng BRD chỉ đang chờ duyệt → DESIGN và sau đó khóa
 	out := Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("BRD", "hB"), ovSub("DESIGN", "hD")},
-		[]snapshot.Appr{ovAppr("DESIGN", "hD"), ovAppr("CASES", "hC")}, nil))
+		[]snapshot.Appr{ovAppr("DESIGN", "hD"), ovAppr("CASES", "hC")}, nil), i18n.VI)
 	for g, want := range map[string]string{"BRD": "AWAITING_APPROVAL", "DESIGN": "LOCKED_BY_PREVIOUS", "CASES": "LOCKED_BY_PREVIOUS",
 		"REVIEW": "LOCKED_BY_PREVIOUS"} {
 		if s := ovSt(t, out, g); s != want {
@@ -131,7 +132,7 @@ func TestLockedByPreviousFollowsGateOrderEvenWithLaterApproval(t *testing.T) {
 	}
 	// chuỗi duyệt đủ → mở tới REVIEW
 	out = Apply(ovSnap(t), ovState([]snapshot.Sub{ovSub("REVIEW", "hR")},
-		[]snapshot.Appr{ovAppr("BRD", "hB"), ovAppr("DESIGN", "hD"), ovAppr("CASES", "hC")}, nil))
+		[]snapshot.Appr{ovAppr("BRD", "hB"), ovAppr("DESIGN", "hD"), ovAppr("CASES", "hC")}, nil), i18n.VI)
 	if ovSt(t, out, "CASES") != "APPROVED" || ovSt(t, out, "REVIEW") != "AWAITING_APPROVAL" {
 		t.Fatal(out)
 	}
@@ -141,7 +142,7 @@ func TestLastFeedbackIsLatestServerFeedbackOfGate(t *testing.T) {
 	out := Apply(ovSnap(t), ovState(nil, nil, []snapshot.Fb{
 		{ID: 1, Gate: "BRD", Kind: "REJECTED", By: "lead.l", At: ovT1, Comment: "thiếu NFR"},
 		{ID: 2, Gate: "DESIGN", Kind: "REOPENED", By: "lead.l", At: ovT1, Comment: ""},
-		{ID: 3, Gate: "BRD", Kind: "REOPENED", By: "dev.d", At: ovT2, Comment: "sửa lại"}}))
+		{ID: 3, Gate: "BRD", Kind: "REOPENED", By: "dev.d", At: ovT2, Comment: "sửa lại"}}), i18n.VI)
 	fb := ovGate(t, out, "BRD")["lastFeedback"].(map[string]any)
 	if fb["kind"] != "REOPENED" || fb["by"] != "dev.d" || fb["at"] != "2026-11-03T11:00:00Z" || fb["comment"] != "sửa lại" {
 		t.Fatal(fb)
@@ -159,12 +160,19 @@ func TestLastFeedbackIsLatestServerFeedbackOfGate(t *testing.T) {
 func TestApprovalLabelsAndSuperseded(t *testing.T) {
 	auto := snapshot.Appr{Gate: "BRD", Hash: "hB", Approver: "auto", At: ovT1, Channel: "auto", Rule: "flow:low"}
 	cc := snapshot.Appr{Gate: "DESIGN", Hash: "hD", Approver: "dev.d", At: ovT1, Channel: "claude-code"}
-	out := Apply(ovSnap(t), ovState(nil, []snapshot.Appr{auto, cc}, nil))
+	out := Apply(ovSnap(t), ovState(nil, []snapshot.Appr{auto, cc}, nil), i18n.VI)
 	a := ovGate(t, out, "BRD")["approval"].(map[string]any)
 	if a["rule"] != "flow:low" || a["label"] != "tự duyệt (mức low)" {
 		t.Fatal(a)
 	}
 	if l := ovGate(t, out, "DESIGN")["approval"].(map[string]any)["label"]; l != "dev.d (trong Claude Code)" {
+		t.Fatal(l)
+	}
+	en := Apply(ovSnap(t), ovState(nil, []snapshot.Appr{auto, cc}, nil), i18n.EN)
+	if l := ovGate(t, en, "BRD")["approval"].(map[string]any)["label"]; l != "auto-approved (level low)" {
+		t.Fatal(l)
+	}
+	if l := ovGate(t, en, "DESIGN")["approval"].(map[string]any)["label"]; l != "dev.d (in Claude Code)" {
 		t.Fatal(l)
 	}
 	MarkSuperseded(out, map[string]bool{"BRD": true, "CASES": true})

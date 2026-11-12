@@ -63,7 +63,7 @@ func readBody(r *http.Request) (any, []byte, error) {
 		if errors.As(err, &ae) {
 			return nil, nil, ae
 		}
-		return nil, nil, badRequest("JSON không hợp lệ")
+		return nil, nil, badRequest(httpx.T("JSON không hợp lệ"))
 	}
 	tree, raw, err := parseTree(data)
 	if err != nil {
@@ -96,7 +96,7 @@ func (s *Service) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	httpx.WriteError(w, err)
+	httpx.Fail(w, r, err)
 }
 
 func (s *Service) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +110,7 @@ func (s *Service) handleEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	httpx.WriteError(w, err)
+	httpx.Fail(w, r, err)
 }
 
 // LatestSnapshot trả snapshot mới nhất của tính năng và captured_at của nó; ok=false khi chưa có.

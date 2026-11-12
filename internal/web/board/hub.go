@@ -188,15 +188,15 @@ func (h *Hub) ticker() *time.Ticker {
 	return time.NewTicker(d)
 }
 
-func unavailable(w http.ResponseWriter) {
-	httpx.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Server đang tắt"})
+func unavailable(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": httpx.LocaleFrom(r.Context()).T("Server đang tắt")})
 }
 
 // ServeBoard là GET /api/stream: sự kiện `card` {repoId,key} mỗi khi một tính năng đổi.
 func (h *Hub) ServeBoard(w http.ResponseWriter, r *http.Request) {
 	c := &client{board: true}
 	if !h.add(c) {
-		unavailable(w)
+		unavailable(w, r)
 		return
 	}
 	defer h.remove(c)
@@ -233,7 +233,7 @@ func (h *Hub) ServeBoard(w http.ResponseWriter, r *http.Request) {
 func (h *Hub) ServeFeature(w http.ResponseWriter, r *http.Request, repoID, key string) {
 	c := &client{repo: repoID, key: key}
 	if !h.add(c) {
-		unavailable(w)
+		unavailable(w, r)
 		return
 	}
 	defer h.remove(c)
@@ -246,7 +246,7 @@ func (h *Hub) ServeFeature(w http.ResponseWriter, r *http.Request, repoID, key s
 		lastSynced, hasSynced, err = h.reader.SyncedAt(ctx, repoID, key)
 	}
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	s := h.open(w)
@@ -269,7 +269,7 @@ func (h *Hub) ServeFeature(w http.ResponseWriter, r *http.Request, repoID, key s
 		case <-c.wake:
 			evs, err := h.reader.EventsAfter(ctx, repoID, key, lastID)
 			if err != nil {
-				log.Printf("board: lỗi phát SSE cho %s/%s, bỏ subscriber: %v", repoID, key, err)
+				log.Print(httpx.OpLocale().Tf("board: lỗi phát SSE cho %s/%s, bỏ subscriber: %v", repoID, key, err))
 				return
 			}
 			for _, e := range evs {
@@ -281,7 +281,7 @@ func (h *Hub) ServeFeature(w http.ResponseWriter, r *http.Request, repoID, key s
 			}
 			synced, ok, err := h.reader.SyncedAt(ctx, repoID, key)
 			if err != nil {
-				log.Printf("board: lỗi phát SSE cho %s/%s, bỏ subscriber: %v", repoID, key, err)
+				log.Print(httpx.OpLocale().Tf("board: lỗi phát SSE cho %s/%s, bỏ subscriber: %v", repoID, key, err))
 				return
 			}
 			if ok && (!hasSynced || !synced.Equal(lastSynced)) {

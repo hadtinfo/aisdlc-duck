@@ -13,14 +13,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/web/auth"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/signing"
 )
 
-// ImportReason là lý do ghi cho phiên bản nhập lần đầu.
-const ImportReason = "Nhập từ aisdlc/risk-policy.yaml"
+// ImportReason là lý do ghi cho phiên bản nhập lần đầu. Lưu tiếng Việt như cũ (cả dòng đã lưu từ trước); dịch lúc
+// hiển thị (Versions) theo locale của người xem.
+var ImportReason = i18n.VI.T("Nhập từ aisdlc/risk-policy.yaml")
 
 // Service là phiên bản chính sách rủi ro của repo.
 type Service struct {
@@ -33,8 +35,11 @@ type Service struct {
 // Conflict: có bản mới hơn (hoặc bằng) khi xuất bản.
 type Conflict struct{ Latest int }
 
-func (c *Conflict) Error() string {
-	return "Đã có phiên bản mới hơn (v" + strconv.Itoa(c.Latest) + "); tải lại để xem."
+func (c *Conflict) Error() string { return c.MessageIn(i18n.VI) }
+
+// MessageIn là câu lỗi theo locale l.
+func (c *Conflict) MessageIn(l i18n.Locale) string {
+	return l.Tf("Đã có phiên bản mới hơn (v%d); tải lại để xem.", c.Latest)
 }
 
 // Row là một hàng risk_policy_versions.
@@ -154,7 +159,7 @@ func (s *Service) ImportFirst(ctx context.Context, repo, yaml, author, ip string
 		}
 		created, version = ok, 1
 		if !ok {
-			return errors.New("policy: nhập lần đầu bị trùng dù đã khóa")
+			return errors.New(httpx.OpLocale().T("policy: nhập lần đầu bị trùng dù đã khóa"))
 		}
 		return s.audit(ctx, tx, auth.AuditEntry{Login: author, IP: ip, Channel: "cli", Action: "policy.import",
 			Repo: repo, Target: "1", Detail: map[string]any{"version": 1}})
@@ -294,7 +299,11 @@ func (s *Service) Versions(ctx context.Context, repo string) ([]VersionJSON, err
 			}
 			ch = risk.DiffPolicies(prev, cur)
 		}
-		out = append(out, VersionJSON{Version: r.Version, Author: r.Author, Reason: r.Reason, Source: r.Source,
+		reason := r.Reason
+		if reason == ImportReason {
+			reason = httpx.LocaleFrom(ctx).T(ImportReason)
+		}
+		out = append(out, VersionJSON{Version: r.Version, Author: r.Author, Reason: reason, Source: r.Source,
 			CreatedAt: httpx.Instant(r.CreatedAt), Changes: changes(ch)})
 	}
 	return out, nil
@@ -431,7 +440,7 @@ func (s *Service) Validate(ctx context.Context, repo *string, policyJSON string)
 	if err != nil {
 		var pe *risk.PolicyError
 		if errors.As(err, &pe) {
-			return map[string]any{"errors": pe.Errors, "changes": []ChangeJSON{}}, nil
+			return map[string]any{"errors": localizeAll(httpx.LocaleFrom(ctx), pe.Errors), "changes": []ChangeJSON{}}, nil
 		}
 		return nil, err
 	}
@@ -456,7 +465,7 @@ func (s *Service) Validate(ctx context.Context, repo *string, policyJSON string)
 // Schema 2 sẵn thì không có gì để chuyển (400).
 func migrateDraft(old risk.RiskPolicy) (string, []ChangeJSON, error) {
 	if old.Schema != 1 {
-		return "", nil, &risk.PolicyError{Errors: []string{"Chính sách đã dùng schema 2, không cần chuyển"}}
+		return "", nil, &risk.PolicyError{Errors: []string{i18n.VI.T("Chính sách đã dùng schema 2, không cần chuyển")}}
 	}
 	n, err := risk.MigrateToV2(old)
 	if err != nil {
@@ -473,7 +482,7 @@ func (s *Service) MigrateDraft(ctx context.Context, repo string) (string, []Chan
 		return "", nil, err
 	}
 	if r == nil {
-		return "", nil, httpx.NewError(404, "Repo chưa có chính sách")
+		return "", nil, httpx.Err(404, httpx.T("Repo chưa có chính sách"))
 	}
 	old, err := risk.ParsePolicy(r.Body)
 	if err != nil {

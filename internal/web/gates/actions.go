@@ -29,12 +29,12 @@ func (s *Service) handle(fn func(r *http.Request, p httpx.Principal) (snapshot.F
 		p, _ := httpx.PrincipalFrom(r.Context())
 		st, err := fn(r, p)
 		if err != nil {
-			httpx.WriteError(w, err)
+			httpx.Fail(w, r, err)
 			return
 		}
 		env, err := s.sign(st)
 		if err != nil {
-			httpx.WriteError(w, err)
+			httpx.Fail(w, r, err)
 			return
 		}
 		httpx.WriteJSON(w, http.StatusOK, env)
@@ -123,7 +123,7 @@ func (s *Service) reopen(r *http.Request, p httpx.Principal) (snapshot.FeatureGa
 func (s *Service) confirmImport(r *http.Request, p httpx.Principal) (snapshot.FeatureGateState, error) {
 	var none snapshot.FeatureGateState
 	if !p.IsSession() {
-		return none, httpx.NewError(http.StatusForbidden, "Chỉ xác nhận bản nhập trên trình duyệt")
+		return none, httpx.Err(http.StatusForbidden, httpx.T("Chỉ xác nhận bản nhập trên trình duyệt"))
 	}
 	b, err := body(r)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/web/ingest"
 	"aisdlc/internal/web/javaish"
 )
@@ -92,33 +93,34 @@ func evalFailed(snap any) bool {
 	return ok && !p
 }
 
-// Inbox là việc chủ tính năng cần làm, kèm lệnh chạy được.
-func Inbox(snap any) []InboxItem {
+// Inbox là việc chủ tính năng cần làm, kèm lệnh chạy được; chữ theo locale của người xem (lệnh không dịch).
+func Inbox(snap any, loc i18n.Locale) []InboxItem {
 	out := []InboxItem{}
 	for _, g := range elems(path(snap, "gates")) {
 		gate := asText(path(g, "gate"))
 		lower := strings.ToLower(gate)
 		switch asText(path(g, "state")) {
 		case "AWAITING_APPROVAL":
-			out = append(out, InboxItem{"APPROVE", "Cổng " + gate + " chờ bạn duyệt", "aisdlc approve " + lower})
+			out = append(out, InboxItem{"APPROVE", loc.Tf("Cổng %s chờ bạn duyệt", gate), "aisdlc approve " + lower})
 		case "STALE":
-			out = append(out, InboxItem{"STALE", "Cổng " + gate + " đã đổi sau khi duyệt (STALE): nộp lại, hoặc `aisdlc reopen " +
-				lower + "` nếu muốn sửa lại từ đầu", "aisdlc submit " + lower})
+			out = append(out, InboxItem{"STALE",
+				loc.Tf("Cổng %s đã đổi sau khi duyệt (STALE): nộp lại, hoặc `aisdlc reopen %s` nếu muốn sửa lại từ đầu", gate, lower),
+				"aisdlc submit " + lower})
 		case "SUBMITTED_WITH_FINDINGS":
-			out = append(out, InboxItem{"FINDINGS", "Cổng " + gate + " có phát hiện cần sửa", "aisdlc submit " + lower})
+			out = append(out, InboxItem{"FINDINGS", loc.Tf("Cổng %s có phát hiện cần sửa", gate), "aisdlc submit " + lower})
 		}
 	}
 	brd := "brd"
 	for _, q := range elems(path(snap, "openQuestions")) {
 		gate := strings.ToLower(*asTextOr(path(q, "gate"), &brd))
-		out = append(out, InboxItem{"OPEN_QUESTION", "Câu hỏi mở: " + asText(path(q, "text")) + " (trả lời câu hỏi rồi nộp lại)",
+		out = append(out, InboxItem{"OPEN_QUESTION", loc.Tf("Câu hỏi mở: %s (trả lời câu hỏi rồi nộp lại)", asText(path(q, "text"))),
 			"aisdlc submit " + gate})
 	}
 	for _, s := range elems(path(snap, "steps")) {
 		id := asText(path(s, "id"))
 		status := asText(path(s, "status"))
 		if status == "AWAITING_DEV" {
-			out = append(out, InboxItem{"ACCEPT_STEP", "Bước " + id + " chờ bạn accept", "aisdlc step accept " + id})
+			out = append(out, InboxItem{"ACCEPT_STEP", loc.Tf("Bước %s chờ bạn accept", id), "aisdlc step accept " + id})
 		}
 		if status == "ACCEPTED" {
 			continue // bước đã accept thì không còn việc
@@ -126,17 +128,19 @@ func Inbox(snap any) []InboxItem {
 		check := path(s, "record", "check")
 		// Chỉ có khi bước AWAITING_DEV: `step finish` cần IN_PROGRESS, còn `step start` mở lại bước để làm tiếp.
 		if notPassed := elems(path(check, "casesNotPassed")); len(notPassed) > 0 {
-			out = append(out, InboxItem{"CASES_NOT_PASSED", "Bước " + id + " còn case chưa đạt: " + join(notPassed) +
-				" (mở lại bước để agent sửa, rồi `aisdlc step finish " + id + "`)", "aisdlc step start " + id})
+			out = append(out, InboxItem{"CASES_NOT_PASSED",
+				loc.Tf("Bước %s còn case chưa đạt: %s (mở lại bước để agent sửa, rồi `aisdlc step finish %s`)", id, join(notPassed), id),
+				"aisdlc step start " + id})
 		}
 		for _, f := range elems(path(check, "outOfScope")) {
 			p := asText(f)
-			out = append(out, InboxItem{"OUT_OF_SCOPE", "Bước " + id + " sửa file ngoài phạm vi: " + p +
-				" (cho phép file này, hoặc để agent hoàn tác rồi `aisdlc step start " + id + "`)", "aisdlc scope allow " + shellArg(p)})
+			out = append(out, InboxItem{"OUT_OF_SCOPE",
+				loc.Tf("Bước %s sửa file ngoài phạm vi: %s (cho phép file này, hoặc để agent hoàn tác rồi `aisdlc step start %s`)", id, p, id),
+				"aisdlc scope allow " + shellArg(p)})
 		}
 	}
 	if evalFailed(snap) {
-		out = append(out, InboxItem{"EVAL_FAIL", "Eval không đạt", "aisdlc eval"})
+		out = append(out, InboxItem{"EVAL_FAIL", loc.T("Eval không đạt"), "aisdlc eval"})
 	}
 	return out
 }

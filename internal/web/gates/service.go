@@ -25,18 +25,18 @@ import (
 	"aisdlc/internal/web/store"
 )
 
-// Câu lỗi nghiệp vụ (ApprovalService.java).
-const (
-	MsgNotAllowed      = "Chỉ chủ tính năng hoặc lead được duyệt"
-	MsgPrevious        = "Cổng trước chưa được duyệt"
-	MsgNotSubmitted    = "Cổng chưa được nộp"
-	MsgChanged         = "Nội dung đã đổi kể từ lúc nộp, cần nộp lại"
-	MsgFindings        = "Bản nộp còn phát hiện"
-	MsgEvalFail        = "Eval chưa ĐẠT"
-	MsgEvalTree        = "Eval không khớp code hiện tại, chạy lại aisdlc eval"
-	MsgSteps           = "Còn bước chưa accept"
-	MsgNotWeb          = "Repo không ở chế độ duyệt trên web"
-	MsgConfirmPrevious = "Xác nhận cổng trước trước"
+// Câu lỗi nghiệp vụ (ApprovalService.java), dịch theo locale của request khi ghi ra.
+var (
+	MsgNotAllowed      = httpx.T("Chỉ chủ tính năng hoặc lead được duyệt")
+	MsgPrevious        = httpx.T("Cổng trước chưa được duyệt")
+	MsgNotSubmitted    = httpx.T("Cổng chưa được nộp")
+	MsgChanged         = httpx.T("Nội dung đã đổi kể từ lúc nộp, cần nộp lại")
+	MsgFindings        = httpx.T("Bản nộp còn phát hiện")
+	MsgEvalFail        = httpx.T("Eval chưa ĐẠT")
+	MsgEvalTree        = httpx.T("Eval không khớp code hiện tại, chạy lại aisdlc eval")
+	MsgSteps           = httpx.T("Còn bước chưa accept")
+	MsgNotWeb          = httpx.T("Repo không ở chế độ duyệt trên web")
+	MsgConfirmPrevious = httpx.T("Xác nhận cổng trước trước")
 )
 
 // Giới hạn flags / assumptionsSeen lưu kèm approval và độ dài ghi chú trả lại/mở lại.
@@ -47,7 +47,7 @@ const (
 )
 
 // Service là duyệt / trả lại / mở lại / xác nhận bản nhập và nộp từ CLI (ApprovalService + phần nộp/đọc của
-// CliGateController). Mọi thao tác ghi chạy trong một tx có khóa theo tính năng; vi phạm luật trả *httpx.ApiError
+// CliGateController). Mọi thao tác ghi chạy trong một tx có khóa theo tính năng; vi phạm luật trả *httpx.Error
 // (409 nghiệp vụ, 403 quyền, 400 dữ liệu, 404 không có tính năng). Service cũng là board.GateView (lớp phủ cho board).
 type Service struct {
 	Pool  *pgxpool.Pool
@@ -227,7 +227,7 @@ type authorized struct {
 }
 
 func notInFlow(g gate.Gate) error {
-	return bad("Cổng " + string(g) + " không thuộc luồng của tính năng")
+	return bad(httpx.Tf("Cổng %s không thuộc luồng của tính năng", g))
 }
 
 // authorize: chế độ web, tính năng tồn tại, (leadAllowed) owner hoặc lead, cổng thuộc luồng.
@@ -238,14 +238,14 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p httpx.Principal, r
 		return nil, err
 	}
 	if mode != ModeWeb {
-		return nil, httpx.NewError(http.StatusConflict, MsgNotWeb)
+		return nil, httpx.Err(http.StatusConflict, MsgNotWeb)
 	}
 	row, err := readFeature(ctx, tx, repo, feature)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
-		return nil, httpx.NewError(http.StatusNotFound, "Không tìm thấy tính năng")
+		return nil, httpx.Err(http.StatusNotFound, httpx.T("Không tìm thấy tính năng"))
 	}
 	emails, err := board.EmailToLogin(ctx, tx) // trên tx: không lấy thêm kết nối pool khi đang giữ khóa
 	if err != nil {
@@ -254,7 +254,7 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p httpx.Principal, r
 	first := row.firstSender
 	owner := board.Owner(row.tree, emails, &first)
 	if leadAllowed && !IsOwnerOrLead(p, owner) {
-		return nil, httpx.NewError(http.StatusForbidden, MsgNotAllowed)
+		return nil, httpx.Err(http.StatusForbidden, MsgNotAllowed)
 	}
 	seq := sequence(row.tree)
 	if indexOf(seq, g) < 0 {
@@ -287,13 +287,13 @@ type ApproveRequest struct {
 	AssumptionsSeen []string
 }
 
-func conflict(msg string) error { return httpx.NewError(http.StatusConflict, msg) }
+func conflict(msg httpx.Text) error { return httpx.Err(http.StatusConflict, msg) }
 
 // Approve duyệt cổng theo luật giai đoạn 1; channel: web | terminal | claude-code. Duyệt lại đúng bản đã duyệt là
 // idempotent (200, không ghi thêm).
 func (s *Service) Approve(ctx context.Context, p httpx.Principal, ip, channel string, r ApproveRequest) (snapshot.FeatureGateState, error) {
 	if isBlank(r.Hash) {
-		return snapshot.FeatureGateState{}, bad("Thiếu hash")
+		return snapshot.FeatureGateState{}, bad(httpx.T("Thiếu hash"))
 	}
 	var out snapshot.FeatureGateState
 	changed := false
@@ -394,7 +394,7 @@ func requireReviewReady(tree any) (*string, error) {
 func (s *Service) Reject(ctx context.Context, p httpx.Principal, ip, channel, repo, feature string, g gate.Gate,
 	comment *string) (snapshot.FeatureGateState, error) {
 	if comment == nil || isBlank(*comment) {
-		return snapshot.FeatureGateState{}, bad("Thiếu comment (lý do trả lại)")
+		return snapshot.FeatureGateState{}, bad(httpx.T("Thiếu comment (lý do trả lại)"))
 	}
 	return s.feedback(ctx, p, ip, channel, repo, feature, g, *comment, "REJECTED", "gate.reject")
 }
@@ -414,7 +414,7 @@ func (s *Service) Reopen(ctx context.Context, p httpx.Principal, ip, channel, re
 func (s *Service) feedback(ctx context.Context, p httpx.Principal, ip, channel, repo, feature string, g gate.Gate,
 	comment, kind, action string) (snapshot.FeatureGateState, error) {
 	if utf16Len(comment) > MaxComment {
-		return snapshot.FeatureGateState{}, bad("Ghi chú quá dài (tối đa 2000 ký tự)")
+		return snapshot.FeatureGateState{}, bad(httpx.T("Ghi chú quá dài (tối đa 2000 ký tự)"))
 	}
 	var out snapshot.FeatureGateState
 	err := s.inTx(ctx, repo, feature, func(tx pgx.Tx, now time.Time) error {
@@ -430,11 +430,7 @@ func (s *Service) feedback(ctx context.Context, p httpx.Principal, ip, channel, 
 		if err != nil {
 			return err
 		}
-		what := "được mở lại"
-		if kind == "REJECTED" {
-			what = "bị trả lại"
-		}
-		text := "Cổng " + string(g) + " " + what + " bởi " + p.Login
+		text := feedbackInstruction(kind, string(g), p.Login)
 		if !isBlank(comment) {
 			text += ": " + javaTrim(comment)
 		}
@@ -466,7 +462,7 @@ func (s *Service) ConfirmImport(ctx context.Context, p httpx.Principal, ip, repo
 			return err
 		}
 		if c.owner == nil || p.Login != *c.owner {
-			return httpx.NewError(http.StatusForbidden, "Chỉ chủ tính năng được xác nhận bản nhập")
+			return httpx.Err(http.StatusForbidden, httpx.T("Chỉ chủ tính năng được xác nhận bản nhập"))
 		}
 		// bản nhập chỉ có hiệu lực khi các cổng trước đã có hiệu lực: xác nhận theo thứ tự cổng
 		for _, b := range c.before(g) {
@@ -483,7 +479,7 @@ func (s *Service) ConfirmImport(ctx context.Context, p httpx.Principal, ip, repo
 			return err
 		}
 		if pi == nil {
-			return conflict("Không có bản nhập chờ xác nhận")
+			return conflict(httpx.T("Không có bản nhập chờ xác nhận"))
 		}
 		var origAt any
 		if pi.OriginalAt != nil {
@@ -567,7 +563,7 @@ func (s *Service) Submit(ctx context.Context, p httpx.Principal, ip string, r Su
 		return snapshot.FeatureGateState{}, conflict(MsgNotWeb)
 	}
 	if r.artifacts.hash() != r.Hash {
-		return snapshot.FeatureGateState{}, bad("Hash không khớp nội dung")
+		return snapshot.FeatureGateState{}, bad(httpx.T("Hash không khớp nội dung"))
 	}
 	err = s.inTx(ctx, r.Repo, r.Feature, func(tx pgx.Tx, now time.Time) error {
 		if err := RequireSubmittable(ctx, tx, r.Repo, r.Feature, r.Gate, false); err != nil {
@@ -607,7 +603,7 @@ func (s *Service) Overlay(ctx context.Context, repoID, key string, snap json.Raw
 	if err != nil {
 		return nil, err
 	}
-	out := Apply(tree, st)
+	out := Apply(tree, st, httpx.LocaleFrom(ctx))
 	sup, err := supersededGates(ctx, s.Pool, repoID, key)
 	if err != nil {
 		return nil, err
@@ -669,7 +665,7 @@ func (s *Service) Resubmission(ctx context.Context, repoID, key, gateName string
 	if err != nil {
 		return nil, err
 	}
-	return review.Compare(string(g), n, last[1], last[0], fbs), nil
+	return review.Compare(string(g), n, last[1], last[0], fbs, httpx.LocaleFrom(ctx)), nil
 }
 
 // ---- lọc flags / assumptionsSeen: bỏ phần tử sai kiểu hoặc chứa NUL, cắt 500 ký tự, tối đa 50

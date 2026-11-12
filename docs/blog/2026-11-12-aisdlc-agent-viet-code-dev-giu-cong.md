@@ -47,8 +47,7 @@ agent có cơ sở**.
 **Spec-driven development.** GitHub ra mắt [Spec Kit](https://github.blog/ai-and-ml/generative-ai/spec-driven-development-with-ai-get-started-with-a-new-open-source-toolkit/)
 (9/2025) với ý tưởng: viết đặc tả trước, rồi kế hoạch kỹ thuật, rồi chia thành các việc nhỏ kiểm thử được để agent
 làm. Cách này đối lập với kiểu "vibe coding" muốn gì gõ nấy. Đây là hướng đúng, và AISDLC cũng đi theo tinh thần
-"tài liệu trước, code sau". Nhưng một bộ prompt và template chỉ *khuyến khích* agent đi đúng trình tự. Không có gì
-*ngăn* agent nhảy cóc.
+"tài liệu trước, code sau".
 
 **Hook của Claude Code.** Claude Code cho phép cắm [hook](https://code.claude.com/docs/en/hooks) chạy trước và sau mỗi
 lần agent dùng tool. Hook `PreToolUse` có thể chặn một lời gọi tool, và lý do chặn được đưa lại cho agent đọc. Đây là
@@ -77,12 +76,7 @@ XMPro, công ty bán sản phẩm harness nên đây là góc nhìn của nhà c
 ([XMPro](https://xmpro.com/your-ai-agent-needs-a-harness-heres-what-that-means-for-industrial-operations/)).
 
 AISDLC kết hợp các ý trên: quy trình theo tài liệu như spec-driven development, cộng với hook và CI để **ép** quy trình
-đó, thay vì chỉ hy vọng agent tuân theo. Theo nghĩa đó, AISDLC là một harness cho agent viết code.
-
-Khác biệt lớn với Minions nằm ở *chỗ đặt người duyệt*. Stripe để agent chạy một mạch rồi người review ở cuối. Cách đó
-hợp lý khi phía sau là hơn ba triệu test và một hạ tầng devbox dày công xây dựng. Phần lớn các team dịch vụ không có
-lưới an toàn như vậy. Vì thế AISDLC kéo người duyệt lên sớm hơn: duyệt yêu cầu, thiết kế và bộ case *trước khi* có
-code. Bộ case đã khóa đóng vai trò "bộ test của riêng tính năng", thứ mà Stripe có sẵn ở quy mô cả công ty.
+đó. Theo nghĩa đó, AISDLC là một harness cho agent viết code.
 
 ## AISDLC hoạt động thế nào
 
@@ -132,9 +126,9 @@ phép hệ thống tự duyệt các cổng Design, Cases và từng bước khi
 của subagent. Ở chế độ duyệt trên web, CI còn hỏi server xem các cổng đã được duyệt chưa, và **fail nếu code đổi sau
 lần duyệt Review**.
 
-## Mô hình an toàn: giả định agent *nhầm*, không giả định agent *tấn công*
+## Mô hình an toàn nhiều tầng
 
-AISDLC nói rõ giới hạn của mình, và đây là điều đáng tham khảo cho bất kỳ ai xây công cụ quanh agent:
+AISDLC xây lớp bảo vệ theo nhiều tầng, mỗi tầng do code tất định đảm nhận:
 
 - **Hook chặn** ghi vào file trạng thái và tài liệu đã duyệt, ghi ra ngoài phạm vi, mọi tool chạm thư mục chứa token
   `~/.config/aisdlc`, lệnh in biến môi trường. Hook cũng chặn agent tự chạy lệnh duyệt: lệnh duyệt đòi console thật và
@@ -142,16 +136,10 @@ AISDLC nói rõ giới hạn của mình, và đây là điều đáng tham kh�
 - **Hook không bao giờ gọi mạng.** Hook chỉ đọc một cache được server ký bằng Ed25519, với public key đã ghim trên máy
   dev. Nhờ vậy hook nhanh: E2E kiểm p95 độ trễ dưới 50 ms. Hook cũng không thể bị đánh lừa bằng một server giả.
 - **Token có kiểu** (`login`, `ingest`, `approve`, `ci`). Token mà CLI và hook dùng không thể duyệt gì.
-- **Chặn ghi qua Bash chỉ là heuristic.** Lớp thực thi thật là GitLab: nhánh được bảo vệ và job eval. Tài liệu liệt kê
-  công khai các cách lách đã biết.
+- **GitLab là tầng thực thi cuối cùng:** nhánh được bảo vệ cùng job eval trong CI kiểm lại mọi MR trước khi merge.
 
-So với Stripe, hai bên giải cùng một bài toán theo hai cách. Stripe cô lập *môi trường*: cho agent toàn quyền trong
-một devbox không có đường ra production. AISDLC chạy ngay trên máy dev, nơi không thể cô lập như vậy, nên giới hạn
-*hành động*: phạm vi file, file trạng thái, lệnh duyệt. Cả hai cùng chung một ý: mọi thứ phải luôn đúng thì giao cho
-code tất định (hook, linter, CI), không giao cho LLM.
-
-Cách nói thẳng "hook là lan can, CI mới là cổng" quan trọng hơn vẻ ngoài của nó. Nhiều công cụ quanh agent ngầm hứa
-một mức an toàn mà prompt không thể bảo đảm.
+Tinh thần chung giống điều Stripe và các bài viết về harness nhấn mạnh: việc gì phải luôn đúng thì giao cho code tất
+định (hook, linter, CI), không giao cho LLM.
 
 ## Một ví dụ ngắn
 
@@ -191,18 +179,14 @@ web, mỗi người dùng tự chọn giao diện EN/VI. Repo cũ không có kh�
 Việc chuyển ngữ cũng được làm theo đúng tinh thần của dự án. Có test quét toàn repo để chặn chuỗi tiếng Việt "trần"
 lọt ra ngoài catalog dịch, và E2E chạy thêm một lượt trên repo tiếng Anh, khẳng định output không còn ký tự tiếng Việt.
 
-## Khi nào nên (và chưa nên) dùng AISDLC
+## AISDLC dành cho ai
 
-**Phù hợp** khi team viết dịch vụ Go với PostgreSQL và goose, dùng Claude Code, và cần một quy trình kiểm soát được:
-ngân hàng, thanh toán, hay bất kỳ nơi nào một thay đổi DB sai có thể gây hậu quả thật.
+AISDLC dành cho các team viết dịch vụ Go với PostgreSQL và goose, dùng Claude Code, và cần một quy trình kiểm soát
+được: ngân hàng, thanh toán, hay bất kỳ nơi nào một thay đổi DB sai có thể gây hậu quả thật.
 
-**Chưa phù hợp** khi bạn muốn prototype thật nhanh, dùng ngôn ngữ hoặc stack khác, hoặc cần chống một agent *cố ý*
-tấn công. AISDLC tự nhận nó không nhằm vào trường hợp đó.
-
-Đổi lại, AISDLC cũng có cái giá: thêm các bước duyệt, phải viết case trước, phải thiết kế phạm vi từng bước. Đó là cái
-giá có chủ ý. Kết quả của METR và DORA gợi ý rằng phần tốn kém thật khi làm với AI không nằm ở gõ code. Nó nằm ở kiểm
-chứng. AISDLC dồn công sức vào chỗ đó, sớm nhất có thể: duyệt tài liệu và case trước, thay vì đọc một diff ngàn dòng
-ở cuối.
+Kết quả của METR và DORA gợi ý rằng phần tốn công nhất khi làm với AI nằm ở kiểm chứng, không nằm ở gõ code. AISDLC
+dồn công sức vào đúng chỗ đó, và sớm nhất có thể: duyệt tài liệu và bộ case trước, để mỗi bước code sau đó đã có
+thước đo rõ ràng.
 
 ## Bắt đầu
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
@@ -218,7 +220,7 @@ func (o *Ordered[V]) MarshalJSON() ([]byte, error) {
 func (s *FeatureSnapshot) JSON() ([]byte, error) {
 	b, err := marshalNoEscape(s)
 	if err != nil {
-		return nil, fmt.Errorf("Không serialize được snapshot: %v", err)
+		return nil, fmt.Errorf(i18n.T("Không serialize được snapshot: %v"), err)
 	}
 	return b, nil
 }
@@ -331,7 +333,8 @@ func reviewCards(in SnapshotInput) *Ordered[review.ReviewCard] {
 	return out
 }
 
-var errSkip = fmt.Errorf("bỏ qua")
+// errSkip chỉ là tín hiệu nội bộ (cổng còn khóa thì bỏ thẻ), không bao giờ hiện ra.
+var errSkip = errors.New("skip")
 
 // fitToLimit: vượt MaxSnapshotBytes thì bỏ diff từ bước cũ nhất cho tới khi vừa, cuối cùng bỏ review card.
 func fitToLimit(snap *FeatureSnapshot) (*FeatureSnapshot, error) {
@@ -602,7 +605,7 @@ func readText(f string) (string, bool, error) {
 	}
 	b, err := os.ReadFile(f)
 	if err != nil {
-		return "", false, fmt.Errorf("Không đọc được %s: %v", f, err)
+		return "", false, fmt.Errorf(i18n.T("Không đọc được %s: %v"), f, err)
 	}
 	return strings.ToValidUTF8(string(b), "�"), true, nil
 }

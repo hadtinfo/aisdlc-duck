@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"aisdlc/internal/i18n"
 )
 
 // EmptyTree là hash của tree rỗng.
@@ -68,14 +70,14 @@ func (r *Repo) SnapshotTreeExcluding(ctx context.Context, dir string) (string, e
 func (r *Repo) snapshot(ctx context.Context, excludeDir string) (string, error) {
 	f, err := os.CreateTemp("", "aisdlc-index*.tmp")
 	if err != nil {
-		return "", &Error{Msg: "Không tạo được file index tạm: " + err.Error()}
+		return "", &Error{Msg: i18n.Tf("Không tạo được file index tạm: %s", err.Error())}
 	}
 	index := f.Name()
 	f.Close()
 	defer os.Remove(index)
 	// git tự tạo; file rỗng không phải index hợp lệ
 	if err := os.Remove(index); err != nil {
-		return "", &Error{Msg: "Không tạo được file index tạm: " + err.Error()}
+		return "", &Error{Msg: i18n.Tf("Không tạo được file index tạm: %s", err.Error())}
 	}
 	extra := []string{"GIT_INDEX_FILE=" + index}
 	if r.hasHead(ctx) {
@@ -298,12 +300,12 @@ func (r *Repo) run(ctx context.Context, extra []string, args ...string) (string,
 		if errors.As(err, &ee) && ctx.Err() == nil {
 			se := strings.TrimSpace(stderr.String())
 			return "", &Error{
-				Msg:    fmt.Sprintf("git %s thất bại (%d): %s", strings.Join(args, " "), ee.ExitCode(), se),
+				Msg:    fmt.Sprintf(i18n.T("git %s thất bại (%d): %s"), strings.Join(args, " "), ee.ExitCode(), se),
 				Stderr: se,
 				exited: true,
 			}
 		}
-		return "", &Error{Msg: "Không chạy được git: " + err.Error()}
+		return "", &Error{Msg: i18n.Tf("Không chạy được git: %s", err.Error())}
 	}
 	return stdout.String(), nil
 }

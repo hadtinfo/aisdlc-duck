@@ -1,3 +1,5 @@
+import { useT } from "../i18n";
+
 export type Tone = "ok" | "warn" | "bad" | "info" | "idle";
 export interface GateItem { id: string; title: string; sub?: string; tone: Tone; group: "gate" | "step" }
 
@@ -5,9 +7,10 @@ export interface GateItem { id: string; title: string; sub?: string; tone: Tone;
 export function GateList({ items, selected, onSelect }: {
   items: GateItem[]; selected: string; onSelect: (id: string) => void;
 }) {
-  const groups: [string, GateItem["group"]][] = [["Cổng", "gate"], ["Bước", "step"]];
+  const { t } = useT();
+  const groups: [string, GateItem["group"]][] = [[t("gates.title"), "gate"], [t("steps.title"), "step"]];
   return (
-    <nav className="gatelist" aria-label="Cổng và bước">
+    <nav className="gatelist" aria-label={t("gates.andSteps")}>
       {groups.map(([title, g]) => {
         const rows = items.filter((i) => i.group === g);
         if (rows.length === 0) return null;

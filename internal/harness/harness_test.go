@@ -390,8 +390,8 @@ func TestRunServiceNeverHealthy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allErrorWith(t, res.Cases, demo1, NotRun)
-	allErrorWith(t, readResultsFile(t, out).Cases, demo1, NotRun)
+	allErrorWith(t, res.Cases, demo1, NotRunText())
+	allErrorWith(t, readResultsFile(t, out).Cases, demo1, NotRunText())
 	if res.ExitCode != 2 {
 		t.Errorf("exit = %d", res.ExitCode)
 	}
@@ -470,7 +470,7 @@ func processesRunning(t *testing.T, binary string) []string {
 
 // runStuckCase chạy DEMO-1 với stub chậm 60s; build và Postgres làm sẵn ngoài Run để hạn (hoặc lệnh hủy) rơi vào
 // lúc case đang chờ stub. cancelAfter > 0 thì hủy ctx sau khoảng đó kể từ khi dịch vụ khởi động (như Ctrl-C).
-// Kiểm mọi case ERROR TimeoutMessage (hủy: CanceledMessage), ExitTimeout, không còn tiến trình hay container.
+// Kiểm mọi case ERROR TimeoutMessage (hủy: Canceled()), ExitTimeout, không còn tiến trình hay container.
 func runStuckCase(t *testing.T, minutes float64, cancelAfter time.Duration) {
 	h, _ := newSampleHarness(t, func(c *model.RepoConfig) {
 		c.TimeoutMinutes = minutes
@@ -513,7 +513,7 @@ func runStuckCase(t *testing.T, minutes float64, cancelAfter time.Duration) {
 	}
 	msg := TimeoutMessage(minutes)
 	if cancelAfter > 0 {
-		msg = CanceledMessage
+		msg = Canceled()
 	}
 	allErrorWith(t, res.Cases, demo1, msg)
 	allErrorWith(t, readResultsFile(t, out).Cases, demo1, msg)
@@ -571,19 +571,19 @@ func TestRunCanceledUsesCanceledMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allErrorWith(t, res.Cases, demo1, CanceledMessage)
-	allErrorWith(t, readResultsFile(t, out).Cases, demo1, CanceledMessage)
+	allErrorWith(t, res.Cases, demo1, Canceled())
+	allErrorWith(t, readResultsFile(t, out).Cases, demo1, Canceled())
 	if res.ExitCode != ExitTimeout {
 		t.Errorf("exit = %d", res.ExitCode)
 	}
-	if log := readLog(t, out); !strings.Contains(log, CanceledMessage) || strings.Contains(log, "quá thời gian") {
+	if log := readLog(t, out); !strings.Contains(log, Canceled()) || strings.Contains(log, "quá thời gian") {
 		t.Errorf("harness.log:\n%s", log)
 	}
 	vr, err := h.Verify(ctx, "DEMO-1", outDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !vr.TimedOut || vr.Coverage.NA != CanceledMessage {
+	if !vr.TimedOut || vr.Coverage.NA != Canceled() {
 		t.Errorf("verify = %+v", vr)
 	}
 }

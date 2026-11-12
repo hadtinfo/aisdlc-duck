@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/spec"
 )
@@ -40,7 +41,7 @@ func usablePolicy(l LoadedPolicy) error {
 		msg = pe.Errors[0]
 	}
 	if l.Origin == "web" {
-		msg = "Chính sách dùng schema 1 (luật so khớp); quản trị cần chuyển chính sách sang schema 2 trên web."
+		msg = i18n.T("Chính sách dùng schema 1 (luật so khớp); quản trị cần chuyển chính sách sang schema 2 trên web.")
 	}
 	return abort(2, msg)
 }
@@ -59,9 +60,7 @@ func riskInputs(p risk.RiskPolicy, f *Feature) ([]risk.InputFile, string, error)
 func classifyRisk(p risk.RiskPolicy, f *Feature) (risk.RiskFile, []spec.Finding, error) {
 	b, err := os.ReadFile(f.Paths.RiskAgent())
 	if errors.Is(err, os.ErrNotExist) {
-		return risk.RiskFile{}, []spec.Finding{{Code: "RISK_AGENT_MISSING", Message: "Chưa có risk-agent.json: " +
-			"chạy `aisdlc risk inputs` rồi subagent aisdlc-risk-classifier (ghi kết quả vào " +
-			f.Paths.Rel(f.Paths.RiskAgent()) + ")."}}, nil
+		return risk.RiskFile{}, []spec.Finding{{Code: "RISK_AGENT_MISSING", Message: i18n.Tf("Chưa có risk-agent.json: chạy `aisdlc risk inputs` rồi subagent aisdlc-risk-classifier (ghi kết quả vào %s).", f.Paths.Rel(f.Paths.RiskAgent()))}}, nil
 	}
 	if err != nil {
 		return risk.RiskFile{}, nil, err
@@ -69,8 +68,7 @@ func classifyRisk(p risk.RiskPolicy, f *Feature) (risk.RiskFile, []spec.Finding,
 	invalid := func(msgs ...string) []spec.Finding {
 		out := make([]spec.Finding, len(msgs))
 		for i, m := range msgs {
-			out[i] = spec.Finding{Code: "RISK_AGENT_INVALID", Message: m + ". Sửa tài liệu nếu cần rồi chạy lại " +
-				"`aisdlc risk inputs` và subagent aisdlc-risk-classifier; không sửa tay risk-agent.json."}
+			out[i] = spec.Finding{Code: "RISK_AGENT_INVALID", Message: i18n.Tf("%s. Sửa tài liệu nếu cần rồi chạy lại `aisdlc risk inputs` và subagent aisdlc-risk-classifier; không sửa tay risk-agent.json.", m)}
 		}
 		return out
 	}
@@ -100,7 +98,7 @@ func writeEffectivePolicy(root string, p risk.RiskPolicy) error {
 // matchedText là "R4 (“…” (file)), G1 (…)" để in.
 func matchedText(ms []risk.Match) string {
 	if len(ms) == 0 {
-		return "không rule nào khớp"
+		return i18n.T("không rule nào khớp")
 	}
 	parts := make([]string, len(ms))
 	for i, m := range ms {

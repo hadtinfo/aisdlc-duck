@@ -25,6 +25,8 @@ type ReviewCard struct {
 	Risk               *RiskPart         `json:"risk"`
 	RiskRequirements   []RiskRequirement `json:"riskRequirements"`
 	RiskLLM            *RiskLLMBlock     `json:"riskLLM"`
+	// Locale là ngôn ngữ của nội dung thẻ (locale của repo lúc dựng); chỉ ghi khi khác vi, nên JSON thẻ vi giữ nguyên.
+	Locale string `json:"locale,omitempty"`
 }
 
 // RiskLLMBlock là kết quả xếp loại của subagent aisdlc-risk-classifier (risk.yaml mục llm và risk-agent.json);
@@ -269,7 +271,8 @@ func orderedObject(keys []string, vals []any) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// marshalSkipNil ghi struct theo thứ tự field, bỏ field nil (con trỏ, slice, map) như NON_NULL của Jackson.
+// marshalSkipNil ghi struct theo thứ tự field, bỏ field nil (con trỏ, slice, map) như NON_NULL của Jackson; chuỗi
+// rỗng có tag omitempty cũng bị bỏ.
 func marshalSkipNil(v any) ([]byte, error) {
 	rv := reflect.ValueOf(v)
 	rt := rv.Type()
@@ -277,13 +280,18 @@ func marshalSkipNil(v any) ([]byte, error) {
 	var vals []any
 	for i := 0; i < rt.NumField(); i++ {
 		fv := rv.Field(i)
+		tag := strings.Split(rt.Field(i).Tag.Get("json"), ",")
 		switch fv.Kind() {
 		case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Interface:
 			if fv.IsNil() {
 				continue
 			}
+		case reflect.String:
+			if fv.Len() == 0 && len(tag) > 1 && tag[1] == "omitempty" {
+				continue
+			}
 		}
-		keys = append(keys, strings.Split(rt.Field(i).Tag.Get("json"), ",")[0])
+		keys = append(keys, tag[0])
 		vals = append(vals, fv.Interface())
 	}
 	return orderedObject(keys, vals)
@@ -367,4 +375,24 @@ func levelOrdinal(l Level) int {
 		return 2
 	}
 	return 3
+}
+
+// NewFlags là các cờ của cur chưa có trong prev (so thẻ nộp lại). Cờ so theo (Code, Level, Refs), không theo thông
+// điệp: cùng mã, cùng mức, cùng refs mà chỉ đổi chữ (ví dụ repo đổi locale) không phải cờ mới; cùng mã nhưng nâng mức
+// hoặc chỉ sang chỗ khác thì là cờ mới.
+func NewFlags(prev, cur []ReviewFlag) []ReviewFlag {
+	key := func(f ReviewFlag) string {
+		return f.Code + "\x00" + string(f.Level) + "\x00" + strings.Join(f.Refs, "\x00")
+	}
+	seen := map[string]bool{}
+	for _, f := range prev {
+		seen[key(f)] = true
+	}
+	var out []ReviewFlag
+	for _, f := range cur {
+		if !seen[key(f)] {
+			out = append(out, f)
+		}
+	}
+	return out
 }

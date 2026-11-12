@@ -13,6 +13,7 @@ import (
 	"aisdlc/internal/eval"
 	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
 	"aisdlc/internal/risk"
@@ -25,7 +26,7 @@ import (
 func newSubmitCmd(ctx *Context) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "submit",
-		Short: "Kiểm tra tự động artifact của một cổng rồi nộp chờ dev duyệt.",
+		Short: i18n.T("Kiểm tra tự động artifact của một cổng rồi nộp chờ dev duyệt."),
 		Args:  cobra.NoArgs,
 		RunE: Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
 			fmt.Fprint(ctx.Err(), cmd.UsageString())
@@ -47,10 +48,10 @@ func newSubmitCmd(ctx *Context) *cobra.Command {
 		return sc
 	}
 	c.AddCommand(
-		sub("brd", "Nộp brd.md.", (*submission).brd),
-		sub("design", "Nộp design.md, design.yaml và migration nháp trong db/.", (*submission).design),
-		sub("cases", "Nộp cases.yaml: kiểm cấu trúc rồi chạy để chắc case fail trước khi code.", (*submission).cases),
-		sub("review", "Nộp kết quả eval (phải ĐẠT) và review-agent.json.", (*submission).review),
+		sub("brd", i18n.T("Nộp brd.md."), (*submission).brd),
+		sub("design", i18n.T("Nộp design.md, design.yaml và migration nháp trong db/."), (*submission).design),
+		sub("cases", i18n.T("Nộp cases.yaml: kiểm cấu trúc rồi chạy để chắc case fail trước khi code."), (*submission).cases),
+		sub("review", i18n.T("Nộp kết quả eval (phải ĐẠT) và review-agent.json."), (*submission).review),
 	)
 	return c
 }
@@ -71,7 +72,7 @@ func (s *submission) brd(f *Feature) (int, error) {
 	}
 	var findings []spec.Finding
 	if !exists(f.Paths.Brd()) {
-		findings = append(findings, spec.Finding{Code: "BRD_MISSING", Message: "Chưa có " + f.Paths.Rel(f.Paths.Brd()) + "."})
+		findings = append(findings, spec.Finding{Code: "BRD_MISSING", Message: i18n.Tf("Chưa có %s.", f.Paths.Rel(f.Paths.Brd()))})
 	} else {
 		b, err := os.ReadFile(f.Paths.Brd())
 		if err != nil {
@@ -110,9 +111,9 @@ func (s *submission) design(f *Feature) (int, error) {
 	var d *spec.DesignSpec
 	if !exists(f.Paths.DesignYaml()) {
 		findings = append(findings, spec.Finding{Code: "DESIGN_YAML_INVALID",
-			Message: "Chưa có " + f.Paths.Rel(f.Paths.DesignYaml()) + "."})
+			Message: i18n.Tf("Chưa có %s.", f.Paths.Rel(f.Paths.DesignYaml()))})
 	} else if ds, err := spec.ReadDesign(f.Paths.DesignYaml()); err != nil {
-		findings = append(findings, spec.Finding{Code: "DESIGN_YAML_INVALID", Message: "design.yaml không đọc được: " + err.Error()})
+		findings = append(findings, spec.Finding{Code: "DESIGN_YAML_INVALID", Message: i18n.Tf("design.yaml không đọc được: %s", err.Error())})
 	} else {
 		d = &ds
 		s.warnImpact(ds.Impact)
@@ -120,7 +121,7 @@ func (s *submission) design(f *Feature) (int, error) {
 	if d != nil {
 		fs, err := guarded(func() ([]spec.Finding, error) { return spec.ValidateDesign(md, *d), nil })
 		if err != nil {
-			fs = []spec.Finding{{Code: "DESIGN_YAML_INVALID", Message: "design.yaml thiếu trường bắt buộc: " + err.Error()}}
+			fs = []spec.Finding{{Code: "DESIGN_YAML_INVALID", Message: i18n.Tf("design.yaml thiếu trường bắt buộc: %s", err.Error())}}
 		}
 		findings = append(findings, fs...)
 	}
@@ -152,7 +153,7 @@ func (s *submission) cases(f *Feature) (int, error) {
 	var info []string
 	var cs *spec.CasesSpec
 	if c, err := spec.ReadCases(f.Paths.Cases()); err != nil {
-		findings = append(findings, spec.Finding{Code: "CASES_YAML_INVALID", Message: "cases.yaml không đọc được: " + err.Error()})
+		findings = append(findings, spec.Finding{Code: "CASES_YAML_INVALID", Message: i18n.Tf("cases.yaml không đọc được: %s", err.Error())})
 	} else {
 		cs = &c
 		s.warnImpact(c.Impact)
@@ -162,7 +163,7 @@ func (s *submission) cases(f *Feature) (int, error) {
 			return spec.ValidateCases(*cs, s.effectiveSteps(f, *cs), f.Flow()), nil
 		})
 		if err != nil {
-			fs = []spec.Finding{{Code: "CASES_YAML_INVALID", Message: "cases.yaml thiếu trường bắt buộc: " + err.Error()}}
+			fs = []spec.Finding{{Code: "CASES_YAML_INVALID", Message: i18n.Tf("cases.yaml thiếu trường bắt buộc: %s", err.Error())}}
 		}
 		findings = append(findings, fs...)
 		reqs, err := s.riskRequirements(f, *cs)
@@ -188,9 +189,9 @@ func (s *submission) cases(f *Feature) (int, error) {
 		}
 		beforeCode := len(recs) == 0
 		if beforeCode {
-			s.ctx.Println("Đang chạy bộ case qua harness (mong đợi case fail vì chưa có code)...")
+			s.ctx.Println(i18n.T("Đang chạy bộ case qua harness (mong đợi case fail vì chưa có code)..."))
 		} else {
-			s.ctx.Println("Đang chạy bộ case qua harness trên code hiện tại...")
+			s.ctx.Println(i18n.T("Đang chạy bộ case qua harness trên code hiện tại..."))
 		}
 		// Chưa có code: chạy trên schema đã thiết kế (migration chính + nháp), case được dùng bảng mới
 		var res run.CaseRunResult
@@ -214,17 +215,17 @@ func (s *submission) cases(f *Feature) (int, error) {
 		}
 		if len(errs) > 0 {
 			findings = append(findings, spec.Finding{Code: "CASES_HARNESS_ERROR",
-				Message: "Harness không chạy được case: " + strings.Join(errs, ", ") + "."})
+				Message: i18n.Tf("Harness không chạy được case: %s.", strings.Join(errs, ", "))})
 		}
 		if !anyFailed && beforeCode {
 			findings = append(findings, spec.Finding{Code: "CASES_NONE_FAILING",
-				Message: "Mọi case đã pass trước khi code: case không kiểm được thay đổi."})
+				Message: i18n.T("Mọi case đã pass trước khi code: case không kiểm được thay đổi.")})
 		}
 		if len(passed) > 0 {
 			if beforeCode {
-				info = append(info, "Thông tin: case đã pass trước khi code (không phải lỗi): "+strings.Join(passed, ", "))
+				info = append(info, i18n.Tf("Thông tin: case đã pass trước khi code (không phải lỗi): %s", strings.Join(passed, ", ")))
 			} else {
-				info = append(info, "Thông tin: case đã pass trên code hiện tại: "+strings.Join(passed, ", "))
+				info = append(info, i18n.Tf("Thông tin: case đã pass trên code hiện tại: %s", strings.Join(passed, ", ")))
 			}
 		}
 		if len(findings) == 0 && f.Flow() == model.FlowFull {
@@ -274,7 +275,7 @@ func (s *submission) laterTableSetup(f *Feature, steps []spec.StepSpec) (*spec.F
 	if len(drafts) == 0 || slices.ContainsFunc(drafts, func(n string) bool { return step.ScopeMatches(globs, dir+n) }) {
 		return nil, nil
 	}
-	s.ctx.Println("Đang chạy case của " + first.ID + " trên schema hiện tại (chưa có migration nháp)...")
+	s.ctx.Println(i18n.Tf("Đang chạy case của %s trên schema hiện tại (chưa có migration nháp)...", first.ID))
 	var res run.CaseRunResult
 	if err := s.ctx.interruptible(func() (err error) {
 		res, err = s.ctx.Runner(f.Root, f.Config).RunCases(f.Key, []string{first.ID}, "cases")
@@ -292,11 +293,7 @@ func (s *submission) laterTableSetup(f *Feature, steps []spec.StepSpec) (*spec.F
 	if len(bad) == 0 {
 		return nil, nil
 	}
-	return &spec.Finding{Code: "CASES_SETUP_NEEDS_LATER_TABLE", Message: "Case " + strings.Join(bad, ", ") +
-		" của bước " + first.ID + " lỗi khi chuẩn bị dữ liệu (reset_sql/given.sql) trên schema chưa có" +
-		" migration của bước sau: lúc `aisdlc step finish " + first.ID + "` sẽ luôn ERROR. Bỏ bảng mới" +
-		" khỏi reset_sql và khỏi case của " + first.ID + "; dọn bảng đó trong given.sql của case thuộc" +
-		" bước tạo bảng."}, nil
+	return &spec.Finding{Code: "CASES_SETUP_NEEDS_LATER_TABLE", Message: i18n.Tf("Case %s của bước %s lỗi khi chuẩn bị dữ liệu (reset_sql/given.sql) trên schema chưa có migration của bước sau: lúc `aisdlc step finish %s` sẽ luôn ERROR. Bỏ bảng mới khỏi reset_sql và khỏi case của %s; dọn bảng đó trong given.sql của case thuộc bước tạo bảng.", strings.Join(bad, ", "), first.ID, first.ID, first.ID)}, nil
 }
 
 func (s *submission) review(f *Feature) (int, error) {
@@ -314,10 +311,10 @@ func (s *submission) review(f *Feature) (int, error) {
 	report := filepath.Join(f.Paths.EvalDir(), "report.json")
 	if !exists(report) {
 		findings = append(findings, spec.Finding{Code: "REVIEW_NO_EVAL",
-			Message: "Chưa có " + f.Paths.Rel(report) + "; chạy `aisdlc eval` trước."})
+			Message: i18n.Tf("Chưa có %s; chạy `aisdlc eval` trước.", f.Paths.Rel(report))})
 	} else if r, err := eval.ReadEvalReport(report); err != nil {
 		findings = append(findings, spec.Finding{Code: "REVIEW_NO_EVAL",
-			Message: "Không đọc được " + f.Paths.Rel(report) + "; chạy lại `aisdlc eval`: " + err.Error()})
+			Message: i18n.Tf("Không đọc được %s; chạy lại `aisdlc eval`: %s", f.Paths.Rel(report), err.Error())})
 	} else {
 		if !r.Passed {
 			var failed []string
@@ -327,26 +324,24 @@ func (s *submission) review(f *Feature) (int, error) {
 				}
 			}
 			findings = append(findings, spec.Finding{Code: "REVIEW_EVAL_FAILED",
-				Message: "Eval chưa đạt (" + strings.Join(failed, ", ") + "). Sửa rồi chạy lại `aisdlc eval`."})
+				Message: i18n.Tf("Eval chưa đạt (%s). Sửa rồi chạy lại `aisdlc eval`.", strings.Join(failed, ", "))})
 		}
 		// như catch RuntimeException của Java: không kiểm được eval cũ (vd. git lỗi) là phát hiện, không phải lỗi lệnh
 		if stale, err := staleEval(f, r); err != nil {
 			findings = append(findings, spec.Finding{Code: "REVIEW_NO_EVAL",
-				Message: "Không đọc được " + f.Paths.Rel(report) + "; chạy lại `aisdlc eval`: " + err.Error()})
+				Message: i18n.Tf("Không đọc được %s; chạy lại `aisdlc eval`: %s", f.Paths.Rel(report), err.Error())})
 		} else if stale != nil {
 			findings = append(findings, *stale)
 		}
 	}
 	if !exists(f.Paths.ReviewAgent()) {
-		findings = append(findings, spec.Finding{Code: "REVIEW_AGENT_MISSING", Message: "Chưa có " +
-			f.Paths.Rel(f.Paths.ReviewAgent()) + " (kết quả subagent aisdlc-reviewer)."})
+		findings = append(findings, spec.Finding{Code: "REVIEW_AGENT_MISSING", Message: i18n.Tf("Chưa có %s (kết quả subagent aisdlc-reviewer).", f.Paths.Rel(f.Paths.ReviewAgent()))})
 	} else if _, err := eval.ReadAgentReview(f.Paths.ReviewAgent()); err != nil {
 		findings = append(findings, spec.Finding{Code: "REVIEW_AGENT_INVALID", Message: err.Error()})
 	} else if err := eval.RefreshAgentReview(f.Paths); err != nil {
 		// review chạy sau eval: đưa kết quả review vào eval/report.* trước khi tính hash để nộp
 		if !slices.ContainsFunc(findings, func(x spec.Finding) bool { return x.Code == "REVIEW_NO_EVAL" }) {
-			findings = append(findings, spec.Finding{Code: "REVIEW_NO_EVAL", Message: "Không cập nhật được kết quả review vào " +
-				f.Paths.Rel(report) + "; chạy lại `aisdlc eval`: " + err.Error()})
+			findings = append(findings, spec.Finding{Code: "REVIEW_NO_EVAL", Message: i18n.Tf("Không cập nhật được kết quả review vào %s; chạy lại `aisdlc eval`: %s", f.Paths.Rel(report), err.Error())})
 		}
 	}
 	return s.submit(f, gate.REVIEW, findings, nil)
@@ -404,9 +399,7 @@ func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.R
 	if ok && old.Override != nil {
 		if old.Policy != fresh.Policy || !sameYAML(old.Matched, fresh.Matched) || !sameYAML(old.LLM, fresh.LLM) ||
 			fresh.Level != old.Override.From {
-			s.ctx.Eprintln("Cảnh báo: chính sách, tài liệu hoặc kết quả xếp loại đã đổi kể từ lần ghi " +
-				f.Paths.Rel(f.Paths.Risk()) + " (xếp loại mới ra " + fresh.Level + "); giữ mức đổi tay " + old.Level +
-				" của " + old.Override.By + ". Dev chạy `aisdlc risk reclassify` để áp kết quả mới.")
+			s.ctx.Eprintln(i18n.Tf("Cảnh báo: chính sách, tài liệu hoặc kết quả xếp loại đã đổi kể từ lần ghi %s (xếp loại mới ra %s); giữ mức đổi tay %s của %s. Dev chạy `aisdlc risk reclassify` để áp kết quả mới.", f.Paths.Rel(f.Paths.Risk()), fresh.Level, old.Level, old.Override.By))
 		}
 		// giữ mức đổi tay nhưng gắn với kết quả xếp loại mới (llm, luật khớp, chính sách): cổng Case không còn coi
 		// risk.yaml là cũ chỉ vì dev đã đổi mức
@@ -443,7 +436,7 @@ func (s *submission) classify(f *Feature, p risk.RiskPolicy, print bool) (risk.R
 		print = true
 	}
 	if print {
-		s.ctx.Println(fmt.Sprintf("Rủi ro: %s (chính sách v%d) — %s", fresh.Level, fresh.Policy.Version,
+		s.ctx.Println(fmt.Sprintf(i18n.T("Rủi ro: %s (chính sách v%d) — %s"), fresh.Level, fresh.Policy.Version,
 			matchedText(fresh.Matched)))
 	}
 	return fresh, nil, nil
@@ -489,13 +482,10 @@ func (s *submission) riskRequirements(f *Feature, cs spec.CasesSpec) ([]spec.Fin
 				return nil, err
 			}
 			if rf.LLM == nil {
-				return []spec.Finding{{Code: "RISK_STALE", Message: f.Paths.Rel(f.Paths.Risk()) + " chưa có kết quả " +
-					"xếp loại LLM; chạy subagent aisdlc-risk-classifier rồi `aisdlc risk reclassify`."}}, nil
+				return []spec.Finding{{Code: "RISK_STALE", Message: i18n.Tf("%s chưa có kết quả xếp loại LLM; chạy subagent aisdlc-risk-classifier rồi `aisdlc risk reclassify`.", f.Paths.Rel(f.Paths.Risk()))}}, nil
 			}
 			if rf.LLM.InputsHash != hash {
-				return []spec.Finding{{Code: "RISK_STALE", Message: "Chính sách hoặc tài liệu đầu vào đã đổi kể từ " +
-					"lần xếp loại rủi ro (" + f.Paths.Rel(f.Paths.Risk()) + "): chạy lại `aisdlc risk inputs` và " +
-					"subagent aisdlc-risk-classifier, rồi dev chạy `aisdlc risk reclassify`."}}, nil
+				return []spec.Finding{{Code: "RISK_STALE", Message: i18n.Tf("Chính sách hoặc tài liệu đầu vào đã đổi kể từ lần xếp loại rủi ro (%s): chạy lại `aisdlc risk inputs` và subagent aisdlc-risk-classifier, rồi dev chạy `aisdlc risk reclassify`.", f.Paths.Rel(f.Paths.Risk()))}}, nil
 			}
 		} else {
 			x, fs, err := s.classify(f, l.Policy, false)
@@ -555,8 +545,7 @@ func stepsNotAccepted(f *Feature) (x spec.Finding, open bool, err error) {
 	if len(notDone) == 0 {
 		return spec.Finding{}, false, nil
 	}
-	return spec.Finding{Code: "REVIEW_STEPS_NOT_ACCEPTED", Message: "Bước chưa được dev chấp nhận: " +
-		strings.Join(notDone, ", ") + ". Làm xong từng bước và chờ dev `aisdlc step accept` trước khi review."}, true, nil
+	return spec.Finding{Code: "REVIEW_STEPS_NOT_ACCEPTED", Message: i18n.Tf("Bước chưa được dev chấp nhận: %s. Làm xong từng bước và chờ dev `aisdlc step accept` trước khi review.", strings.Join(notDone, ", "))}, true, nil
 }
 
 // staleEval: REVIEW_EVAL_STALE nếu working tree (trừ thư mục tính năng) khác tree đã eval; nil khi còn mới.
@@ -568,12 +557,12 @@ func staleEval(f *Feature, r eval.EvalReport) (*spec.Finding, error) {
 	if now == r.EvaluatedTree {
 		return nil, nil
 	}
-	return &spec.Finding{Code: "REVIEW_EVAL_STALE", Message: "code đã đổi sau lần eval — chạy lại aisdlc eval."}, nil
+	return &spec.Finding{Code: "REVIEW_EVAL_STALE", Message: i18n.T("code đã đổi sau lần eval — chạy lại aisdlc eval.")}, nil
 }
 
 func (s *submission) precheck(f *Feature, g gate.Gate) error {
 	if !slices.Contains(gate.Sequence(f.Flow()), g) {
-		return abort(2, "Cổng "+string(g)+" không thuộc luồng "+string(f.Flow())+".")
+		return abort(2, i18n.Tf("Cổng %s không thuộc luồng %s.", string(g), string(f.Flow())))
 	}
 	// lệnh trước có thể đã ghi risk.yaml mức mới rồi hỏng trước khi thay thế bản tự duyệt; thay thế trước khi kiểm
 	// khóa: cổng trước nay chờ dev thì dừng ngay, không chạy harness
@@ -585,14 +574,14 @@ func (s *submission) precheck(f *Feature, g gate.Gate) error {
 		return err
 	}
 	if st == gate.LockedByPrevious {
-		return abort(2, "Cổng "+string(g)+" bị khóa: cổng trước chưa được duyệt.")
+		return abort(2, i18n.Tf("Cổng %s bị khóa: cổng trước chưa được duyệt.", string(g)))
 	}
 	return nil
 }
 
 // migrationCheck chạy migration nháp; thành công thì chép schema.json thành schema-expected.json.
 func (s *submission) migrationCheck(f *Feature, code string) (*spec.Finding, error) {
-	s.ctx.Println("Đang chạy migration nháp qua harness (migration-check)...")
+	s.ctx.Println(i18n.T("Đang chạy migration nháp qua harness (migration-check)..."))
 	var runner CaseRunner
 	var res run.CaseRunResult
 	if err := s.ctx.interruptible(func() (err error) {
@@ -606,9 +595,9 @@ func (s *submission) migrationCheck(f *Feature, code string) (*spec.Finding, err
 	if res.ExitCode != 0 || !exists(schema) {
 		missing := ""
 		if !exists(schema) {
-			missing = ", không có schema.json"
+			missing = i18n.T(", không có schema.json")
 		}
-		return &spec.Finding{Code: code, Message: fmt.Sprintf("Migration nháp không chạy được (exit %d%s). "+
+		return &spec.Finding{Code: code, Message: i18n.Tf("Migration nháp không chạy được (exit %d%s). "+
 			"20 dòng cuối output harness:\n%s", res.ExitCode, missing, runner.OutputTail(f.Key, 20))}, nil
 	}
 	b, err := os.ReadFile(schema)
@@ -616,9 +605,9 @@ func (s *submission) migrationCheck(f *Feature, code string) (*spec.Finding, err
 		err = fsx.WriteAtomic(f.Paths.SchemaExpected(), b, 0o644)
 	}
 	if err != nil {
-		return &spec.Finding{Code: code, Message: "Không chép được schema.json: " + err.Error()}, nil
+		return &spec.Finding{Code: code, Message: i18n.Tf("Không chép được schema.json: %s", err.Error())}, nil
 	}
-	s.ctx.Println("Đã ghi " + f.Paths.Rel(f.Paths.SchemaExpected()) + ".")
+	s.ctx.Println(i18n.Tf("Đã ghi %s.", f.Paths.Rel(f.Paths.SchemaExpected())))
 	return nil, nil
 }
 
@@ -657,33 +646,31 @@ func (s *submission) submit(f *Feature, g gate.Gate, findings []spec.Finding, in
 	s.ctx.AfterCommand(f, "submit "+name)
 	onWeb := ""
 	if web {
-		onWeb = " lên web"
+		onWeb = i18n.T(" lên web")
 	}
 	if auto != "" {
-		s.ctx.Println("Đã nộp cổng " + string(g) + onWeb + ", không có phát hiện: " + auto + ".")
+		s.ctx.Println(i18n.Tf("Đã nộp cổng %s%s, không có phát hiện: %s.", string(g), onWeb, auto))
 		return ExitOK, nil
 	}
 	if len(findings) == 0 {
 		if web {
-			s.ctx.Println("Đã nộp cổng " + string(g) + " lên web, không có phát hiện. Dev duyệt trên web (hoặc " +
-				"`aisdlc approve " + name + "` ở terminal của mình).")
+			s.ctx.Println(i18n.Tf("Đã nộp cổng %s lên web, không có phát hiện. Dev duyệt trên web (hoặc `aisdlc approve %s` ở terminal của mình).", string(g), name))
 		} else {
-			s.ctx.Println("Đã nộp cổng " + string(g) + ", không có phát hiện. Dev duyệt bằng `aisdlc approve " +
-				name + "` ở terminal của mình.")
+			s.ctx.Println(i18n.Tf("Đã nộp cổng %s, không có phát hiện. Dev duyệt bằng `aisdlc approve %s` ở terminal của mình.", string(g), name))
 		}
 		return ExitOK, nil
 	}
-	s.ctx.Println(fmt.Sprintf("Cổng %s có %d phát hiện:", g, len(findings)))
+	s.ctx.Println(fmt.Sprintf(i18n.T("Cổng %s có %d phát hiện:"), g, len(findings)))
 	for _, x := range findings {
 		s.ctx.Println("  - " + x.Code + ": " + strings.ReplaceAll(x.Message, "\n", "\n      "))
 	}
-	s.ctx.Println("Sửa rồi chạy lại `aisdlc submit " + name + "`.")
+	s.ctx.Println(i18n.Tf("Sửa rồi chạy lại `aisdlc submit %s`.", name))
 	return ExitFindings, nil
 }
 
 // warnImpact in cảnh báo không chặn khi design.yaml/cases.yaml còn khối impact cũ.
 func (s *submission) warnImpact(i *spec.Impact) {
 	if w := spec.ImpactDeprecationWarning(i); w != "" {
-		s.ctx.Eprintln("Cảnh báo: " + w)
+		s.ctx.Eprintln(i18n.Tf("Cảnh báo: %s", w))
 	}
 }

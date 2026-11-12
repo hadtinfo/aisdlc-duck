@@ -1,13 +1,14 @@
 package auth
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/web/httpx"
 )
 
@@ -15,6 +16,7 @@ import (
 func Routes(r chi.Router, s *Service) {
 	r.Post("/api/login", s.login)
 	r.Get("/api/me", s.me)
+	r.Put("/api/me/locale", s.setLocale)
 	r.Post("/api/logout", s.logout)
 	r.Get("/api/me/tokens", s.listTokens)
 	r.Post("/api/me/tokens", s.createToken)
@@ -26,10 +28,11 @@ type meView struct {
 	DisplayName string  `json:"displayName"`
 	Role        string  `json:"role"`
 	CSRF        *string `json:"csrf"`
+	Locale      *string `json:"locale"` // null = chưa chọn
 }
 
 func meOf(u *User, csrf *string) meView {
-	return meView{Login: u.Login, DisplayName: u.DisplayName, Role: u.Role, CSRF: csrf}
+	return meView{Login: u.Login, DisplayName: u.DisplayName, Role: u.Role, CSRF: csrf, Locale: u.Locale}
 }
 
 // sessionCookie như ResponseCookie.toString của Spring: Path=/, Secure khi request TLS, HttpOnly, SameSite=Strict.
@@ -52,7 +55,7 @@ func decodeObject(r *http.Request) (map[string]any, error) {
 		return nil, err
 	}
 	if m == nil {
-		return nil, httpx.NewError(http.StatusBadRequest, "JSON không hợp lệ")
+		return nil, httpx.Err(http.StatusBadRequest, httpx.T("JSON không hợp lệ"))
 	}
 	return m, nil
 }
@@ -61,34 +64,34 @@ func decodeObject(r *http.Request) (map[string]any, error) {
 func (s *Service) login(w http.ResponseWriter, r *http.Request) {
 	body, err := decodeObject(r)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	tok, _ := body["token"].(string)
 	ctx := r.Context()
 	p, err := s.authenticateToken(ctx, tok)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	var u *User
 	if p != nil && p.Via == "login" {
 		if u, err = s.UserByID(ctx, p.UserID); err != nil {
-			httpx.WriteError(w, err)
+			httpx.Fail(w, r, err)
 			return
 		}
 	}
 	if u == nil {
-		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "Token không hợp lệ"})
+		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": httpx.LocaleFrom(r.Context()).T("Token không hợp lệ")})
 		return
 	}
 	id, csrf, err := s.createSession(ctx, u.ID)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	if err := s.WriteAudit(ctx, s.Pool, AuditEntry{Login: p.Login, IP: remoteIP(r), Channel: "web", Action: "session.open"}); err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	w.Header().Set("Set-Cookie", sessionCookie(id, false, r.TLS != nil))
@@ -99,17 +102,17 @@ func (s *Service) me(w http.ResponseWriter, r *http.Request) {
 	p, _ := httpx.PrincipalFrom(r.Context())
 	u, err := s.UserByID(r.Context(), p.UserID)
 	if err == nil && u == nil {
-		err = fmt.Errorf("không thấy user %d", p.UserID)
+		err = errors.New(httpx.OpLocale().Tf("không thấy user %d", p.UserID))
 	}
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	var csrf *string
 	if p.IsSession() {
 		c, ok, err := s.sessionCSRF(r.Context(), sessionIDFrom(r.Context()))
 		if err != nil {
-			httpx.WriteError(w, err)
+			httpx.Fail(w, r, err)
 			return
 		}
 		if ok {
@@ -119,15 +122,45 @@ func (s *Service) me(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, meOf(u, csrf))
 }
 
+// setLocale: PUT /api/me/locale {"locale":"vi"|"en"} lưu ngôn ngữ giao diện của user (phiên + CSRF, như mọi PUT).
+// Giá trị khác → 400. Trả lại me như GET /api/me (csrf null: không đọc lại phiên ở đây).
+func (s *Service) setLocale(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeObject(r)
+	if err != nil {
+		httpx.Fail(w, r, err)
+		return
+	}
+	v, _ := body["locale"].(string)
+	if v != string(i18n.VI) && v != string(i18n.EN) {
+		httpx.Fail(w, r, httpx.Err(http.StatusBadRequest, httpx.T("locale phải là vi hoặc en")))
+		return
+	}
+	ctx := r.Context()
+	p, _ := httpx.PrincipalFrom(ctx)
+	if err := s.SetLocale(ctx, p.UserID, i18n.Locale(v)); err != nil {
+		httpx.Fail(w, r, err)
+		return
+	}
+	u, err := s.UserByID(ctx, p.UserID)
+	if err == nil && u == nil {
+		err = errors.New(httpx.OpLocale().Tf("không thấy user %d", p.UserID))
+	}
+	if err != nil {
+		httpx.Fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, meOf(u, nil))
+}
+
 func (s *Service) logout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	p, _ := httpx.PrincipalFrom(ctx)
 	if err := s.deleteSession(ctx, sessionIDFrom(ctx)); err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	if err := s.WriteAudit(ctx, s.Pool, AuditEntry{Login: p.Login, IP: remoteIP(r), Channel: "web", Action: "session.close"}); err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	w.Header().Set("Set-Cookie", sessionCookie("", true, r.TLS != nil))
@@ -160,7 +193,7 @@ func (s *Service) listTokens(w http.ResponseWriter, r *http.Request) {
 	p, _ := httpx.PrincipalFrom(r.Context())
 	list, err := s.ListTokens(r.Context(), p.UserID)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	out := make([]tokenView, 0, len(list))
@@ -176,17 +209,17 @@ const maxLabel = 100
 func (s *Service) createToken(w http.ResponseWriter, r *http.Request) {
 	body, err := decodeObject(r)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	kind, _ := body["kind"].(string)
 	if kind != "ingest" && kind != "approve" {
-		httpx.WriteError(w, httpx.NewError(http.StatusBadRequest, "kind phải là ingest hoặc approve"))
+		httpx.Fail(w, r, httpx.Err(http.StatusBadRequest, httpx.T("kind phải là ingest hoặc approve")))
 		return
 	}
 	label, ok := body["label"].(string)
 	if !ok || javaBlank(label) || utf16Len(javaStrip(label)) > maxLabel {
-		httpx.WriteError(w, httpx.NewError(http.StatusBadRequest, fmt.Sprintf("label bắt buộc, tối đa %d ký tự", maxLabel)))
+		httpx.Fail(w, r, httpx.Err(http.StatusBadRequest, httpx.Tf("label bắt buộc, tối đa %d ký tự", maxLabel)))
 		return
 	}
 	label = javaStrip(label)
@@ -194,12 +227,12 @@ func (s *Service) createToken(w http.ResponseWriter, r *http.Request) {
 	p, _ := httpx.PrincipalFrom(ctx)
 	created, err := s.CreateToken(ctx, s.Pool, p.UserID, kind, label)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	if err := s.WriteAudit(ctx, s.Pool, AuditEntry{Login: p.Login, IP: remoteIP(r), Channel: "web", Action: "token.create",
 		Target: strconv.FormatInt(created.ID, 10), Detail: map[string]any{"tokenId": created.ID, "kind": kind, "label": label}}); err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, struct {
@@ -212,37 +245,37 @@ func (s *Service) createToken(w http.ResponseWriter, r *http.Request) {
 func (s *Service) revoke(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
-		httpx.WriteError(w, httpx.NewError(http.StatusBadRequest, "Bad Request"))
+		httpx.Fail(w, r, httpx.Err(http.StatusBadRequest, httpx.Plain("Bad Request")))
 		return
 	}
 	ctx := r.Context()
 	p, _ := httpx.PrincipalFrom(ctx)
-	notFound := httpx.NewError(http.StatusNotFound, "Không có token này")
+	notFound := httpx.Err(http.StatusNotFound, httpx.T("Không có token này"))
 	own, err := s.ownToken(ctx, p.UserID, id)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	if own == nil {
-		httpx.WriteError(w, notFound)
+		httpx.Fail(w, r, notFound)
 		return
 	}
 	if own.Kind == "login" || own.Kind == "ci" {
-		httpx.WriteError(w, httpx.NewError(http.StatusBadRequest, "Không thu hồi được loại token này ở đây"))
+		httpx.Fail(w, r, httpx.Err(http.StatusBadRequest, httpx.T("Không thu hồi được loại token này ở đây")))
 		return
 	}
 	revoked, err := s.revokeToken(ctx, p.UserID, id)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	if revoked == nil {
-		httpx.WriteError(w, notFound)
+		httpx.Fail(w, r, notFound)
 		return
 	}
 	if err := s.WriteAudit(ctx, s.Pool, AuditEntry{Login: p.Login, IP: remoteIP(r), Channel: "web", Action: "token.revoke",
 		Target: strconv.FormatInt(id, 10), Detail: map[string]any{"tokenId": id, "kind": revoked.Kind}}); err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, viewOf(*revoked))

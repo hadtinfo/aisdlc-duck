@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
 import { type PolicyChange, type PolicyVersion, type PolicyView, changeId, changeText } from "../risk";
 import { RiskDialog } from "./RiskDialog";
+import { Key, intlTag, useT } from "../i18n";
 
-const SOURCE: Record<string, string> = { import: "nhập", web: "web", "preset-update": "cập nhật mẫu" };
-const when = (iso: string) => new Date(iso).toLocaleString("vi-VN");
+const SOURCE: Record<string, Key> = { import: "rv.src.import", web: "rv.src.web", "preset-update": "rv.src.preset" };
+const when = (iso: string) => new Date(iso).toLocaleString(intlTag());
 
 /**
  * Tab "Phiên bản": dòng thời gian (số tính năng đang gắn mỗi phiên bản), thông báo mẫu mới kèm diff — mỗi thay đổi
@@ -14,6 +15,7 @@ export function RiskVersions({ view, versions, error, handled, onApply, onSkip, 
   handled: Record<string, "applied" | "skipped">; onApply: (c: PolicyChange) => void; onSkip: (c: PolicyChange) => void;
   onSkipAll: () => void;
 }) {
+  const { t } = useT();
   const [showDiff, setShowDiff] = useState(false);
   const [yaml, setYaml] = useState(false);
   const u = view.presetUpdate;
@@ -24,36 +26,36 @@ export function RiskVersions({ view, versions, error, handled, onApply, onSkip, 
       {u && (
         <div className="rk-note info">
           <div className="grow">
-            <b>aisdlc có mẫu {u.name} mới</b> (bản {u.from} → {u.to}) · {u.changes.length} thay đổi
-            {u.baseMissing ? " so với chính sách đang dùng (không còn mẫu bản " + u.from + " để so)" : " so với mẫu bạn đã nhập"}.
-            {" "}Không tự ghi đè; chọn phần muốn áp dụng.
+            <b>{t("rv.newPreset", { name: u.name })}</b> {t("rv.presetRange", { from: u.from, to: u.to, n: u.changes.length })}
+            {u.baseMissing ? t("rv.vsCurrent", { from: u.from }) : t("rv.vsImported")}.
+            {" "}{t("rv.noOverwrite")}
           </div>
           <button type="button" className="ghost" onClick={() => setShowDiff((x) => !x)} aria-expanded={showDiff}>
-            {showDiff ? "Ẩn diff mẫu" : "Xem diff mẫu"}
+            {showDiff ? t("rv.hideDiff") : t("rv.showDiff")}
           </button>
         </div>
       )}
       {u && showDiff && (
         <section className="box">
           <div className="rk-head">
-            <h2>Mẫu {u.name}: {u.from} → {u.to}</h2>
-            {open > 0 && <button type="button" className="secondary" onClick={onSkipAll}>Bỏ qua tất cả còn lại</button>}
+            <h2>{t("rv.presetTitle", { name: u.name, from: u.from, to: u.to })}</h2>
+            {open > 0 && <button type="button" className="secondary" onClick={onSkipAll}>{t("rv.skipAll")}</button>}
           </div>
           <p className="muted" style={{ fontSize: 12.5, margin: "0 0 10px" }}>
             {open > 0
-              ? `Còn ${open} thay đổi chưa áp dụng hoặc bỏ qua; nháp lên mẫu bản ${u.to} khi đã xem hết.`
-              : `Đã xem hết; nháp ghi mẫu bản ${u.to}, xuất bản để đóng thông báo.`}
+              ? t("rv.openLeft", { n: open, to: u.to })
+              : t("rv.allSeen", { to: u.to })}
           </p>
-          {pending.length === 0 ? <p className="muted">Không còn thay đổi nào cần xem.</p> : (
+          {pending.length === 0 ? <p className="muted">{t("rv.nothingLeft")}</p> : (
             <div className="rk-stack">
               {pending.map((c) => (
                 <div key={changeId(c)} className="rk-row between">
                   <pre className="rk-diff"><span className={c.kind.startsWith("REMOVE") ? "del" : c.kind.startsWith("ADD") ? "add" : ""}>{changeText(c)}</span>
-                    {c.loosening && <span className="del">{"\n"}(nới yêu cầu)</span>}</pre>
-                  {handled[changeId(c)] === "applied" ? <span className="muted" style={{ fontSize: 12.5 }}>Đã áp dụng vào nháp</span> : (
+                    {c.loosening && <span className="del">{"\n"}{t("rv.loosening")}</span>}</pre>
+                  {handled[changeId(c)] === "applied" ? <span className="muted" style={{ fontSize: 12.5 }}>{t("rv.applied")}</span> : (
                     <span className="rk-row" style={{ flexWrap: "nowrap" }}>
-                      <button type="button" className="ghost" disabled={!u.policy} onClick={() => onApply(c)}>Áp dụng vào nháp</button>
-                      <button type="button" className="ghost" onClick={() => onSkip(c)}>Bỏ qua</button>
+                      <button type="button" className="ghost" disabled={!u.policy} onClick={() => onApply(c)}>{t("rv.apply")}</button>
+                      <button type="button" className="ghost" onClick={() => onSkip(c)}>{t("rv.skip")}</button>
                     </span>
                   )}
                 </div>
@@ -64,14 +66,14 @@ export function RiskVersions({ view, versions, error, handled, onApply, onSkip, 
       )}
       <section className="box">
         <div className="rk-head">
-          <h2>Phiên bản</h2>
+          <h2>{t("rv.versions")}</h2>
           <span className="rk-row">
-            <span className="muted" style={{ fontSize: 12.5 }}>Tính năng giữ phiên bản lúc được phân loại; chuyển phiên bản phải chủ động</span>
-            <button type="button" className="secondary" disabled={!view.yaml} onClick={() => setYaml(true)}>Tải YAML</button>
+            <span className="muted" style={{ fontSize: 12.5 }}>{t("rv.pinNote")}</span>
+            <button type="button" className="secondary" disabled={!view.yaml} onClick={() => setYaml(true)}>{t("rv.downloadYaml")}</button>
           </span>
         </div>
         {error && <p className="error" role="alert">{error}</p>}
-        {!versions ? (!error && <p className="muted">Đang tải…</p>) : (
+        {!versions ? (!error && <p className="muted">{t("common.loading")}</p>) : (
           <div>
             {versions.map((v) => {
               const n = view.featureCounts[String(v.version)] ?? 0;
@@ -80,15 +82,15 @@ export function RiskVersions({ view, versions, error, handled, onApply, onSkip, 
                   <span className="v">v{v.version}</span>
                   <div>
                     <div>
-                      {v.version === view.version && <><span className="rk-live">ĐANG HIỆU LỰC</span> · </>}
-                      <span className="who">{v.author} · {when(v.createdAt)} · {SOURCE[v.source] ?? v.source}</span>
+                      {v.version === view.version && <><span className="rk-live">{t("rv.live")}</span> · </>}
+                      <span className="who">{v.author} · {when(v.createdAt)} · {SOURCE[v.source] ? t(SOURCE[v.source]) : v.source}</span>
                     </div>
                     <div style={{ fontSize: 13.5, marginTop: 2 }}>{v.reason}</div>
                     {v.changes.length > 0 && (
-                      <ul>{v.changes.map((c, i) => <li key={i} className={c.loosening ? "warn" : ""}>{changeText(c)}{c.loosening && " (nới)"}</li>)}</ul>
+                      <ul>{v.changes.map((c, i) => <li key={i} className={c.loosening ? "warn" : ""}>{changeText(c)}{c.loosening && ` ${t("rv.loosenedShort")}`}</li>)}</ul>
                     )}
                   </div>
-                  <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{n > 0 ? `${n} tính năng` : ""}</span>
+                  <span className="muted" style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{n > 0 ? t("rv.features", { n }) : ""}</span>
                 </div>
               );
             })}
@@ -102,6 +104,7 @@ export function RiskVersions({ view, versions, error, handled, onApply, onSkip, 
 
 /** YAML của bản đang hiệu lực trong khung chọn được, kèm nút Copy (không dùng <a download>). */
 function YamlDialog({ version, yaml, onClose }: { version: number; yaml: string; onClose: () => void }) {
+  const { t } = useT();
   const ref = useRef<HTMLTextAreaElement>(null);
   const [state, setState] = useState<"idle" | "copied" | "selected">("idle");
   async function copy() {
@@ -118,11 +121,11 @@ function YamlDialog({ version, yaml, onClose }: { version: number; yaml: string;
   return (
     <RiskDialog title={`aisdlc/risk-policy.yaml · v${version}`} onClose={onClose}>
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-        Chép vào <code>aisdlc/risk-policy.yaml</code> rồi commit nếu muốn repo giữ bản này (dùng khi chạy không có web).
+        {t("rv.copyInto")} <code>aisdlc/risk-policy.yaml</code> {t("rv.copyCommit")}
       </p>
       <textarea ref={ref} className="rk-yaml" readOnly value={yaml} onFocus={(e) => e.currentTarget.select()} />
       <div className="rk-row end">
-        <button type="button" onClick={copy}>{state === "copied" ? "Đã chép" : state === "selected" ? "Nhấn Ctrl+C" : "Copy"}</button>
+        <button type="button" onClick={copy}>{state === "copied" ? t("copy.done") : state === "selected" ? t("copy.pressCtrlC") : "Copy"}</button>
       </div>
     </RiskDialog>
   );

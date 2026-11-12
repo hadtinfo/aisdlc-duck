@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"aisdlc/internal/i18n"
 )
 
 // PolicyChange là một mục khác nhau giữa hai bản chính sách. Kind thuộc ADD_RULE, REMOVE_RULE, CHANGE_RULE,
@@ -23,20 +25,25 @@ type PolicyChange struct {
 // tightParams: tham số số mà giảm đi là nới yêu cầu.
 var tightParams = map[string]bool{"min": true, "threads": true}
 
-// DiffPolicies so hai bản chính sách theo từng mục.
+// DiffPolicies so hai bản chính sách theo từng mục; chữ mô tả theo locale mặc định.
 func DiffPolicies(from, to RiskPolicy) []PolicyChange {
+	return DiffPoliciesIn(i18n.Default(), from, to)
+}
+
+// DiffPoliciesIn như DiffPolicies, chữ mô tả (Before/After của rule) theo loc.
+func DiffPoliciesIn(loc i18n.Locale, from, to RiskPolicy) []PolicyChange {
 	out := []PolicyChange{}
 	if from.Schema != to.Schema {
 		out = append(out, PolicyChange{Kind: "SCHEMA_MIGRATED", Key: "schema", Before: strconv.Itoa(from.Schema), After: strconv.Itoa(to.Schema)})
 	}
-	diffRules(from, to, &out)
+	diffRules(loc, from, to, &out)
 	diffRequirements(from, to, &out)
 	diffFlow(from, to, &out)
 	diffClassification(from, to, &out)
 	return out
 }
 
-func diffRules(from, to RiskPolicy, out *[]PolicyChange) {
+func diffRules(loc i18n.Locale, from, to RiskPolicy, out *[]PolicyChange) {
 	b := map[string]RiskRule{}
 	for _, r := range to.Rules {
 		b[r.ID] = r
@@ -47,18 +54,18 @@ func diffRules(from, to RiskPolicy, out *[]PolicyChange) {
 		n, ok := b[r.ID]
 		switch {
 		case !ok:
-			*out = append(*out, PolicyChange{"REMOVE_RULE", r.ID, describeRule(r), "", true})
+			*out = append(*out, PolicyChange{"REMOVE_RULE", r.ID, describeRule(loc, r), "", true})
 		case !reflect.DeepEqual(r, n):
 			disabled := r.Enabled && !n.Enabled
 			lowered := to.Rank(n.Level) < rankIn(to, from, r.Level)
 			// Đổi mô tả bằng lời có thể thu hẹp phạm vi rule: coi là nới.
 			reworded := r.Describe != n.Describe
-			*out = append(*out, PolicyChange{"CHANGE_RULE", r.ID, describeRule(r), describeRule(n), disabled || lowered || reworded})
+			*out = append(*out, PolicyChange{"CHANGE_RULE", r.ID, describeRule(loc, r), describeRule(loc, n), disabled || lowered || reworded})
 		}
 	}
 	for _, n := range to.Rules {
 		if !a[n.ID] {
-			*out = append(*out, PolicyChange{"ADD_RULE", n.ID, "", describeRule(n), false})
+			*out = append(*out, PolicyChange{"ADD_RULE", n.ID, "", describeRule(loc, n), false})
 		}
 	}
 }
@@ -71,11 +78,11 @@ func rankIn(to, from RiskPolicy, level string) int {
 	return from.Rank(level)
 }
 
-func describeRule(r RiskRule) string {
+func describeRule(loc i18n.Locale, r RiskRule) string {
 	if r.Describe != "" {
 		s := strconv.Quote(r.Describe) + " → " + r.Level
 		if !r.Enabled {
-			s += " (tắt)"
+			s += loc.T(" (tắt)")
 		}
 		return s
 	}
@@ -85,7 +92,7 @@ func describeRule(r RiskRule) string {
 	}
 	s := kind + " " + strings.Join(r.Match, " | ") + " → " + r.Level
 	if !r.Enabled {
-		s += " (tắt)"
+		s += loc.T(" (tắt)")
 	}
 	return s
 }

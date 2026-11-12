@@ -4,6 +4,7 @@ import (
 	"path"
 	"sort"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 )
 
@@ -73,7 +74,7 @@ func ComputeChangedCoverage(changed map[string]map[int]bool, cov lang.Coverage, 
 		c.Unmeasured = unmeasured
 	}
 	if c.Measurable == 0 {
-		c.NA = "không có dòng mới/sửa nào đo được"
+		c.NA = i18n.T("không có dòng mới/sửa nào đo được")
 	}
 	return c
 }

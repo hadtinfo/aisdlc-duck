@@ -26,7 +26,7 @@ var migrationCandidates = []string{"db/migrations", "migrations", "db/migration"
 func template(l i18n.Locale, name string) (string, error) {
 	s, err := templates.Read(l, name)
 	if err != nil {
-		return "", abort(2, "Thiếu template "+name)
+		return "", abort(2, i18n.Tf("Thiếu template %s", name))
 	}
 	return s, nil
 }
@@ -35,16 +35,15 @@ func newSetupCmd(ctx *Context) *cobra.Command {
 	var preset, approvals, locale string
 	c := &cobra.Command{
 		Use:   "setup",
-		Short: "Cài AISDLC vào repo dịch vụ (chạy ở gốc repo; chạy lại không đổi gì).",
+		Short: i18n.T("Cài AISDLC vào repo dịch vụ (chạy ở gốc repo; chạy lại không đổi gì)."),
 		Args:  cobra.NoArgs,
 	}
 	c.Flags().StringVar(&preset, "preset", "generic",
-		"Mẫu chính sách rủi ro chép vào aisdlc/risk-policy.yaml (generic, banking). Mặc định generic.")
+		i18n.T("Mẫu chính sách rủi ro chép vào aisdlc/risk-policy.yaml (generic, banking). Mặc định generic."))
 	c.Flags().StringVar(&approvals, "approvals", "",
-		"Nơi duyệt cổng ghi vào aisdlc/config.yaml: web hoặc local. Mặc định web nếu máy đã"+
-			" `aisdlc web login`, ngược lại local.")
+		i18n.T("Nơi duyệt cổng ghi vào aisdlc/config.yaml: web hoặc local. Mặc định web nếu máy đã `aisdlc web login`, ngược lại local."))
 	c.Flags().StringVar(&locale, "locale", "",
-		"Ngôn ngữ của template và tài liệu: vi hoặc en. Mặc định theo locale của repo (aisdlc/config.yaml); chưa có config thì AISDLC_LOCALE, không có thì vi.")
+		i18n.T("Ngôn ngữ của template và tài liệu: vi hoặc en. Mặc định theo locale của repo (aisdlc/config.yaml); chưa có config thì AISDLC_LOCALE, không có thì vi."))
 	c.RunE = Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
 		return setup(ctx, preset, approvals, cmd.Flags().Changed("approvals"), locale, cmd.Flags().Changed("locale"))
 	})
@@ -53,11 +52,10 @@ func newSetupCmd(ctx *Context) *cobra.Command {
 
 func setup(ctx *Context, preset, approvals string, approvalsSet bool, localeFlag string, localeSet bool) (int, error) {
 	if !slices.Contains(risk.PresetNames(), preset) {
-		return 0, abort(2, "Không có mẫu chính sách '"+preset+"'; các mẫu có sẵn: "+
-			strings.Join(risk.PresetNames(), ", ")+".")
+		return 0, abort(2, i18n.Tf("Không có mẫu chính sách '%s'; các mẫu có sẵn: %s.", preset, strings.Join(risk.PresetNames(), ", ")))
 	}
 	if approvalsSet && approvals != "web" && approvals != "local" {
-		return 0, abort(2, "--approvals chỉ nhận web hoặc local, không phải '"+approvals+"'.")
+		return 0, abort(2, i18n.Tf("--approvals chỉ nhận web hoặc local, không phải '%s'.", approvals))
 	}
 	// Thứ tự chọn locale: --locale, rồi locale mặc định của lần chạy (runWith đã lấy từ config của repo, hoặc từ
 	// AISDLC_LOCALE / vi khi chưa có config).
@@ -131,30 +129,29 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool, localeFlag
 		}
 		ctx.Println("")
 		if web {
-			ctx.Println("Chế độ duyệt: web. Dev duyệt cổng trên trang tính năng của web.")
+			ctx.Println(i18n.T("Chế độ duyệt: web. Dev duyệt cổng trên trang tính năng của web."))
 			if !loggedIn {
-				ctx.Println("  Máy này chưa có cấu hình web: chạy `aisdlc web login` trước khi submit.")
+				ctx.Println(i18n.T("  Máy này chưa có cấu hình web: chạy `aisdlc web login` trước khi submit."))
 			}
-			ctx.Println("  CI cần biến AISDLC_WEB_URL và AISDLC_CI_TOKEN (Masked, Protected).")
+			ctx.Println(i18n.T("  CI cần biến AISDLC_WEB_URL và AISDLC_CI_TOKEN (Masked, Protected)."))
 		} else {
-			ctx.Println("Chế độ duyệt: local (gates.json), vì máy này chưa `aisdlc web login`.")
-			ctx.Println("  Muốn duyệt trên web: thêm `approvals: web` vào aisdlc/config.yaml (docs/user-guide.md mục 6.3).")
+			ctx.Println(i18n.T("Chế độ duyệt: local (gates.json), vì máy này chưa `aisdlc web login`."))
+			ctx.Println(i18n.T("  Muốn duyệt trên web: thêm `approvals: web` vào aisdlc/config.yaml (docs/user-guide.md mục 6.3)."))
 		}
 	}
 
 	if newGit {
 		ctx.Println("")
-		ctx.Println("Đã tạo git repo (nhánh main, chưa commit, chưa có remote).")
-		ctx.Println("  Khi có repo trên GitLab/GitHub: git remote add origin <url> && git push -u origin main" +
-			" (baseRef trong aisdlc/config.yaml mặc định là origin/main).")
+		ctx.Println(i18n.T("Đã tạo git repo (nhánh main, chưa commit, chưa có remote)."))
+		ctx.Println(i18n.T("  Khi có repo trên GitLab/GitHub: git remote add origin <url> && git push -u origin main" +
+			" (baseRef trong aisdlc/config.yaml mặc định là origin/main)."))
 	}
 
 	ctx.Println("")
-	ctx.Println("Việc còn lại trong dịch vụ:")
-	ctx.Println("  1. Kiểm tra mục service và migrations trong aisdlc/config.yaml (package main, tên biến môi trường).")
-	ctx.Println("  2. Dịch vụ cần endpoint health check (service.healthPath) và tắt êm khi nhận SIGTERM" +
-		" để eval đo coverage dòng mới.")
-	ctx.Println("  3. Migration viết cho goose, đặt trong migrations.dir.")
+	ctx.Println(i18n.T("Việc còn lại trong dịch vụ:"))
+	ctx.Println(i18n.T("  1. Kiểm tra mục service và migrations trong aisdlc/config.yaml (package main, tên biến môi trường)."))
+	ctx.Println(i18n.T("  2. Dịch vụ cần endpoint health check (service.healthPath) và tắt êm khi nhận SIGTERM để eval đo coverage dòng mới."))
+	ctx.Println(i18n.T("  3. Migration viết cho goose, đặt trong migrations.dir."))
 	return ExitOK, nil
 }
 
@@ -167,8 +164,7 @@ func detectService(root, cfg string) (string, []string) {
 		pkg := "./cmd/" + filepath.Base(filepath.Dir(mains[0]))
 		cfg = strings.Replace(cfg, "  main: ./cmd/server\n", "  main: "+pkg+"\n", 1)
 	} else {
-		hints = append(hints, "Chưa dò được package main (cần đúng một cmd/*/main.go): sửa service.main trong"+
-			" aisdlc/config.yaml.")
+		hints = append(hints, i18n.T("Chưa dò được package main (cần đúng một cmd/*/main.go): sửa service.main trong aisdlc/config.yaml."))
 	}
 	found := false
 	for _, d := range migrationCandidates {
@@ -179,8 +175,7 @@ func detectService(root, cfg string) (string, []string) {
 		}
 	}
 	if !found {
-		hints = append(hints, "Chưa dò được thư mục migration: mặc định db/migrations; sửa migrations.dir trong"+
-			" aisdlc/config.yaml nếu khác.")
+		hints = append(hints, i18n.T("Chưa dò được thư mục migration: mặc định db/migrations; sửa migrations.dir trong aisdlc/config.yaml nếu khác."))
 	}
 	return cfg, hints
 }
@@ -189,13 +184,13 @@ func detectService(root, cfg string) (string, []string) {
 func createFile(ctx *Context, root, rel, content string) (bool, error) {
 	f := filepath.Join(root, filepath.FromSlash(rel))
 	if _, err := os.Lstat(f); err == nil {
-		ctx.Println("Giữ nguyên " + rel + " (đã có).")
+		ctx.Println(i18n.Tf("Giữ nguyên %s (đã có).", rel))
 		return false, nil
 	}
 	if err := fsx.WriteAtomic(f, []byte(content), 0o644); err != nil {
 		return false, err
 	}
-	ctx.Println("Đã tạo " + rel)
+	ctx.Println(i18n.Tf("Đã tạo %s", rel))
 	return true, nil
 }
 
@@ -214,7 +209,7 @@ func appendClaudeMd(ctx *Context, root string, loc i18n.Locale) error {
 		return err
 	}
 	if strings.Contains(existing, claudeMarker) {
-		ctx.Println("Giữ nguyên CLAUDE.md (đã có mục AISDLC).")
+		ctx.Println(i18n.T("Giữ nguyên CLAUDE.md (đã có mục AISDLC)."))
 		return nil
 	}
 	tpl, err := template(loc, "CLAUDE.aisdlc.md")
@@ -231,7 +226,7 @@ func appendClaudeMd(ctx *Context, root string, loc i18n.Locale) error {
 	if err := fsx.WriteAtomic(f, []byte(existing+sep+tpl), 0o644); err != nil {
 		return err
 	}
-	ctx.Println("Đã nối mục AISDLC vào CLAUDE.md.")
+	ctx.Println(i18n.T("Đã nối mục AISDLC vào CLAUDE.md."))
 	return nil
 }
 
@@ -243,7 +238,7 @@ func appendGitignore(ctx *Context, root string) error {
 	}
 	for _, l := range strings.Split(ignore, "\n") {
 		if t := strings.TrimSpace(l); t == ".aisdlc/" || t == ".aisdlc" {
-			ctx.Println("Giữ nguyên .gitignore (đã có .aisdlc/).")
+			ctx.Println(i18n.T("Giữ nguyên .gitignore (đã có .aisdlc/)."))
 			return nil
 		}
 	}
@@ -254,6 +249,6 @@ func appendGitignore(ctx *Context, root string) error {
 	if err := fsx.WriteAtomic(f, []byte(ignore+sep+".aisdlc/\n"), 0o644); err != nil {
 		return err
 	}
-	ctx.Println("Đã thêm .aisdlc/ vào .gitignore.")
+	ctx.Println(i18n.T("Đã thêm .aisdlc/ vào .gitignore."))
 	return nil
 }

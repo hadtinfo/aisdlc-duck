@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/web/httpx"
 )
 
@@ -67,17 +68,18 @@ type User struct {
 	DisplayName string
 	Email       *string
 	Role        string
+	Locale      *string // ngôn ngữ giao diện đã chọn (vi|en); nil = chưa chọn
 }
 
 // Reserved: login "auto" (mọi kiểu chữ) là người duyệt của bản server tự duyệt, không cấp cho user thật.
 func Reserved(login string) bool { return strings.EqualFold(login, "auto") }
 
 // errDuplicate là login trùng.
-var errDuplicate = errors.New("login đã tồn tại")
+var errDuplicate = errors.New(httpx.OpLocale().T("login đã tồn tại"))
 
 func (s *Service) addUser(ctx context.Context, db DB, login, displayName string, email *string, role string) (int64, error) {
 	if Reserved(login) {
-		return 0, fmt.Errorf("Login %s dành cho bản tự duyệt", login)
+		return 0, errors.New(httpx.OpLocale().Tf("Login %s dành cho bản tự duyệt", login))
 	}
 	var id int64
 	err := db.QueryRow(ctx, "INSERT INTO users(login, display_name, email, role, created_at) VALUES ($1,$2,$3,$4,$5) RETURNING id",
@@ -89,11 +91,11 @@ func (s *Service) addUser(ctx context.Context, db DB, login, displayName string,
 	return id, err
 }
 
-const userCols = "id, login, display_name, email, role"
+const userCols = "id, login, display_name, email, role, locale"
 
 func scanUser(row pgx.Row) (*User, error) {
 	var u User
-	if err := row.Scan(&u.ID, &u.Login, &u.DisplayName, &u.Email, &u.Role); err != nil {
+	if err := row.Scan(&u.ID, &u.Login, &u.DisplayName, &u.Email, &u.Role, &u.Locale); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -105,6 +107,12 @@ func scanUser(row pgx.Row) (*User, error) {
 // UserByID trả user hoặc nil.
 func (s *Service) UserByID(ctx context.Context, id int64) (*User, error) {
 	return scanUser(s.Pool.QueryRow(ctx, "SELECT "+userCols+" FROM users WHERE id = $1", id))
+}
+
+// SetLocale đặt ngôn ngữ giao diện của user (vi|en; người gọi đã kiểm giá trị).
+func (s *Service) SetLocale(ctx context.Context, userID int64, l i18n.Locale) error {
+	_, err := s.Pool.Exec(ctx, "UPDATE users SET locale = $2 WHERE id = $1", userID, string(l))
+	return err
 }
 
 func userByLogin(ctx context.Context, db DB, login string) (*User, error) {
@@ -223,21 +231,27 @@ func (s *Service) createSession(ctx context.Context, userID int64) (id, csrf str
 	return id, csrf, err
 }
 
-// findSession: phiên còn hạn → Principal(Via = "session"); hết hạn hay không có → nil.
-func (s *Service) findSession(ctx context.Context, sessionID string) (*httpx.Principal, error) {
+// findSession: phiên còn hạn → Principal(Via = "session") kèm ngôn ngữ giao diện user đã chọn ("" = chưa chọn);
+// hết hạn hay không có → nil.
+func (s *Service) findSession(ctx context.Context, sessionID string) (*httpx.Principal, string, error) {
 	if javaBlank(sessionID) {
-		return nil, nil
+		return nil, "", nil
 	}
 	p := httpx.Principal{Via: "session"}
-	err := s.Pool.QueryRow(ctx, "SELECT u.id, u.login, u.role FROM sessions s JOIN users u ON u.id = s.user_id "+
-		"WHERE s.id_sha256 = $1 AND s.expires_at > $2", SHA256(sessionID), s.now()).Scan(&p.UserID, &p.Login, &p.Role)
+	var loc *string
+	err := s.Pool.QueryRow(ctx, "SELECT u.id, u.login, u.role, u.locale FROM sessions s JOIN users u ON u.id = s.user_id "+
+		"WHERE s.id_sha256 = $1 AND s.expires_at > $2", SHA256(sessionID), s.now()).Scan(&p.UserID, &p.Login, &p.Role, &loc)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return &p, nil
+	chosen := ""
+	if loc != nil {
+		chosen = *loc
+	}
+	return &p, chosen, nil
 }
 
 // sessionCSRF trả CSRF của phiên còn hạn ("" nếu không có).

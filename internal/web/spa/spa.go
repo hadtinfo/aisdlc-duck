@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"aisdlc/internal/i18n"
+	"aisdlc/internal/web/httpx"
 )
 
 //go:embed all:dist
@@ -20,13 +23,16 @@ func Embedded() http.Handler {
 		panic(err) // dist luôn có trong embed
 	}
 	if _, err := fs.Stat(sub, "index.html"); err != nil {
-		return handler(sub, []byte(placeholderHTML)) // chưa build UI (checkout sạch): trang thay thế, go build vẫn chạy
+		return handler(sub, placeholderHTML) // chưa build UI (checkout sạch): trang thay thế, go build vẫn chạy
 	}
 	return Handler(sub)
 }
 
-// placeholderHTML được phục vụ khi dist/index.html chưa có (chưa chạy make ui).
-const placeholderHTML = `<!doctype html><html lang="vi"><meta charset="utf-8"><title>AISDLC</title><body><div id="root">UI chưa build: chạy make ui</div></body></html>`
+// placeholderHTML được phục vụ khi dist/index.html chưa có (chưa chạy make ui), theo locale của request.
+func placeholderHTML(loc i18n.Locale) []byte {
+	return []byte(`<!doctype html><html lang="` + string(loc) + `"><meta charset="utf-8"><title>AISDLC</title><body><div id="root">` +
+		loc.T("UI chưa build: chạy make ui") + `</div></body></html>`)
+}
 
 // isSPAPath khớp đúng các mẫu của SpaController: "/", "/{path:^(?!api$)[^.]*$}" (một đoạn, không dấu chấm, khác "api"),
 // "/f/**" và "/risk/**" (repoId có dấu chấm nên không áp quy tắc không dấu chấm).
@@ -42,8 +48,8 @@ func isSPAPath(p string) bool {
 // Không bao giờ nhận /api/** (router đã trả 404 JSON trước khi tới đây).
 func Handler(fsys fs.FS) http.Handler { return handler(fsys, nil) }
 
-// handler như Handler; index khác nil là nội dung index.html dự phòng khi fsys không có.
-func handler(fsys fs.FS, index []byte) http.Handler {
+// handler như Handler; index khác nil sinh nội dung index.html dự phòng (theo locale) khi fsys không có.
+func handler(fsys fs.FS, index func(i18n.Locale) []byte) http.Handler {
 	files := http.FileServerFS(fsys)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -59,6 +65,7 @@ func handler(fsys fs.FS, index []byte) http.Handler {
 			serveIndex(w, r, fsys, index)
 			return
 		}
+		// nosemgrep: go.lang.security.filepath-clean-misuse.filepath-clean-misuse -- đọc từ fs.FS nhúng, fs.ValidPath chặn '..'
 		name := strings.TrimPrefix(path.Clean(p), "/")
 		if st, err := fs.Stat(fsys, name); err != nil || st.IsDir() || name == "index.html" {
 			if name == "index.html" && (err == nil || index != nil) {
@@ -72,10 +79,10 @@ func handler(fsys fs.FS, index []byte) http.Handler {
 	})
 }
 
-func serveIndex(w http.ResponseWriter, r *http.Request, fsys fs.FS, fallback []byte) {
+func serveIndex(w http.ResponseWriter, r *http.Request, fsys fs.FS, fallback func(i18n.Locale) []byte) {
 	b, err := fs.ReadFile(fsys, "index.html")
 	if err != nil && fallback != nil {
-		b, err = fallback, nil
+		b, err = fallback(httpx.LocaleFrom(r.Context())), nil
 	}
 	if err != nil {
 		http.NotFound(w, r)
@@ -86,5 +93,6 @@ func serveIndex(w http.ResponseWriter, r *http.Request, fsys fs.FS, fallback []b
 	if r.Method == http.MethodHead {
 		return
 	}
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- index.html nhúng sẵn trong binary
 	_, _ = w.Write(b)
 }

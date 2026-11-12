@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/eval"
+	"aisdlc/internal/i18n"
 )
 
 func newDiffCmd(ctx *Context) *cobra.Command {
@@ -13,12 +14,12 @@ func newDiffCmd(ctx *Context) *cobra.Command {
 	var byStep, patch bool
 	c := &cobra.Command{
 		Use:   "diff",
-		Short: "Diff nhóm theo bước Sx (numstat; --patch để kèm diff đầy đủ).",
+		Short: i18n.T("Diff nhóm theo bước Sx (numstat; --patch để kèm diff đầy đủ)."),
 		Args:  cobra.NoArgs,
 	}
 	fo.AddTo(c)
-	c.Flags().BoolVar(&byStep, "by-step", false, "Nhóm theo bước")
-	c.Flags().BoolVar(&patch, "patch", false, "Kèm `git diff startTree endTree` của từng bước")
+	c.Flags().BoolVar(&byStep, "by-step", false, i18n.T("Nhóm theo bước"))
+	c.Flags().BoolVar(&patch, "patch", false, i18n.T("Kèm `git diff startTree endTree` của từng bước"))
 	_ = c.MarkFlagRequired("by-step")
 	c.RunE = Wrap(ctx, func(*cobra.Command, []string) (int, error) {
 		f, err := fo.Feature(ctx)

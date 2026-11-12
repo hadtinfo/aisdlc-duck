@@ -15,6 +15,7 @@ import (
 	"aisdlc/internal/eval"
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/step"
@@ -36,13 +37,13 @@ func newEvalCmd(ctx *Context) *cobra.Command {
 	var base string
 	c := &cobra.Command{
 		Use:   "eval",
-		Short: "Eval tầng 1: build, unit test và bộ case đầy đủ qua harness, ghi eval/report.json và report.md.",
+		Short: i18n.T("Eval tầng 1: build, unit test và bộ case đầy đủ qua harness, ghi eval/report.json và report.md."),
 		Args:  cobra.NoArgs,
 	}
 	fo.AddTo(c)
 	c.Flags().BoolVar(&ci, "ci", false,
-		"Chế độ CI: không cần tính năng active; eval mọi tính năng có thay đổi so với base")
-	c.Flags().StringVar(&base, "base", "", "Nhánh/commit gốc cho CI (mặc định baseRef trong config)")
+		i18n.T("Chế độ CI: không cần tính năng active; eval mọi tính năng có thay đổi so với base"))
+	c.Flags().StringVar(&base, "base", "", i18n.T("Nhánh/commit gốc cho CI (mặc định baseRef trong config)"))
 	c.RunE = Wrap(ctx, func(*cobra.Command, []string) (int, error) {
 		if !ci {
 			f, err := fo.Feature(ctx)
@@ -112,7 +113,7 @@ func evalNoFeature(ctx *Context, git *gitx.Repo, mergeBase, ref string, changes 
 	if slices.ContainsFunc(changes, func(c gitx.FileChange) bool {
 		return slices.Contains(changePaths(c), evalConfigPath)
 	}) {
-		ctx.Println("Eval KHÔNG ĐẠT: " + evalConfigPath + eval.ConfigChanged + ".")
+		ctx.Println(i18n.Tf("Eval KHÔNG ĐẠT: %s%s.", evalConfigPath, eval.ConfigChangedText()))
 		return ExitFindings, nil
 	}
 	text, _, err := git.FileAt(ctx.Std(), mergeBase, evalConfigPath)
@@ -126,20 +127,18 @@ func evalNoFeature(ctx *Context, git *gitx.Repo, mergeBase, ref string, changes 
 	if managed := managedChanges(changes, baseCfg); len(managed) > 0 && baseCfg.CIRequireFeature {
 		more := ""
 		if len(managed) > evalListMax {
-			more = fmt.Sprintf(" … và %d file khác", len(managed)-evalListMax)
+			more = fmt.Sprintf(i18n.T(" … và %d file khác"), len(managed)-evalListMax)
 		}
-		ctx.Println("Eval KHÔNG ĐẠT: thay đổi code không thuộc tính năng AISDLC nào so với " + ref + ": " +
-			strings.Join(managed[:min(evalListMax, len(managed))], ", ") + more +
-			". Tạo tính năng bằng `aisdlc init <KEY>` (hoặc đặt ciRequireFeature: false).")
+		ctx.Println(i18n.Tf("Eval KHÔNG ĐẠT: thay đổi code không thuộc tính năng AISDLC nào so với %s: %s%s. Tạo tính năng bằng `aisdlc init <KEY>` (hoặc đặt ciRequireFeature: false).", ref, strings.Join(managed[:min(evalListMax, len(managed))], ", "), more))
 		return ExitFindings, nil
 	}
-	ctx.Println("Không có tính năng nào thay đổi so với " + ref + "; không có gì để eval.")
+	ctx.Println(i18n.Tf("Không có tính năng nào thay đổi so với %s; không có gì để eval.", ref))
 	return ExitOK, nil
 }
 
 // runEval eval một tính năng, in report.md; ExitOK khi report đạt, ExitFindings khi không.
 func runEval(ctx *Context, f *Feature, ci bool, base string) (int, error) {
-	ctx.Println("Đang eval " + f.Key.String() + " (build, unit test, bộ case đầy đủ qua harness)...")
+	ctx.Println(i18n.Tf("Đang eval %s (build, unit test, bộ case đầy đủ qua harness)...", f.Key.String()))
 	// CI: approval web lấy từ nguồn web của CI, không từ cache ký; gates.json dùng khi repo ở local
 	gates := f.Gates
 	if ci {
@@ -171,7 +170,7 @@ func runEval(ctx *Context, f *Feature, ci bool, base string) (int, error) {
 		return 0, err
 	}
 	fmt.Fprint(ctx.Out(), string(md))
-	ctx.Println("Đã ghi " + f.Paths.Rel(filepath.Join(dir, "report.json")) + ".")
+	ctx.Println(i18n.Tf("Đã ghi %s.", f.Paths.Rel(filepath.Join(dir, "report.json"))))
 	ctx.AfterCommand(f, "eval")
 	if r.Passed {
 		return ExitOK, nil

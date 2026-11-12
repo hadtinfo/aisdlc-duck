@@ -13,11 +13,7 @@ const (
 	ModeCases           = harnessapi.ModeCases
 	ModeCasesWithDrafts = harnessapi.ModeCasesWithDrafts
 	ModeMigrationCheck  = harnessapi.ModeMigrationCheck
-	NotRun              = harnessapi.NotRun
-	NoResults           = harnessapi.NoResults
-	NoRow               = harnessapi.NoRow
 	ExitTimeout         = harnessapi.ExitTimeout
-	CanceledMessage     = harnessapi.CanceledMessage
 )
 
 var (
@@ -28,4 +24,8 @@ var (
 	WriteResults   = harnessapi.WriteResults
 	ReadResults    = harnessapi.ReadResults
 	TimeoutMessage = harnessapi.TimeoutMessage
+	NotRunText     = harnessapi.NotRunText
+	NoResultsText  = harnessapi.NoResultsText
+	NoRowText      = harnessapi.NoRowText
+	Canceled       = harnessapi.Canceled
 )

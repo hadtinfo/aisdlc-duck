@@ -4,6 +4,7 @@ import (
 	"math"
 	"strconv"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
@@ -37,12 +38,12 @@ type VerifyResult struct {
 	TimedOut   bool
 }
 
-// CanceledMessage là thông điệp của case khi harness bị hủy (Ctrl-C/SIGTERM) chứ không phải quá thời gian.
-const CanceledMessage = "Harness bị hủy (Ctrl-C), đã dừng"
+// Canceled là thông điệp (theo locale) của case khi harness bị hủy (Ctrl-C/SIGTERM) chứ không phải quá thời gian.
+func Canceled() string { return i18n.T("Harness bị hủy (Ctrl-C), đã dừng") }
 
 // TimeoutMessage là thông điệp của case khi harness bị dừng vì quá timeoutMinutes.
 func TimeoutMessage(minutes float64) string {
-	return "Harness chạy quá thời gian (" + fmtMinutes(minutes) + " phút), đã dừng"
+	return i18n.Tf("Harness chạy quá thời gian (%s phút), đã dừng", fmtMinutes(minutes))
 }
 
 // fmtMinutes in như MavenRunner.minutes: số nguyên thì không có phần thập phân.

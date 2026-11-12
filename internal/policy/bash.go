@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"aisdlc/internal/i18n"
 )
 
 var (
@@ -14,9 +16,6 @@ var (
 	bashRedirect = regexp.MustCompile(`(?:\d+|&)?>>?\|?\s*(&\d+-?|&-|"[^"]*"|'[^']*'|[^\s;&|<>()]+)`)
 	// runDir: log/kết quả chạy của CLI: agent được đọc.
 	runDir   = regexp.MustCompile(`[^\s;&|<>()'"]*\.aisdlc/run/[^\s;&|<>()'"]*`)
-	bashMsg  = "): file trạng thái do CLI quản lý hoặc artifact đã duyệt. Nếu cần sửa artifact, dev chạy `aisdlc reopen <gate>`."
-	devMsg   = "Lệnh này chỉ dev được chạy (approve/reject/reopen/scope allow/step accept/risk set); agent không được chạy qua Bash."
-	sessMsg  = "Agent không được gán AISDLC_SESSION (đó là định danh session do hook đặt; đổi nó để lách tính năng của session). Muốn đổi tính năng, chạy `aisdlc use <KEY>`."
 	sessAsgn = regexp.MustCompile("(?:^|[\\s;&|(\"'`])AISDLC_SESSION\\+?=")
 	// fdDup: đích của >& / <& là số fd hoặc "-" (đóng fd), không phải tên file.
 	fdDup = regexp.MustCompile(`^(\d+-?|-)$`)
@@ -35,15 +34,21 @@ var (
 // luôn bảo vệ lockedConfig, .aisdlc/ và file trạng thái của mọi tính năng (featureState). cwd là thư mục làm
 // việc của hook (rỗng: repoRoot). Hai cách khớp, chặn nếu một trong hai khớp: chuỗi con như bản Java, và token
 // đường dẫn đã chuẩn hóa (theo dõi cd/pushd/popd giữa các đoạn lệnh).
+// protectedWriteMsg là lý do chặn lệnh Bash ghi vào file được bảo vệ p.
+func protectedWriteMsg(p string) string {
+	return i18n.Tf("Lệnh có vẻ ghi vào file được bảo vệ (%s): file trạng thái do CLI quản lý hoặc artifact đã duyệt. "+
+		"Nếu cần sửa artifact, dev chạy `aisdlc reopen <gate>`.", p)
+}
+
 func BashCheck(command string, protectedPaths []string, repoRoot, cwd string) (string, bool) {
 	if javaBlank(command) {
 		return "", false
 	}
 	if DevCommandMentions(command) {
-		return devMsg, true
+		return i18n.T("Lệnh này chỉ dev được chạy (approve/reject/reopen/scope allow/step accept/risk set); agent không được chạy qua Bash."), true
 	}
 	if sessAsgn.MatchString(command) {
-		return sessMsg, true
+		return i18n.T("Agent không được gán AISDLC_SESSION (đó là định danh session do hook đặt; đổi nó để lách tính năng của session). Muốn đổi tính năng, chạy `aisdlc use <KEY>`."), true
 	}
 	prot := append([]string{}, protectedPaths...)
 	for _, p := range append(append([]string{}, lockedConfig...), ".aisdlc/") {
@@ -56,7 +61,7 @@ func BashCheck(command string, protectedPaths []string, repoRoot, cwd string) (s
 		target := unquote(command[m[2]:m[3]])
 		if !strings.HasPrefix(target, "&") && target != "/dev/null" {
 			if p, ok := protectedIn(target, prot); ok {
-				return "Lệnh có vẻ ghi vào file được bảo vệ (" + p + bashMsg, true
+				return protectedWriteMsg(p), true
 			}
 		}
 		rest.WriteString(command[last:m[0]])
@@ -67,11 +72,11 @@ func BashCheck(command string, protectedPaths []string, repoRoot, cwd string) (s
 	others := runDir.ReplaceAllString(rest.String(), " ")
 	if bashWrite.MatchString(others) {
 		if p, ok := protectedIn(others, prot); ok {
-			return "Lệnh có vẻ ghi vào file được bảo vệ (" + p + bashMsg, true
+			return protectedWriteMsg(p), true
 		}
 	}
 	if p, ok := newPathMatcher(prot, repoRoot).writes(command, cwd); ok {
-		return "Lệnh có vẻ ghi vào file được bảo vệ (" + p + bashMsg, true
+		return protectedWriteMsg(p), true
 	}
 	return "", false
 }

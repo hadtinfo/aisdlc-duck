@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError, postJson } from "../api";
 import { actionsFor, approvePlan } from "../approve";
+import { t as tNow, useT } from "../i18n";
 import type { GateData, ReviewCardData } from "../types";
 
 const MAX_COMMENT = 2000;
@@ -16,6 +17,7 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
   gate: GateData; card: ReviewCardData | null; seen: number[]; submittedPaths: string[];
   repoId: string; featureKey: string; onDone: () => void;
 }) {
+  const { t } = useT();
   const [mode, setMode] = useState<Mode>("idle");
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,7 +40,7 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
       setComment("");
       onDone();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Không kết nối được máy chủ");
+      setError(e instanceof ApiError ? e.message : tNow("common.noServer"));
     } finally {
       setBusy(false);
     }
@@ -58,17 +60,17 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
         <div className="ga-buttons">
           {can.approve && (
             <button type="button" onClick={() => open("approve")}>
-              Duyệt <span className="ga-hash">@ {plan.hashShort}</span>
+              {t("gate.approve")} <span className="ga-hash">@ {plan.hashShort}</span>
             </button>
           )}
-          {can.reject && <button type="button" className="secondary" onClick={() => open("reject")}>Trả lại</button>}
-          {can.reopen && <button type="button" className="secondary" onClick={() => open("reopen")}>Mở lại</button>}
+          {can.reject && <button type="button" className="secondary" onClick={() => open("reject")}>{t("gate.reject")}</button>}
+          {can.reopen && <button type="button" className="secondary" onClick={() => open("reopen")}>{t("gate.reopen")}</button>}
         </div>
       )}
 
       {mode === "approve" && (
-        <div className="ga-confirm" role="group" aria-label="Xác nhận duyệt">
-          <p className="ga-q">Duyệt {gate.gate} @ <span className="mono">{plan.hashShort}</span>?</p>
+        <div className="ga-confirm" role="group" aria-label={t("gate.confirmApprove")}>
+          <p className="ga-q">{t("gate.approve")} {gate.gate} @ <span className="mono">{plan.hashShort}</span>?</p>
           {plan.flags.length > 0 && (
             <ul className="ga-flags">
               {plan.flags.map((f, i) => (
@@ -79,12 +81,12 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
             </ul>
           )}
           {plan.unseenAssumptions > 0 && (
-            <p className="ga-unseen">Còn {plan.unseenAssumptions} giả định chưa đánh dấu đã xem</p>
+            <p className="ga-unseen">{t("gate.unseen", { n: plan.unseenAssumptions })}</p>
           )}
           {submittedPaths.length > 0 && <SubmittedPaths paths={submittedPaths} />}
           <div className="ga-buttons">
-            <button type="button" disabled={busy} onClick={approve}>Xác nhận duyệt</button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => open("idle")}>Hủy</button>
+            <button type="button" disabled={busy} onClick={approve}>{t("gate.confirmApprove")}</button>
+            <button type="button" className="secondary" disabled={busy} onClick={() => open("idle")}>{t("common.cancel")}</button>
           </div>
         </div>
       )}
@@ -95,16 +97,16 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
           send(mode === "reject" ? "/api/gates/reject" : "/api/gates/reopen", { comment: comment.trim() });
         }}>
           <label className="ga-label" htmlFor="ga-comment">
-            {mode === "reject" ? "Lý do trả lại (bắt buộc)" : "Ghi chú mở lại (tùy chọn)"}
+            {mode === "reject" ? t("gate.rejectReason") : t("gate.reopenNote")}
           </label>
           <textarea id="ga-comment" rows={4} maxLength={MAX_COMMENT} value={comment} autoFocus
             onChange={(e) => setComment(e.target.value)} />
           <span className="muted ga-count">{comment.length}/{MAX_COMMENT}</span>
           <div className="ga-buttons">
             <button type="submit" disabled={busy || (mode === "reject" && !comment.trim())}>
-              {mode === "reject" ? "Trả lại" : "Mở lại"}
+              {mode === "reject" ? t("gate.reject") : t("gate.reopen")}
             </button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => open("idle")}>Hủy</button>
+            <button type="button" className="secondary" disabled={busy} onClick={() => open("idle")}>{t("common.cancel")}</button>
           </div>
         </form>
       )}
@@ -116,13 +118,14 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
 
 /** Các file mà hash đang duyệt bao phủ; nhiều hơn 8 thì thu gọn. */
 function SubmittedPaths({ paths }: { paths: string[] }) {
+  const { t } = useT();
   const list = <ul className="ga-paths">{paths.map((p) => <li key={p}><code>{p}</code></li>)}</ul>;
   if (paths.length <= PATHS_OPEN) {
-    return <div className="ga-files"><p className="ga-sub">Các file đã nộp</p>{list}</div>;
+    return <div className="ga-files"><p className="ga-sub">{t("gate.submittedFiles")}</p>{list}</div>;
   }
   return (
     <details className="ga-files">
-      <summary className="ga-sub">Các file đã nộp ({paths.length})</summary>
+      <summary className="ga-sub">{t("gate.submittedFilesN", { n: paths.length })}</summary>
       {list}
     </details>
   );

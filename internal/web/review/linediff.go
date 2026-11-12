@@ -5,6 +5,8 @@ package review
 import (
 	"strconv"
 	"strings"
+
+	"aisdlc/internal/i18n"
 )
 
 const (
@@ -23,8 +25,8 @@ type Op struct {
 
 // Unified là diff dòng kiểu git ("--- a/<path>", "+++ b/<path>", "@@ -l,n +l,n @@"), 3 dòng ngữ cảnh (LineDiff.unified).
 // Giống nhau → "". a hoặc b nil = file vắng (/dev/null). Phần giữa (sau khi bỏ tiền tố/hậu tố chung) có tích số dòng
-// > 4_000_000 → chỉ header + dòng "@@ file quá lớn để so @@".
-func Unified(path string, a, b *string) string {
+// > 4_000_000 → chỉ header + dòng "@@ file quá lớn để so @@" (theo loc).
+func Unified(path string, a, b *string, loc i18n.Locale) string {
 	var x, y []string
 	if a != nil {
 		x = Lines(*a)
@@ -51,7 +53,7 @@ func Unified(path string, a, b *string) string {
 	out.WriteByte('\n')
 	ops, ok := Diff(x, y)
 	if !ok {
-		out.WriteString("@@ file quá lớn để so @@\n")
+		out.WriteString(loc.T("@@ file quá lớn để so @@") + "\n")
 		return out.String()
 	}
 	hunks(ops, &out)

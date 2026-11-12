@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/spec"
 )
@@ -239,7 +240,7 @@ func (s *Service) Approve(g Gate, approver, channel string) (Approval, error) {
 // Cổng REVIEW luôn duyệt tay.
 func (s *Service) AutoApprove(g Gate, rule string) (Approval, error) {
 	if g == REVIEW {
-		return Approval{}, errf("Cổng REVIEW luôn duyệt tay.")
+		return Approval{}, errf(i18n.T("Cổng REVIEW luôn duyệt tay."))
 	}
 	return s.record(g, ApprovalAuto, rule, "")
 }
@@ -282,7 +283,7 @@ func (s *Service) requireUnlocked(g Gate, c *call) error {
 		return err
 	}
 	if !prev {
-		return errf("Cổng " + string(g) + " bị khóa: cổng trước chưa được duyệt.")
+		return errf(i18n.Tf("Cổng %s bị khóa: cổng trước chưa được duyệt.", string(g)))
 	}
 	return nil
 }
@@ -303,17 +304,17 @@ func (s *Service) record(g Gate, approver, rule, channel string) (Approval, erro
 		return Approval{}, err
 	}
 	if !ok {
-		return Approval{}, errf("Cổng " + string(g) + " chưa được nộp.")
+		return Approval{}, errf(i18n.Tf("Cổng %s chưa được nộp.", string(g)))
 	}
 	if len(sub.Findings) > 0 {
-		return Approval{}, errf("Cổng " + string(g) + " còn " + strconv.Itoa(len(sub.Findings)) + " phát hiện chưa xử lý.")
+		return Approval{}, errf(i18n.Tf("Cổng %s còn %s phát hiện chưa xử lý.", string(g), strconv.Itoa(len(sub.Findings))))
 	}
 	current, err := s.hash(g, c)
 	if err != nil {
 		return Approval{}, err
 	}
 	if current != sub.Hash {
-		return Approval{}, errf("Artifact của cổng " + string(g) + " đã đổi kể từ lúc nộp; hãy nộp lại.")
+		return Approval{}, errf(i18n.Tf("Artifact của cổng %s đã đổi kể từ lúc nộp; hãy nộp lại.", string(g)))
 	}
 	a := Approval{Gate: g, Hash: current, Approver: approver, At: s.now().UTC(), Rule: rule, Channel: channel}
 	if err := s.store.SaveApproval(a); err != nil {
@@ -329,7 +330,7 @@ func (s *Service) Reject(g Gate, approver, comment string) error {
 	if err := s.requireInFlow(g); err != nil {
 		return err
 	}
-	if err := s.appendFeedback("## " + string(g) + " — trả lại bởi " + approver + " lúc " + s.instant() + "\n\n" + comment + "\n\n"); err != nil {
+	if err := s.appendFeedback(i18n.Tf("## %s — trả lại bởi %s lúc %s\n\n%s\n\n", string(g), approver, s.instant(), comment)); err != nil {
 		return err
 	}
 	return s.store.Clear(g)
@@ -343,7 +344,7 @@ func (s *Service) Reopen(g Gate, approver string) error {
 	if err := s.store.Clear(g); err != nil {
 		return err
 	}
-	return s.appendFeedback("## " + string(g) + " — mở lại bởi " + approver + " lúc " + s.instant() + "\n\n")
+	return s.appendFeedback(i18n.Tf("## %s — mở lại bởi %s lúc %s\n\n", string(g), approver, s.instant()))
 }
 
 // FirstNotOpen là cổng đầu tiên chưa mở; false khi mọi cổng đã mở.
@@ -383,20 +384,20 @@ func (s *Service) requireInFlow(g Gate) error {
 			return nil
 		}
 	}
-	return errf("Cổng " + string(g) + " không thuộc luồng " + string(s.flow) + ".")
+	return errf(i18n.Tf("Cổng %s không thuộc luồng %s.", string(g), string(s.flow)))
 }
 
 func (s *Service) appendFeedback(text string) error {
 	if err := os.MkdirAll(s.paths.Dir(), 0o755); err != nil {
-		return errf("Không ghi được feedback.md: " + err.Error())
+		return errf(i18n.Tf("Không ghi được feedback.md: %s", err.Error()))
 	}
 	f, err := os.OpenFile(s.paths.Feedback(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return errf("Không ghi được feedback.md: " + err.Error())
+		return errf(i18n.Tf("Không ghi được feedback.md: %s", err.Error()))
 	}
 	defer f.Close()
 	if _, err := f.WriteString(text); err != nil {
-		return errf("Không ghi được feedback.md: " + err.Error())
+		return errf(i18n.Tf("Không ghi được feedback.md: %s", err.Error()))
 	}
 	return nil
 }

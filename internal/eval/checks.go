@@ -17,6 +17,7 @@ import (
 	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
 	"aisdlc/internal/harness/harnessapi"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
@@ -40,17 +41,17 @@ func list(items []string) string {
 	if len(items) <= maxListed {
 		return strings.Join(items, ", ")
 	}
-	return strings.Join(items[:maxListed], ", ") + " … và " + strconv.Itoa(len(items)-maxListed) + " mục khác"
+	return strings.Join(items[:maxListed], ", ") + i18n.Tf(" … và %d mục khác", len(items)-maxListed)
 }
 
 func (s *Service) casesAllPass(results []run.CaseResult) HardCheck {
 	const id = "CASES_ALL_PASS"
 	cs, err := spec.ReadCases(s.Paths.Cases())
 	if err != nil {
-		return HardCheck{id, false, "Không đọc được cases.yaml: " + err.Error()}
+		return HardCheck{id, false, i18n.Tf("Không đọc được cases.yaml: %s", err.Error())}
 	}
 	if len(cs.Cases) == 0 {
-		return HardCheck{id, false, "cases.yaml không có case nào"}
+		return HardCheck{id, false, i18n.T("cases.yaml không có case nào")}
 	}
 	byID := map[string]run.CaseOutcome{}
 	for _, r := range results {
@@ -84,7 +85,7 @@ func (s *Service) casesAllPass(results []run.CaseResult) HardCheck {
 	if len(notPassed) == 0 {
 		return HardCheck{id, true, detail}
 	}
-	return HardCheck{id, false, detail + "; không pass: " + list(notPassed)}
+	return HardCheck{id, false, detail + i18n.Tf("; không pass: %s", list(notPassed))}
 }
 
 func (s *Service) casesLocked() (HardCheck, error) {
@@ -94,16 +95,16 @@ func (s *Service) casesLocked() (HardCheck, error) {
 		return HardCheck{}, err
 	}
 	if !ok {
-		return HardCheck{id, false, "bộ case chưa được duyệt"}, nil
+		return HardCheck{id, false, i18n.T("bộ case chưa được duyệt")}, nil
 	}
 	match, err := s.Gates.ApprovalMatches(gate.CASES)
 	if err != nil {
 		return HardCheck{}, err
 	}
 	if match {
-		return HardCheck{id, true, "Bộ case khớp hash lúc duyệt"}, nil
+		return HardCheck{id, true, i18n.T("Bộ case khớp hash lúc duyệt")}, nil
 	}
-	return HardCheck{id, false, "Bộ case đã bị sửa sau khi duyệt"}, nil
+	return HardCheck{id, false, i18n.T("Bộ case đã bị sửa sau khi duyệt")}, nil
 }
 
 // buildCheck: build, unit test và harness. Case fail không làm hỏng check này (CASES_ALL_PASS báo); lỗi harness
@@ -112,45 +113,45 @@ func buildCheck(vr harnessapi.VerifyResult, log string) HardCheck {
 	const id = "BUILD_AND_TESTS"
 	var problems []string
 	if vr.TimedOut {
-		problems = append(problems, "quá thời gian")
+		problems = append(problems, i18n.T("quá thời gian"))
 	}
 	if !vr.Build.OK {
-		problems = append(problems, "go build lỗi") // build hỏng thì không chạy unit test
+		problems = append(problems, i18n.T("go build lỗi")) // build hỏng thì không chạy unit test
 	} else if len(vr.Unit.Failed) > 0 {
 		problems = append(problems, "unit test fail: "+list(vr.Unit.Failed))
 	} else if vr.Unit.Exit != 0 {
-		problems = append(problems, "go test thoát mã "+strconv.Itoa(vr.Unit.Exit))
+		problems = append(problems, i18n.Tf("go test thoát mã %d", vr.Unit.Exit))
 	}
 	if vr.HarnessErr != "" {
-		problems = append(problems, "harness lỗi: "+vr.HarnessErr)
+		problems = append(problems, harnessapi.PanicPrefixText()+vr.HarnessErr)
 	}
 	if len(problems) == 0 {
-		return HardCheck{id, true, "build và unit test đạt"}
+		return HardCheck{id, true, i18n.T("build và unit test đạt")}
 	}
-	return HardCheck{id, false, strings.Join(problems, "; ") + "; xem " + log}
+	return HardCheck{id, false, strings.Join(problems, "; ") + i18n.Tf("; xem %s", log)}
 }
 
 func (s *Service) schemaMatch(out string) HardCheck {
 	const id = "SCHEMA_MATCH"
 	actual := filepath.Join(out, "schema.json")
 	if _, err := os.Stat(actual); err != nil {
-		return HardCheck{id, false, "Harness không ghi schema.json"}
+		return HardCheck{id, false, i18n.T("Harness không ghi schema.json")}
 	}
 	if _, err := os.Stat(s.Paths.SchemaExpected()); err != nil {
-		return HardCheck{id, false, "Thiếu " + s.Paths.Rel(s.Paths.SchemaExpected())}
+		return HardCheck{id, false, i18n.Tf("Thiếu %s", s.Paths.Rel(s.Paths.SchemaExpected()))}
 	}
 	a, err := run.ReadSchemaSnapshot(actual)
 	if err != nil {
-		return HardCheck{id, false, "Không đọc được schema: " + err.Error()}
+		return HardCheck{id, false, i18n.Tf("Không đọc được schema: %s", err.Error())}
 	}
 	e, err := run.ReadSchemaSnapshot(s.Paths.SchemaExpected())
 	if err != nil {
-		return HardCheck{id, false, "Không đọc được schema: " + err.Error()}
+		return HardCheck{id, false, i18n.Tf("Không đọc được schema: %s", err.Error())}
 	}
 	if diff := a.Diff(e); len(diff) > 0 {
-		return HardCheck{id, false, "Schema lệch thiết kế: " + list(diff)}
+		return HardCheck{id, false, i18n.Tf("Schema lệch thiết kế: %s", list(diff))}
 	}
-	return HardCheck{id, true, "Schema khớp thiết kế"}
+	return HardCheck{id, true, i18n.T("Schema khớp thiết kế")}
 }
 
 func (s *Service) scope(ctx context.Context, from, to string) (HardCheck, error) {
@@ -201,13 +202,13 @@ func (s *Service) scope(ctx context.Context, from, to string) (HardCheck, error)
 	}
 	var problems []string
 	if configChanged {
-		problems = append(problems, configPath+ConfigChanged)
+		problems = append(problems, configPath+ConfigChangedText())
 	}
 	if len(outside) > 0 {
-		problems = append(problems, "Ngoài phạm vi: "+list(outside))
+		problems = append(problems, i18n.Tf("Ngoài phạm vi: %s", list(outside)))
 	}
 	if len(problems) == 0 {
-		return HardCheck{id, true, "Mọi file thay đổi đều trong phạm vi"}, nil
+		return HardCheck{id, true, i18n.T("Mọi file thay đổi đều trong phạm vi")}, nil
 	}
 	return HardCheck{id, false, strings.Join(problems, "; ")}, nil
 }
@@ -227,6 +228,7 @@ func (s *Service) check(ctx context.Context, c model.CheckCommand, out string) H
 	rel := s.Paths.Rel(logPath)
 	cctx, cancel := context.WithTimeout(ctx, time.Duration(s.Config.TimeoutMinutes*float64(time.Minute)))
 	defer cancel()
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command -- lệnh kiểm tra do repo khai báo trong aisdlc/config.yaml, chạy có chủ ý trong eval
 	cmd := exec.CommandContext(cctx, "sh", "-c", c.Cmd)
 	cmd.Dir = s.Paths.RepoRoot
 	var buf bytes.Buffer
@@ -237,22 +239,22 @@ func (s *Service) check(ctx context.Context, c model.CheckCommand, out string) H
 	cmd.WaitDelay = checkWaitDelay
 	runErr := cmd.Run()
 	if err := fsx.WriteAtomic(logPath, buf.Bytes(), 0o644); err != nil {
-		return HardCheck{id, false, "Không ghi được " + rel + ": " + err.Error()}
+		return HardCheck{id, false, i18n.Tf("Không ghi được %s: %v", rel, err)}
 	}
 	if runErr == nil {
 		return HardCheck{id, true, "exit 0"}
 	}
 	if ctx.Err() != nil { // Ctrl-C/hủy từ ngoài, không phải hết hạn của check
-		return HardCheck{id, false, "bị hủy, đã dừng; xem " + rel}
+		return HardCheck{id, false, i18n.Tf("bị hủy, đã dừng; xem %s", rel)}
 	}
 	if cctx.Err() != nil {
-		return HardCheck{id, false, "quá thời gian, đã dừng; xem " + rel}
+		return HardCheck{id, false, i18n.Tf("quá thời gian, đã dừng; xem %s", rel)}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(runErr, &exitErr) {
-		return HardCheck{id, false, "exit " + strconv.Itoa(exitErr.ExitCode()) + "; xem " + rel}
+		return HardCheck{id, false, "exit " + strconv.Itoa(exitErr.ExitCode()) + i18n.Tf("; xem %s", rel)}
 	}
-	return HardCheck{id, false, "không chạy được: " + runErr.Error() + "; xem " + rel}
+	return HardCheck{id, false, i18n.Tf("không chạy được: %s; xem %s", runErr.Error(), rel)}
 }
 
 func (s *Service) budgets() ([]SoftCheck, error) {
@@ -269,12 +271,11 @@ func (s *Service) budgets() ([]SoftCheck, error) {
 		id := "BUDGET:" + sp.ID
 		r, ok := byID[sp.ID]
 		if !ok || r.Check == nil {
-			out = append(out, SoftCheck{id, SoftNA, "chưa có kết quả step finish"})
+			out = append(out, SoftCheck{id, SoftNA, i18n.T("chưa có kết quả step finish")})
 			continue
 		}
 		c := r.Check
-		detail := strconv.Itoa(c.Files) + "/" + strconv.Itoa(c.Budget.Files) + " file, " + strconv.Itoa(c.Lines) +
-			"/" + strconv.Itoa(c.Budget.Lines) + " dòng"
+		detail := i18n.Tf("%d/%d file, %d/%d dòng", c.Files, c.Budget.Files, c.Lines, c.Budget.Lines)
 		level := SoftOK
 		if c.OverBudget {
 			level = SoftWarn
@@ -298,14 +299,14 @@ func (s *Service) coverage(ctx context.Context, from, to string, cov lang.Covera
 	if c.NA != "" {
 		return SoftCheck{coverageID, SoftNA, c.NA}, nil
 	}
-	detail := strconv.Itoa(int(math.Round(100*float64(c.Covered)/float64(c.Measurable)))) + "% (" +
-		strconv.Itoa(c.Covered) + "/" + strconv.Itoa(c.Measurable) + " dòng mới/sửa)"
+	detail := i18n.Tf("%d%% (%d/%d dòng mới/sửa)", int(math.Round(100*float64(c.Covered)/float64(c.Measurable))),
+		c.Covered, c.Measurable)
 	if c.UnmeasuredCount > 0 {
 		named := c.Unmeasured
 		if c.UnmeasuredCount > maxNamedUnmeasured {
 			named = named[:maxNamedUnmeasured]
 		}
-		detail += "; chưa đo: " + strings.Join(named, ", ")
+		detail += unmeasuredSep() + strings.Join(named, ", ")
 		if c.UnmeasuredCount > maxNamedUnmeasured {
 			detail += " (+" + strconv.Itoa(c.UnmeasuredCount-maxNamedUnmeasured) + ")"
 		}
@@ -323,22 +324,21 @@ func (s *Service) riskCoverage(ctx context.Context, from, to string, cov lang.Co
 	const id = "RISK_COVERAGE"
 	minS := strconv.Itoa(min)
 	if cov.NA != "" {
-		return HardCheck{id, false, "không có báo cáo coverage (" + cov.NA + "); mức " + level +
-			" yêu cầu coverage ≥ " + minS + "%"}, nil
+		return HardCheck{id, false, i18n.Tf("không có báo cáo coverage (%s); mức %s yêu cầu coverage ≥ %s%%", cov.NA, level, minS)}, nil
 	}
 	c, err := s.coverage(ctx, from, to, cov, float64(min)/100, true)
 	if err != nil {
 		return HardCheck{}, err
 	}
-	need := "yêu cầu tối thiểu " + minS + "%"
+	need := i18n.Tf("yêu cầu tối thiểu %s%%", minS)
 	switch c.Level {
 	case SoftOK:
 		return HardCheck{id, true, c.Detail + "; " + need}, nil
 	case SoftNA:
-		return HardCheck{id, true, "không có dòng mới đo được; " + need}, nil
+		return HardCheck{id, true, i18n.Tf("không có dòng mới đo được; %s", need)}, nil
 	}
 	d := c.Detail
-	if at := strings.Index(d, "; chưa đo: "); at >= 0 {
+	if at := strings.Index(d, unmeasuredSep()); at >= 0 {
 		return HardCheck{id, false, d[:at] + " < " + minS + "%" + d[at:]}, nil
 	}
 	return HardCheck{id, false, d + " < " + minS + "%"}, nil
@@ -379,7 +379,7 @@ func (s *Service) riskSection(rf risk.RiskFile, casesCheck HardCheck, riskCov *H
 		case st.ID == risk.ReqSQLZero:
 			st.Status, st.Detail = risk.RequirementOK, ""
 			if !casesCheck.Passed {
-				st.Status, st.Detail = risk.RequirementMissing, "có case không pass ("+casesCheck.Detail+")"
+				st.Status, st.Detail = risk.RequirementMissing, i18n.Tf("có case không pass (%s)", casesCheck.Detail)
 			}
 		}
 		out = append(out, st)
@@ -396,3 +396,6 @@ func (s *Service) riskSection(rf risk.RiskFile, casesCheck HardCheck, riskCov *H
 	return &RiskSection{Level: rf.Level, PolicyVersion: rf.Policy.Version, Matched: matched, Override: override,
 		Requirements: out}
 }
+
+// unmeasuredSep mở đầu danh sách file chưa đo trong chi tiết coverage (riskCoverage tìm lại nó để chèn ngưỡng).
+func unmeasuredSep() string { return i18n.T("; chưa đo: ") }

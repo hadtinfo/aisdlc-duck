@@ -11,6 +11,7 @@ import (
 
 	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -47,7 +48,7 @@ func (r *FeatureResolver) OpenFeatures(root string) ([]model.FeatureKey, error) 
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Không đọc được %s: %v", dir, err)
+		return nil, fmt.Errorf(i18n.T("Không đọc được %s: %v"), dir, err)
 	}
 	var names []string
 	for _, e := range entries {
@@ -140,9 +141,7 @@ func (r *FeatureResolver) Bind(root string, key model.FeatureKey) error {
 			return err
 		}
 	} else if _, cc := r.ctx.Env("CLAUDECODE"); cc {
-		r.ctx.Eprintln("Cảnh báo: đang chạy trong Claude Code nhưng thiếu biến AISDLC_SESSION, nên " + key.String() +
-			" không được gắn riêng cho session này (hook có thể chặn vì nhiều tính năng đang mở). Khởi động" +
-			" lại session Claude Code, hoặc thêm `--feature " + key.String() + "` vào lệnh.")
+		r.ctx.Eprintln(i18n.Tf("Cảnh báo: đang chạy trong Claude Code nhưng thiếu biến AISDLC_SESSION, nên %s không được gắn riêng cho session này (hook có thể chặn vì nhiều tính năng đang mở). Khởi động lại session Claude Code, hoặc thêm `--feature %s` vào lệnh.", key.String(), key.String()))
 	}
 	return model.WriteActive(root, key)
 }
@@ -171,8 +170,7 @@ func (r *FeatureResolver) WarnSameBranch(root string) error {
 	if err := fsx.WriteAtomic(flag, nil, 0o644); err != nil {
 		return err
 	}
-	r.ctx.Println("Cảnh báo: nhánh " + branch + " đang có nhiều tính năng mở; diff, bước và MR của chúng sẽ lẫn" +
-		" nhau. Nên mỗi tính năng một nhánh riêng, dùng `git worktree add` để làm song song.")
+	r.ctx.Println(i18n.Tf("Cảnh báo: nhánh %s đang có nhiều tính năng mở; diff, bước và MR của chúng sẽ lẫn nhau. Nên mỗi tính năng một nhánh riêng, dùng `git worktree add` để làm song song.", branch))
 	return nil
 }
 

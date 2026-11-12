@@ -7,6 +7,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/javaish"
 )
@@ -79,7 +80,7 @@ type section struct{ title, body string }
 
 // Compare so hai lần nộp gần nhất của một cổng và gắn góp ý (của cổng, nằm giữa hai lần nộp) với thay đổi
 // (ResubmissionService.compare). Thuần, không DB.
-func Compare(gate string, n int, previous, latest StoredSubmission, feedback []FeedbackRow) Result {
+func Compare(gate string, n int, previous, latest StoredSubmission, feedback []FeedbackRow, loc i18n.Locale) Result {
 	oldFiles, oldOrder := index(previous)
 	newFiles, newOrder := index(latest)
 	paths := append([]string{}, newOrder...)
@@ -116,7 +117,7 @@ func Compare(gate string, n int, previous, latest StoredSubmission, feedback []F
 				if c != nil {
 					b = c.text
 				}
-				patch = Unified(p, a, b)
+				patch = Unified(p, a, b, loc)
 			}
 			cnt := CountLines(patch)
 			f.Added, f.Removed = cnt.Added, cnt.Removed

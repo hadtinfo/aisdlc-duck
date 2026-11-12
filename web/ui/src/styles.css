@@ -230,3 +230,10 @@ button.secondary:hover { background: var(--surface-2); }
 .tag.badge-auto { background: var(--info-bg); color: var(--info); }
 .tag.badge-superseded { background: var(--warn-bg); color: var(--warn); }
 .tag.mode-web { background: var(--info-bg); color: var(--info); }
+
+/* Bộ chọn ngôn ngữ EN/VI (UserMenu, trang Login) */
+.locale-switch { display: inline-flex; align-items: center; gap: 2px; }
+.locale-switch button { padding: 2px 6px; font-size: 12px; }
+.locale-switch button.active { font-weight: 700; text-decoration: underline; }
+.locale-switch .error { margin-left: 6px; font-size: 12px; }
+.login-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

@@ -9,15 +9,26 @@ import { FlagList } from "./FlagList";
 import { GateActions } from "./GateActions";
 import { StepActions } from "./StepActions";
 import { useMe } from "./UserMenu";
+import { Key, t as tNow, useT } from "../i18n";
 
-export const STATE_TEXT: Record<string, string> = {
-  NOT_SUBMITTED: "Chưa nộp", AWAITING_APPROVAL: "Chờ duyệt", APPROVED: "Đã duyệt",
-  STALE: "Đã đổi sau duyệt (STALE)", SUBMITTED_WITH_FINDINGS: "Có phát hiện",
-  LOCKED_BY_PREVIOUS: "Chờ cổng trước",
+const STATE_KEY: Record<string, Key> = {
+  NOT_SUBMITTED: "gateState.notSubmitted", AWAITING_APPROVAL: "gateState.awaitingApproval", APPROVED: "gateState.approved",
+  STALE: "gateState.stale", SUBMITTED_WITH_FINDINGS: "gateState.findings",
+  LOCKED_BY_PREVIOUS: "gateState.locked",
 };
-export const STEP_TEXT: Record<string, string> = {
-  NOT_STARTED: "Chưa bắt đầu", IN_PROGRESS: "Đang code", AWAITING_DEV: "Chờ accept", ACCEPTED: "Đã accept",
+const STEP_KEY: Record<string, Key> = {
+  NOT_STARTED: "stepStatus.notStarted", IN_PROGRESS: "stepState.coding", AWAITING_DEV: "stepState.awaitingAccept", ACCEPTED: "stepStatus.accepted",
 };
+
+/** Tên trạng thái cổng theo locale đang dùng (mã lạ thì giữ nguyên). */
+export function stateText(state: string): string {
+  return STATE_KEY[state] ? tNow(STATE_KEY[state]) : state;
+}
+
+/** Tên trạng thái bước theo locale đang dùng. */
+export function stepText(status: string): string {
+  return STEP_KEY[status] ? tNow(STEP_KEY[status]) : status;
+}
 
 const short = (h?: string | null) => (h ? h.slice(0, 8) : "—");
 
@@ -38,11 +49,11 @@ function gateCommands(g: GateData, snap: Snapshot): string[] {
 function eventText(e: FeatureEvent): string {
   switch (e.type) {
     case "COMMAND": return `aisdlc ${e.detail ?? ""}`.trim();
-    case "FILE_EDIT": return `Sửa ${e.path ?? "file"}`;
-    case "SESSION_START": return "Bắt đầu phiên Claude Code";
-    case "SESSION_STOP": return "Kết thúc phiên Claude Code";
-    case "SCOPE_DENIED": return `Bị chặn ghi ngoài phạm vi: ${e.path ?? "file"}`;
-    case "INSTRUCTION_DELIVERED": return "Agent đã nhận chỉ dẫn";
+    case "FILE_EDIT": return tNow("event.fileEdit", { path: e.path ?? "file" });
+    case "SESSION_START": return tNow("event.sessionStart");
+    case "SESSION_STOP": return tNow("event.sessionStop");
+    case "SCOPE_DENIED": return tNow("event.scopeDenied", { path: e.path ?? "file" });
+    case "INSTRUCTION_DELIVERED": return tNow("event.instructionDelivered");
     case "ACTION_RESULT": return actionResultText(e.detail);
     default: return e.type;
   }
@@ -51,23 +62,24 @@ function eventText(e: FeatureEvent): string {
 function actionResultText(detail: string | null): string {
   try {
     const r = JSON.parse(detail ?? "") as { status?: string; reason?: string };
-    if (r.status === "APPLIED") return "Lệnh từ web đã được áp dụng";
-    if (r.status === "STALE") return `Lệnh từ web hết hiệu lực${r.reason ? `: ${r.reason}` : ""}`;
+    if (r.status === "APPLIED") return tNow("event.actionApplied");
+    if (r.status === "STALE") return r.reason ? tNow("event.actionStaleReason", { reason: r.reason }) : tNow("event.actionStale");
   } catch { /* detail không phải JSON */ }
-  return "Kết quả lệnh từ web";
+  return tNow("event.actionResult");
 }
 
 function Events({ events }: { events: FeatureEvent[] }) {
+  const { t } = useT();
   const rows = events.slice(0, 20);
   return (
     <section className="panel-sec">
-      <h3>Hoạt động gần đây</h3>
-      {rows.length === 0 && <p className="muted">Chưa có hoạt động.</p>}
+      <h3>{t("events.title")}</h3>
+      {rows.length === 0 && <p className="muted">{t("events.none")}</p>}
       <ul className="events">
         {rows.map((e, i) => (
           <li key={e.id ?? `${e.at}-${i}`} className={e.outOfScope ? "oos" : ""}>
             <div className="ev-text">{eventText(e)}{e.step && <span className="tag">{e.step}</span>}</div>
-            <div className="muted ev-meta">{ago(e.at)}{e.sender ? ` · ${e.sender}` : ""}{e.outOfScope ? " · ngoài phạm vi" : ""}</div>
+            <div className="muted ev-meta">{ago(e.at)}{e.sender ? ` · ${e.sender}` : ""}{e.outOfScope ? ` · ${t("common.outOfScope")}` : ""}</div>
           </li>
         ))}
       </ul>
@@ -83,6 +95,7 @@ export function GatePanel({ gate, step, snapshot, events, repoId, featureKey, de
   gate: GateData | null; step: StepData | null; snapshot: Snapshot; events: FeatureEvent[];
   repoId: string; featureKey: string; detail: FeatureDetail; actions?: ControlAction[]; onChanged: () => void;
 }) {
+  const { t } = useT();
   const user = useMe();
   const stepEvents = step ? events.filter((e) => e.step === step.id) : events;
   const card = gate ? cardFor(snapshot, gate.gate) : null;
@@ -90,7 +103,7 @@ export function GatePanel({ gate, step, snapshot, events, repoId, featureKey, de
   // Đếm lại giả định đã tick khi người dùng tick (Assumptions tự lưu localStorage), để hộp xác nhận duyệt cập nhật.
   const [, setSeenTick] = useState(0);
   return (
-    <aside className="gatepanel" aria-label="Chi tiết cổng">
+    <aside className="gatepanel" aria-label={t("gate.details")}>
       {gate && (
         <GateHead gate={gate} snapshot={snapshot} card={card} seen={key ? loadSeen(key) : []}
           detail={detail} repoId={repoId} featureKey={featureKey} onChanged={onChanged} />
@@ -98,7 +111,7 @@ export function GatePanel({ gate, step, snapshot, events, repoId, featureKey, de
       {gate && card && <FlagList flags={card.flags ?? []} />}
       {gate && card && card.assumptions !== undefined && (
         <Assumptions key={key} items={card.assumptions} section={card.assumptionsSection} storageKey={key}
-          onChange={() => setSeenTick((t) => t + 1)} />
+          onChange={() => setSeenTick((n) => n + 1)} />
       )}
       {gate && <GateInfo gate={gate} snapshot={snapshot} />}
       {step && (
@@ -118,6 +131,7 @@ function GateHead({ gate, snapshot, card, seen, detail, repoId, featureKey, onCh
   gate: GateData; snapshot: Snapshot; card: ReviewCardData | null; seen: number[]; detail: FeatureDetail;
   repoId: string; featureKey: string; onChanged: () => void;
 }) {
+  const { t } = useT();
   const user = useMe();
   const web = detail.approvalsMode === "web";
   const actor = web && !!user && canAct(user, detail.owner);
@@ -129,21 +143,21 @@ function GateHead({ gate, snapshot, card, seen, detail, repoId, featureKey, onCh
   return (
     <>
       <section className="panel-sec">
-        <h3>Cổng {gate.gate}</h3>
-        <p className={`state ${gate.state}`}>{STATE_TEXT[gate.state] ?? gate.state}</p>
-        {edited && <p className="pill bad block">Đã sửa sau duyệt</p>}
+        <h3>{t("gate.heading", { gate: gate.gate })}</h3>
+        <p className={`state ${gate.state}`}>{stateText(gate.state)}</p>
+        {edited && <p className="pill bad block">{t("gate.editedAfter")}</p>}
         {badge && <p><span className={`tag ${gate.superseded && !gate.approval ? "badge-superseded" : "badge-auto"}`}>{badge}</span></p>}
         <dl className="kv">
-          <dt>Hash đã nộp</dt><dd className="mono">{short(gate.submission?.hash)}</dd>
-          <dt>Hash đã duyệt</dt><dd className="mono">{short(gate.approval?.hash)}</dd>
-          <dt>Hash hiện tại</dt><dd className="mono">{short(gate.currentHash)}</dd>
-          {gate.approval && <><dt>Người duyệt</dt><dd>{gate.approval.label ?? gate.approval.approver}<div className="muted">{ago(gate.approval.at)}</div></dd></>}
-          {gate.submission && <><dt>Nộp lúc</dt><dd>{ago(gate.submission.at)}</dd></>}
+          <dt>{t("gate.hashSubmitted")}</dt><dd className="mono">{short(gate.submission?.hash)}</dd>
+          <dt>{t("gate.hashApproved")}</dt><dd className="mono">{short(gate.approval?.hash)}</dd>
+          <dt>{t("gate.hashCurrent")}</dt><dd className="mono">{short(gate.currentHash)}</dd>
+          {gate.approval && <><dt>{t("gate.approver")}</dt><dd>{gate.approval.label ?? gate.approval.approver}<div className="muted">{ago(gate.approval.at)}</div></dd></>}
+          {gate.submission && <><dt>{t("gate.submittedAt")}</dt><dd>{ago(gate.submission.at)}</dd></>}
         </dl>
       </section>
       {actor && Object.values(actionsFor(gate.state)).some(Boolean) && (
         <section className="panel-sec">
-          <h3>Thao tác</h3>
+          <h3>{t("gate.actions")}</h3>
           <GateActions key={`${gate.gate}:${gate.currentHash}:${gate.state}`} gate={gate} card={card} seen={seen}
             submittedPaths={detail.submittedPaths?.[gate.gate] ?? []} repoId={repoId} featureKey={featureKey}
             onDone={onChanged} />
@@ -151,10 +165,10 @@ function GateHead({ gate, snapshot, card, seen, detail, repoId, featureKey, onCh
       )}
       {commands.length > 0 && (
         <section className="panel-sec">
-          <h3>Lệnh</h3>
+          <h3>{t("gate.commands")}</h3>
           <div className="cmds">{commands.map((c) => <CopyCommand key={c} command={c} />)}</div>
           {web && !actor && gate.state === "AWAITING_APPROVAL" && (
-            <p className="muted hint-line">Duyệt trên web hoặc <code>aisdlc approve {name}</code> (cần token approve)</p>
+            <p className="muted hint-line">{t("gate.approveHintWeb")} <code>aisdlc approve {name}</code> {t("gate.approveHintToken")}</p>
           )}
         </section>
       )}
@@ -164,13 +178,14 @@ function GateHead({ gate, snapshot, card, seen, detail, repoId, featureKey, onCh
 
 /** Phần còn lại của cổng: phát hiện khi nộp, câu hỏi mở, phản hồi gần nhất. */
 function GateInfo({ gate, snapshot }: { gate: GateData; snapshot: Snapshot }) {
+  const { t } = useT();
   const questions = snapshot.openQuestions.filter((q) => q.gate === gate.gate);
   const findings = gate.submission?.findings ?? [];
   return (
     <>
       {findings.length > 0 && (
         <section className="panel-sec">
-          <h3>Phát hiện ({findings.length})</h3>
+          <h3>{t("gate.findings", { n: findings.length })}</h3>
           <ul className="findings">
             {findings.map((f, i) => <li key={i}><code>{f.code}</code> {f.message}</li>)}
           </ul>
@@ -178,14 +193,14 @@ function GateInfo({ gate, snapshot }: { gate: GateData; snapshot: Snapshot }) {
       )}
       {questions.length > 0 && (
         <section className="panel-sec">
-          <h3>Câu hỏi mở ({questions.length})</h3>
+          <h3>{t("gate.questions", { n: questions.length })}</h3>
           <ul className="findings">{questions.map((q, i) => <li key={i}>{q.text}</li>)}</ul>
         </section>
       )}
       {gate.lastFeedback && (
         <section className="panel-sec feedback">
-          <h3>{gate.lastFeedback.kind === "REJECTED" ? "Bị trả lại" : "Mở lại"}</h3>
-          <p>{gate.lastFeedback.comment || <span className="muted">(không có ghi chú)</span>}</p>
+          <h3>{gate.lastFeedback.kind === "REJECTED" ? t("gate.rejected") : t("gate.reopen")}</h3>
+          <p>{gate.lastFeedback.comment || <span className="muted">{t("resub.noComment")}</span>}</p>
           <p className="muted">{gate.lastFeedback.by} · {ago(gate.lastFeedback.at)}</p>
         </section>
       )}
@@ -197,14 +212,15 @@ function StepInfo({ step, events, actions, actor, repoId, featureKey, onChanged 
   step: StepData; events: FeatureEvent[]; actions: ControlAction[]; actor: boolean;
   repoId: string; featureKey: string; onChanged: () => void;
 }) {
+  const { t } = useT();
   return (
     <>
       <section className="panel-sec">
-        <h3>Bước {step.id}</h3>
-        <p className={`state ${step.status}`}>{STEP_TEXT[step.status] ?? step.status}</p>
+        <h3>{t("step.heading", { id: step.id })}</h3>
+        <p className={`state ${step.status}`}>{stepText(step.status)}</p>
         <dl className="kv">
-          <dt>Ngân sách</dt><dd>{step.budget.files} file, {step.budget.lines} dòng</dd>
-          {step.record?.acceptedBy && <><dt>Accept bởi</dt><dd>{step.record.acceptedBy}</dd></>}
+          <dt>{t("steps.budget")}</dt><dd>{t("steps.budgetValue", { files: step.budget.files, lines: step.budget.lines })}</dd>
+          {step.record?.acceptedBy && <><dt>{t("step.acceptedBy")}</dt><dd>{step.record.acceptedBy}</dd></>}
         </dl>
       </section>
       <StepActions step={step} events={events} actions={actions} actor={actor}

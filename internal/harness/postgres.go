@@ -15,6 +15,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	"aisdlc/internal/i18n"
 )
 
 // Postgres là Postgres tạm thời của một lần chạy.
@@ -88,9 +90,9 @@ func Migrate(ctx context.Context, dbURL string, dirs ...string) error {
 	if _, err := p.Up(ctx); err != nil {
 		var pe *goose.PartialError
 		if errors.As(err, &pe) && pe.Failed != nil {
-			return fmt.Errorf("migration %s lỗi: %w", filepath.Base(pe.Failed.Source.Path), err)
+			return fmt.Errorf(i18n.T("migration %s lỗi: %w"), filepath.Base(pe.Failed.Source.Path), err)
 		}
-		return fmt.Errorf("migration lỗi: %w", err)
+		return fmt.Errorf(i18n.T("migration lỗi: %w"), err)
 	}
 	return nil
 }

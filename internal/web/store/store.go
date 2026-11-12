@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
+
+	"aisdlc/internal/web/httpx"
 )
 
 //go:embed migrations/*.sql
@@ -27,7 +29,7 @@ const DefaultUser = "aisdlc"
 func poolConfig(url, user, password string) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, fmt.Errorf("AISDLC_DB_URL không hợp lệ: %w", err)
+		return nil, fmt.Errorf(httpx.OpLocale().T("AISDLC_DB_URL không hợp lệ: %w"), err)
 	}
 	if user == "" {
 		// Mặc định như application.yml của Java: URL không có user (và không có AISDLC_DB_USER) thì dùng "aisdlc".
@@ -56,7 +58,7 @@ func Open(ctx context.Context, url, user, password string) (*pgxpool.Pool, error
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("không kết nối được Postgres: %w", err)
+		return nil, fmt.Errorf(httpx.OpLocale().T("không kết nối được Postgres: %w"), err)
 	}
 	return pool, nil
 }
@@ -81,9 +83,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := p.Up(ctx); err != nil {
 		var pe *goose.PartialError
 		if errors.As(err, &pe) && pe.Failed != nil {
-			return fmt.Errorf("migration %s lỗi: %w", filepath.Base(pe.Failed.Source.Path), err)
+			return fmt.Errorf(httpx.OpLocale().T("migration %s lỗi: %w"), filepath.Base(pe.Failed.Source.Path), err)
 		}
-		return fmt.Errorf("migration lỗi: %w", err)
+		return fmt.Errorf(httpx.OpLocale().T("migration lỗi: %w"), err)
 	}
 	return nil
 }

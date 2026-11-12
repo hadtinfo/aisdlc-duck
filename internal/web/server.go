@@ -115,6 +115,7 @@ func build(d Deps) (*chi.Mux, *board.Hub) {
 	ui := spa.Embedded()
 	r := chi.NewRouter()
 	r.Use(Recoverer)
+	r.Use(httpx.Localize)                             // locale theo Accept-Language; Middleware xác thực ghi đè bằng users.locale của phiên
 	r.Use(httpx.DefaultLimit(httpx.DefaultJSONLimit)) // route cần lớn hơn (ingest) tự đặt httpx.LimitBody
 	r.Use(s.auth.Middleware)
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
@@ -262,7 +263,7 @@ func serve(ctx context.Context, srv *http.Server, ln net.Listener, hub *board.Hu
 	if err := srv.Shutdown(sctx); err != nil {
 		_ = srv.Close()
 		<-errc
-		return fmt.Errorf("web: tắt server quá hạn %v, đã đóng cưỡng bức: %w", timeout, err)
+		return fmt.Errorf("%s: %w", httpx.OpLocale().Tf("web: tắt server quá hạn %v, đã đóng cưỡng bức", timeout), err)
 	}
 	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err

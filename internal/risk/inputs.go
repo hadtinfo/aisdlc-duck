@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -33,7 +34,7 @@ func InputFiles(root string, paths model.FeaturePaths, flow model.Flow) ([]Input
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("Không đọc được %s: %v", p, err)
+			return nil, fmt.Errorf(i18n.T("Không đọc được %s: %v"), p, err)
 		}
 		pa, err := filepath.Abs(p)
 		if err != nil {

@@ -3,6 +3,7 @@ package risk
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/yamlx"
 
@@ -93,48 +95,60 @@ type RiskPolicy struct {
 // FlowUnits là các cổng có thể khai trong flow (Review luôn duyệt tay).
 var FlowUnits = []string{"brd", "design", "cases", "step"}
 
-// PolicyError gom mọi lỗi của một chính sách.
-type PolicyError struct{ Errors []string }
-
-func (e *PolicyError) Error() string {
-	return "Chính sách rủi ro không hợp lệ: " + strings.Join(e.Errors, "; ")
+// PolicyError gom mọi lỗi của một chính sách; Errors đã theo locale lúc đọc. loc rỗng (dựng ngoài gói) là vi.
+type PolicyError struct {
+	Errors []string
+	loc    i18n.Locale
 }
 
-func policyErr(msgs ...string) error { return &PolicyError{Errors: msgs} }
+func (e *PolicyError) Error() string {
+	return e.loc.Tf("Chính sách rủi ro không hợp lệ: %s", strings.Join(e.Errors, "; "))
+}
+
+func policyErr(loc i18n.Locale, msgs ...string) error { return &PolicyError{Errors: msgs, loc: loc} }
 
 // Usable báo chính sách có dùng được để phân loại không: chỉ schema 2 (luật mô tả bằng lời) dùng được.
-func (p RiskPolicy) Usable() error {
+func (p RiskPolicy) Usable() error { return p.UsableIn(i18n.Default()) }
+
+// UsableIn như Usable, thông điệp theo loc (web server dùng locale của request).
+func (p RiskPolicy) UsableIn(loc i18n.Locale) error {
 	if p.Schema == 1 {
-		return policyErr("Chính sách dùng schema 1 (luật so khớp); chạy `aisdlc policy migrate` để chuyển sang schema 2.")
+		return policyErr(loc, loc.T("Chính sách dùng schema 1 (luật so khớp); chạy `aisdlc policy migrate` để chuyển sang schema 2."))
 	}
 	return nil
 }
 
-// ParsePolicy đọc chính sách từ YAML; lỗi có kiểu *PolicyError.
-func ParsePolicy(y string) (RiskPolicy, error) {
+// ParsePolicy đọc chính sách từ YAML; lỗi có kiểu *PolicyError, theo locale mặc định của tiến trình.
+func ParsePolicy(y string) (RiskPolicy, error) { return ParsePolicyIn(i18n.Default(), y) }
+
+// ParsePolicyIn như ParsePolicy, lỗi và cảnh báo theo loc.
+func ParsePolicyIn(loc i18n.Locale, y string) (RiskPolicy, error) {
 	var n yaml.Node
 	if err := yaml.Unmarshal([]byte(y), &n); err != nil {
-		return RiskPolicy{}, policyErr("Không đọc được chính sách: " + strings.TrimPrefix(err.Error(), "yaml: "))
+		return RiskPolicy{}, policyErr(loc, loc.Tf("Không đọc được chính sách: %s", strings.TrimPrefix(err.Error(), "yaml: ")))
 	}
 	tree, err := yamlx.JSONValue(&n)
 	if err != nil {
-		return RiskPolicy{}, policyErr("Không đọc được chính sách: " + err.Error())
+		return RiskPolicy{}, policyErr(loc, loc.Tf("Không đọc được chính sách: %s", err.Error()))
 	}
-	return build(tree)
+	return build(loc, tree)
 }
 
 // PolicyFromJSON đọc chính sách từ JSON (bản chụp trong cache, server).
-func PolicyFromJSON(js string) (RiskPolicy, error) {
+func PolicyFromJSON(js string) (RiskPolicy, error) { return PolicyFromJSONIn(i18n.Default(), js) }
+
+// PolicyFromJSONIn như PolicyFromJSON, lỗi và cảnh báo theo loc.
+func PolicyFromJSONIn(loc i18n.Locale, js string) (RiskPolicy, error) {
 	dec := json.NewDecoder(strings.NewReader(js))
 	dec.UseNumber()
 	var tree any
 	if err := dec.Decode(&tree); err != nil {
-		return RiskPolicy{}, policyErr("JSON chính sách không hợp lệ: " + err.Error())
+		return RiskPolicy{}, policyErr(loc, loc.Tf("JSON chính sách không hợp lệ: %s", err.Error()))
 	}
 	if dec.More() {
-		return RiskPolicy{}, policyErr("JSON chính sách không hợp lệ: còn dữ liệu sau giá trị JSON")
+		return RiskPolicy{}, policyErr(loc, loc.T("JSON chính sách không hợp lệ: còn dữ liệu sau giá trị JSON"))
 	}
-	return build(normalizeJSON(tree))
+	return build(loc, normalizeJSON(tree))
 }
 
 func normalizeJSON(v any) any {
@@ -157,23 +171,23 @@ func normalizeJSON(v any) any {
 	return v
 }
 
-func build(tree any) (RiskPolicy, error) {
+func build(loc i18n.Locale, tree any) (RiskPolicy, error) {
 	root, ok := tree.(map[string]any)
 	if !ok {
-		return RiskPolicy{}, policyErr("Chính sách rỗng hoặc sai dạng")
+		return RiskPolicy{}, policyErr(loc, loc.T("Chính sách rỗng hoặc sai dạng"))
 	}
 	var errs []string
-	if checkShape(root, &errs) {
-		return RiskPolicy{}, policyErr(errs...)
+	if checkShape(loc, root, &errs) {
+		return RiskPolicy{}, policyErr(loc, errs...)
 	}
-	p, err := bind(root)
+	p, err := bind(loc, root)
 	if err != nil {
-		errs = append(errs, "Không đọc được chính sách: "+err.Error())
-		return RiskPolicy{}, policyErr(errs...)
+		errs = append(errs, loc.Tf("Không đọc được chính sách: %s", err.Error()))
+		return RiskPolicy{}, policyErr(loc, errs...)
 	}
-	p.validate(&errs)
+	p.validate(loc, &errs)
 	if len(errs) > 0 {
-		return RiskPolicy{}, policyErr(errs...)
+		return RiskPolicy{}, policyErr(loc, errs...)
 	}
 	return p, nil
 }
@@ -221,15 +235,15 @@ var (
 	ruleKeys2 = map[string]bool{"id": true, "level": true, "describe": true, "enabled": true}
 )
 
-func unknownKeys(m map[string]any, known map[string]bool, where string, errs *[]string) {
+func unknownKeys(loc i18n.Locale, m map[string]any, known map[string]bool, where string, errs *[]string) {
 	for _, k := range sortedKeys(m) {
 		if !known[k] {
-			*errs = append(*errs, where+": khóa lạ '"+k+"' (có thể gõ sai)")
+			*errs = append(*errs, loc.Tf("%s: khóa lạ '%s' (có thể gõ sai)", where, k))
 		}
 	}
 }
 
-func enumCheck(m map[string]any, field string, valid []string, where string, errs *[]string) bool {
+func enumCheck(loc i18n.Locale, m map[string]any, field string, valid []string, where string, errs *[]string) bool {
 	v, ok := m[field]
 	if !ok || v == nil {
 		return false
@@ -240,26 +254,26 @@ func enumCheck(m map[string]any, field string, valid []string, where string, err
 			return false
 		}
 	}
-	*errs = append(*errs, where+" '"+asText(v)+"' không hợp lệ")
+	*errs = append(*errs, loc.Tf("%s '%s' không hợp lệ", where, asText(v)))
 	return true
 }
 
 // checkShape kiểm cấu trúc; trả true khi có lỗi làm không thể bind (các lỗi khác chỉ gom thêm).
-func checkShape(root map[string]any, errs *[]string) bool {
+func checkShape(loc i18n.Locale, root map[string]any, errs *[]string) bool {
 	fatal := false
 	schema2 := rawSchema(root) == 2
-	unknownKeys(root, topKeys, "chính sách", errs)
+	unknownKeys(loc, root, topKeys, loc.T("chính sách"), errs)
 	if preset, ok := root["preset"].(map[string]any); ok {
-		unknownKeys(preset, map[string]bool{"name": true, "version": true}, "preset", errs)
+		unknownKeys(loc, preset, map[string]bool{"name": true, "version": true}, "preset", errs)
 	}
 	if cls, ok := root["classification"].(map[string]any); ok {
 		if schema2 {
-			unknownKeys(cls, map[string]bool{"devLower": true}, "classification", errs)
+			unknownKeys(loc, cls, map[string]bool{"devLower": true}, "classification", errs)
 		} else {
-			unknownKeys(cls, map[string]bool{"agent": true, "devLower": true}, "classification", errs)
-			fatal = enumCheck(cls, "agent", []string{"raise", "off"}, "classification.agent", errs) || fatal
+			unknownKeys(loc, cls, map[string]bool{"agent": true, "devLower": true}, "classification", errs)
+			fatal = enumCheck(loc, cls, "agent", []string{"raise", "off"}, "classification.agent", errs) || fatal
 		}
-		fatal = enumCheck(cls, "devLower", []string{"reason", "never"}, "classification.devLower", errs) || fatal
+		fatal = enumCheck(loc, cls, "devLower", []string{"reason", "never"}, "classification.devLower", errs) || fatal
 	}
 	kinds := make([]string, len(matchKinds))
 	for i, k := range matchKinds {
@@ -270,7 +284,7 @@ func checkShape(root map[string]any, errs *[]string) bool {
 			where := "rules[" + strconv.Itoa(i) + "]"
 			r, ok := rv.(map[string]any)
 			if !ok {
-				*errs = append(*errs, where+": entry rỗng hoặc không phải object")
+				*errs = append(*errs, loc.Tf("%s: entry rỗng hoặc không phải object", where))
 				fatal = true
 				continue
 			}
@@ -278,17 +292,17 @@ func checkShape(root map[string]any, errs *[]string) bool {
 				where = asText(id)
 			}
 			if schema2 {
-				unknownKeys(r, ruleKeys2, where, errs)
+				unknownKeys(loc, r, ruleKeys2, where, errs)
 			} else {
-				unknownKeys(r, ruleKeys, where, errs)
-				fatal = enumCheck(r, "kind", kinds, where+": kind", errs) || fatal
+				unknownKeys(loc, r, ruleKeys, where, errs)
+				fatal = enumCheck(loc, r, "kind", kinds, where+": kind", errs) || fatal
 			}
 		}
 	}
 	if flow, has := root["flow"]; has && flow != nil {
 		fm, ok := flow.(map[string]any)
 		if !ok {
-			*errs = append(*errs, "flow: phải là bảng theo mức")
+			*errs = append(*errs, loc.T("flow: phải là bảng theo mức"))
 			fatal = true
 		} else {
 			for _, level := range sortedKeys(fm) {
@@ -298,23 +312,23 @@ func checkShape(root map[string]any, errs *[]string) bool {
 				}
 				units, ok := fm[level].(map[string]any)
 				if !ok {
-					*errs = append(*errs, where+": phải là bảng cổng → auto|manual")
+					*errs = append(*errs, loc.Tf("%s: phải là bảng cổng → auto|manual", where))
 					fatal = true
 					continue
 				}
 				for _, u := range sortedKeys(units) {
 					key := where + "." + u
 					if u == "review" {
-						*errs = append(*errs, key+": Review luôn duyệt tay, không có khóa review trong flow")
+						*errs = append(*errs, loc.Tf("%s: Review luôn duyệt tay, không có khóa review trong flow", key))
 						continue
 					}
 					if !isFlowUnit(u) {
-						*errs = append(*errs, key+": khóa lạ '"+u+"' (chỉ có brd, design, cases, step)")
+						*errs = append(*errs, loc.Tf("%s: khóa lạ '%s' (chỉ có brd, design, cases, step)", key, u))
 						continue
 					}
 					s, isStr := units[u].(string)
 					if !isStr || (s != "auto" && s != "manual") {
-						*errs = append(*errs, key+" '"+asText(units[u])+"' không hợp lệ (auto hoặc manual)")
+						*errs = append(*errs, loc.Tf("%s '%s' không hợp lệ (auto hoặc manual)", key, asText(units[u])))
 						if !isScalar(units[u]) {
 							fatal = true
 						}
@@ -330,13 +344,13 @@ func checkShape(root map[string]any, errs *[]string) bool {
 			}
 			list, ok := reqs[level].([]any)
 			if !ok {
-				*errs = append(*errs, "requirements."+level+": phải là danh sách")
+				*errs = append(*errs, loc.Tf("requirements.%s: phải là danh sách", level))
 				fatal = true
 				continue
 			}
 			for i, q := range list {
 				if _, ok := q.(map[string]any); !ok {
-					*errs = append(*errs, "requirements."+level+"["+strconv.Itoa(i)+"]: entry rỗng hoặc không phải object")
+					*errs = append(*errs, loc.Tf("requirements.%s[%d]: entry rỗng hoặc không phải object", level, i))
 					fatal = true
 				}
 			}
@@ -347,7 +361,7 @@ func checkShape(root map[string]any, errs *[]string) bool {
 
 // rawSchema đọc khóa schema trước khi bind; thiếu hoặc sai dạng thì coi là 1.
 func rawSchema(root map[string]any) int {
-	n, err := toInt(root["schema"], 1, "schema")
+	n, err := toInt(i18n.VI, root["schema"], 1, "schema")
 	if err != nil {
 		return 1
 	}
@@ -365,17 +379,17 @@ func isFlowUnit(u string) bool {
 
 // --- bind ---
 
-func scalarString(v any, what string) (string, error) {
+func scalarString(loc i18n.Locale, v any, what string) (string, error) {
 	if v == nil {
 		return "", nil
 	}
 	if !isScalar(v) {
-		return "", fmt.Errorf("%s phải là giá trị đơn", what)
+		return "", fmt.Errorf(loc.T("%s phải là giá trị đơn"), what)
 	}
 	return asText(v), nil
 }
 
-func toInt(v any, def int, what string) (int, error) {
+func toInt(loc i18n.Locale, v any, def int, what string) (int, error) {
 	switch x := v.(type) {
 	case nil:
 		return def, nil
@@ -392,32 +406,32 @@ func toInt(v any, def int, what string) (int, error) {
 			return i, nil
 		}
 	}
-	return 0, fmt.Errorf("%s '%s' không phải số nguyên", what, asText(v))
+	return 0, fmt.Errorf(loc.T("%s '%s' không phải số nguyên"), what, asText(v))
 }
 
-func bind(root map[string]any) (RiskPolicy, error) {
+func bind(loc i18n.Locale, root map[string]any) (RiskPolicy, error) {
 	var p RiskPolicy
 	var err error
-	if p.Schema, err = toInt(root["schema"], 1, "schema"); err != nil {
+	if p.Schema, err = toInt(loc, root["schema"], 1, "schema"); err != nil {
 		return p, err
 	}
-	if p.Version, err = toInt(root["version"], 0, "version"); err != nil { // không khai version: 0 (spec §4.1)
+	if p.Version, err = toInt(loc, root["version"], 0, "version"); err != nil { // không khai version: 0 (spec §4.1)
 		return p, err
 	}
 	switch pr := root["preset"].(type) {
 	case nil:
 	case map[string]any:
-		name, err := scalarString(pr["name"], "preset.name")
+		name, err := scalarString(loc, pr["name"], "preset.name")
 		if err != nil {
 			return p, err
 		}
-		ver, err := scalarString(pr["version"], "preset.version")
+		ver, err := scalarString(loc, pr["version"], "preset.version")
 		if err != nil {
 			return p, err
 		}
 		p.Preset = &PresetRef{Name: name, Version: ver}
 	default:
-		return p, fmt.Errorf("preset phải là bảng")
+		return p, errors.New(loc.T("preset phải là bảng"))
 	}
 	p.Levels = []string{}
 	switch l := root["levels"].(type) {
@@ -425,14 +439,14 @@ func bind(root map[string]any) (RiskPolicy, error) {
 	case []any:
 		for _, e := range l {
 			if e == nil || !isScalar(e) {
-				return p, fmt.Errorf("levels chứa phần tử không hợp lệ")
+				return p, errors.New(loc.T("levels chứa phần tử không hợp lệ"))
 			}
 			p.Levels = append(p.Levels, asText(e))
 		}
 	default:
-		return p, fmt.Errorf("levels phải là danh sách")
+		return p, errors.New(loc.T("levels phải là danh sách"))
 	}
-	if p.DefaultLevel, err = scalarString(root["default"], "default"); err != nil {
+	if p.DefaultLevel, err = scalarString(loc, root["default"], "default"); err != nil {
 		return p, err
 	}
 	p.Rules = []RiskRule{}
@@ -440,14 +454,14 @@ func bind(root map[string]any) (RiskPolicy, error) {
 	case nil:
 	case []any:
 		for _, rv := range rs {
-			r, err := bindRule(rv.(map[string]any), p.Schema)
+			r, err := bindRule(loc, rv.(map[string]any), p.Schema)
 			if err != nil {
 				return p, err
 			}
 			p.Rules = append(p.Rules, r)
 		}
 	default:
-		return p, fmt.Errorf("rules phải là danh sách")
+		return p, errors.New(loc.T("rules phải là danh sách"))
 	}
 	p.Classification = DefaultClassification()
 	if p.Schema == 2 {
@@ -463,7 +477,7 @@ func bind(root map[string]any) (RiskPolicy, error) {
 			p.Classification.DevLower = DevLower(strings.ToLower(strings.TrimSpace(asText(d))))
 		}
 	default:
-		return p, fmt.Errorf("classification phải là bảng")
+		return p, errors.New(loc.T("classification phải là bảng"))
 	}
 	p.Requirements = map[string][]Requirement{}
 	switch rq := root["requirements"].(type) {
@@ -473,7 +487,7 @@ func bind(root map[string]any) (RiskPolicy, error) {
 			list := []Requirement{}
 			if lv != nil {
 				for _, q := range lv.([]any) {
-					r, err := bindRequirement(q.(map[string]any))
+					r, err := bindRequirement(loc, q.(map[string]any))
 					if err != nil {
 						return p, err
 					}
@@ -483,7 +497,7 @@ func bind(root map[string]any) (RiskPolicy, error) {
 			p.Requirements[level] = list
 		}
 	default:
-		return p, fmt.Errorf("requirements phải là bảng")
+		return p, errors.New(loc.T("requirements phải là bảng"))
 	}
 	p.Flow = map[string]map[string]string{}
 	if fm, ok := root["flow"].(map[string]any); ok {
@@ -496,10 +510,10 @@ func bind(root map[string]any) (RiskPolicy, error) {
 			for _, u := range sortedKeys(units) {
 				v := units[u]
 				if p.Schema == 2 && u == "brd" {
-					p.Warnings = append(p.Warnings, "flow."+level+".brd bị bỏ qua: cổng BRD luôn duyệt tay")
+					p.Warnings = append(p.Warnings, loc.Tf("flow.%s.brd bị bỏ qua: cổng BRD luôn duyệt tay", level))
 					continue
 				}
-				s, err := scalarString(v, "flow."+level+"."+u)
+				s, err := scalarString(loc, v, "flow."+level+"."+u)
 				if err != nil {
 					return p, err
 				}
@@ -513,13 +527,13 @@ func bind(root map[string]any) (RiskPolicy, error) {
 	return p, nil
 }
 
-func bindRule(m map[string]any, schema int) (RiskRule, error) {
+func bindRule(loc i18n.Locale, m map[string]any, schema int) (RiskRule, error) {
 	r := RiskRule{Enabled: true}
 	if schema != 2 {
 		r.Match = []string{}
 	}
 	var err error
-	if r.ID, err = scalarString(m["id"], "id"); err != nil {
+	if r.ID, err = scalarString(loc, m["id"], "id"); err != nil {
 		return r, err
 	}
 	if k := m["kind"]; k != nil {
@@ -533,22 +547,22 @@ func bindRule(m map[string]any, schema int) (RiskRule, error) {
 				continue
 			}
 			if !isScalar(e) {
-				return r, fmt.Errorf("match chứa phần tử không hợp lệ")
+				return r, errors.New(loc.T("match chứa phần tử không hợp lệ"))
 			}
 			r.Match = append(r.Match, asText(e))
 		}
 	case map[string]any:
-		return r, fmt.Errorf("match phải là chuỗi hoặc danh sách")
+		return r, errors.New(loc.T("match phải là chuỗi hoặc danh sách"))
 	default:
 		r.Match = append(r.Match, asText(mv))
 	}
-	if r.Level, err = scalarString(m["level"], "level"); err != nil {
+	if r.Level, err = scalarString(loc, m["level"], "level"); err != nil {
 		return r, err
 	}
-	if r.Note, err = scalarString(m["note"], "note"); err != nil {
+	if r.Note, err = scalarString(loc, m["note"], "note"); err != nil {
 		return r, err
 	}
-	if r.Describe, err = scalarString(m["describe"], "describe"); err != nil {
+	if r.Describe, err = scalarString(loc, m["describe"], "describe"); err != nil {
 		return r, err
 	}
 	switch e := m["enabled"].(type) {
@@ -561,20 +575,20 @@ func bindRule(m map[string]any, schema int) (RiskRule, error) {
 		case "false":
 			r.Enabled = false
 		default:
-			return r, fmt.Errorf("enabled '%s' không phải true/false", e)
+			return r, fmt.Errorf(loc.T("enabled '%s' không phải true/false"), e)
 		}
 	default:
-		return r, fmt.Errorf("enabled '%s' không phải true/false", asText(e))
+		return r, fmt.Errorf(loc.T("enabled '%s' không phải true/false"), asText(e))
 	}
 	return r, nil
 }
 
-func bindRequirement(m map[string]any) (Requirement, error) {
+func bindRequirement(loc i18n.Locale, m map[string]any) (Requirement, error) {
 	params := map[string]any{}
 	id := ""
 	for k, v := range m {
 		if k == "id" {
-			s, err := scalarString(v, "requirement.id")
+			s, err := scalarString(loc, v, "requirement.id")
 			if err != nil {
 				return Requirement{}, err
 			}
@@ -601,53 +615,53 @@ func contains(l []string, s string) bool {
 	return false
 }
 
-func (p RiskPolicy) validate(errs *[]string) {
+func (p RiskPolicy) validate(loc i18n.Locale, errs *[]string) {
 	add := func(s string) { *errs = append(*errs, s) }
 	if p.Schema != 1 && p.Schema != 2 {
-		add("schema " + strconv.Itoa(p.Schema) + " không được hỗ trợ (chỉ có 1 và 2)")
+		add(loc.Tf("schema %d không được hỗ trợ (chỉ có 1 và 2)", p.Schema))
 	}
 	if len(p.Levels) < 2 || len(p.Levels) > 5 {
-		add("Thang mức phải có 2 đến 5 mức, hiện có " + strconv.Itoa(len(p.Levels)))
+		add(loc.Tf("Thang mức phải có 2 đến 5 mức, hiện có %d", len(p.Levels)))
 	}
 	uniq := map[string]bool{}
 	for _, l := range p.Levels {
 		uniq[l] = true
 	}
 	if len(uniq) != len(p.Levels) {
-		add("Thang mức có tên trùng nhau")
+		add(loc.T("Thang mức có tên trùng nhau"))
 	}
 	if p.DefaultLevel == "" || !contains(p.Levels, p.DefaultLevel) {
 		d := p.DefaultLevel
 		if d == "" {
 			d = "null"
 		}
-		add("Mức mặc định '" + d + "' không có trong thang " + listText(p.Levels))
+		add(loc.Tf("Mức mặc định '%s' không có trong thang %s", d, listText(p.Levels)))
 	}
 	seen := map[string]bool{}
 	for i, r := range p.Rules {
 		id := r.ID
 		if strings.TrimSpace(id) == "" {
 			id = "rule #" + strconv.Itoa(i+1)
-			add(id + ": thiếu id")
+			add(loc.Tf("%s: thiếu id", id))
 		} else if seen[r.ID] {
-			add(id + ": id bị trùng")
+			add(loc.Tf("%s: id bị trùng", id))
 		} else {
 			seen[r.ID] = true
 		}
 		if p.Schema == 2 {
 			if strings.TrimSpace(r.Describe) == "" {
-				add(id + ": describe không được rỗng")
+				add(loc.Tf("%s: describe không được rỗng", id))
 			}
 		} else {
 			if r.Kind == "" {
-				add(id + ": thiếu kind")
+				add(loc.Tf("%s: thiếu kind", id))
 			}
 			if len(r.Match) == 0 {
-				add(id + ": match không được rỗng")
+				add(loc.Tf("%s: match không được rỗng", id))
 			} else {
 				for _, m := range r.Match {
 					if strings.TrimSpace(m) == "" {
-						add(id + ": match có phần tử rỗng")
+						add(loc.Tf("%s: match có phần tử rỗng", id))
 						break
 					}
 				}
@@ -658,7 +672,7 @@ func (p RiskPolicy) validate(errs *[]string) {
 			if l == "" {
 				l = "null"
 			}
-			add(id + ": mức '" + l + "' không có trong thang " + listText(p.Levels))
+			add(loc.Tf("%s: mức '%s' không có trong thang %s", id, l, listText(p.Levels)))
 		}
 		if r.Kind == MatchKeyword {
 			for _, m := range r.Match {
@@ -666,40 +680,40 @@ func (p RiskPolicy) validate(errs *[]string) {
 					continue
 				}
 				if _, err := regexp.Compile("(?i)" + m); err != nil {
-					add(id + ": regex không hợp lệ '" + m + "': " + err.Error())
+					add(loc.Tf("%s: regex không hợp lệ '%s': %s", id, m, err.Error()))
 				}
 			}
 		}
 	}
 	for _, level := range sortedKeys(p.Requirements) {
 		if !contains(p.Levels, level) {
-			add("requirements: mức '" + level + "' không có trong thang " + listText(p.Levels))
+			add(loc.Tf("requirements: mức '%s' không có trong thang %s", level, listText(p.Levels)))
 		}
 		for _, q := range p.Requirements[level] {
-			validateRequirement(level, q, errs)
+			validateRequirement(loc, level, q, errs)
 		}
 	}
 	for _, level := range sortedKeys(p.Flow) {
 		if !contains(p.Levels, level) {
-			add("flow: mức '" + level + "' không có trong thang " + listText(p.Levels))
+			add(loc.Tf("flow: mức '%s' không có trong thang %s", level, listText(p.Levels)))
 		}
 	}
 }
 
-func validateRequirement(level string, q Requirement, errs *[]string) {
+func validateRequirement(loc i18n.Locale, level string, q Requirement, errs *[]string) {
 	id := q.ID
 	if id == "" {
 		id = "null"
 	}
 	where := "requirements." + level + "." + id
 	if !RequirementKnown(q.ID) {
-		*errs = append(*errs, where+": yêu cầu '"+id+"' không có trong thư viện")
+		*errs = append(*errs, loc.Tf("%s: yêu cầu '%s' không có trong thư viện", where, id))
 		return
 	}
 	for _, name := range RequirementRequiredParams(q.ID) {
 		s, ok := q.StrParam(name)
 		if !ok || strings.TrimSpace(s) == "" {
-			*errs = append(*errs, where+": thiếu tham số '"+name+"'")
+			*errs = append(*errs, loc.Tf("%s: thiếu tham số '%s'", where, name))
 		}
 	}
 	if q.ID == ReqSQLZero {
@@ -707,7 +721,7 @@ func validateRequirement(level string, q Requirement, errs *[]string) {
 			body := strings.TrimSpace(sql)
 			body = strings.TrimSuffix(body, ";")
 			if !readOnlySQL.MatchString(sql) || strings.Contains(body, ";") {
-				*errs = append(*errs, where+": sql chỉ được là một câu SELECT hoặc WITH")
+				*errs = append(*errs, loc.Tf("%s: sql chỉ được là một câu SELECT hoặc WITH", where))
 			}
 		}
 	}

@@ -18,7 +18,7 @@ import (
 
 // Schema cuối của Java V1..V6 (viết tay).
 var want = map[string]string{
-	"users":                "id login display_name email created_at role",
+	"users":                "id login display_name email created_at role locale",
 	"repos":                "id last_seen_at",
 	"features":             "repo_id feature_key snapshot captured_at client_id clock_skew first_sender_login last_sender_login synced_at risk_level risk_policy_version",
 	"events":               "id repo_id feature_key type at step path out_of_scope sender_login detail received_at session_id",

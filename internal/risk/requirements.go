@@ -1,10 +1,10 @@
 package risk
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/review"
 	"aisdlc/internal/spec"
 )
@@ -33,7 +33,7 @@ var (
 	pathVar  = regexp.MustCompile(`\{[^}/]*\}`)
 )
 
-const noBRD = "không có BRD"
+func noBRD() string { return i18n.T("không có BRD") }
 
 // CheckRequirements kiểm các yêu cầu trong risk.yaml với cases.yaml (và BRD, design khi có) ở cổng Case.
 // design, brd, designDoc là nil ở luồng lite (con trỏ vì "không có" khác "rỗng": BRD nil cho LATER).
@@ -58,9 +58,9 @@ func CheckRequirements(risk RiskFile, cases spec.CasesSpec, design *spec.DesignS
 		case ReqInvariant:
 			s = invariant(r, name, design, cases)
 		case ReqCoverage:
-			s = RequirementStatus{r.ID, name, RequirementLater, "kiểm ở Review"}
+			s = RequirementStatus{r.ID, name, RequirementLater, i18n.T("kiểm ở Review")}
 		default:
-			s = RequirementStatus{r.ID, name, RequirementLater, "harness chạy sau mọi case"}
+			s = RequirementStatus{r.ID, name, RequirementLater, i18n.T("harness chạy sau mọi case")}
 		}
 		out = append(out, s)
 	}
@@ -72,7 +72,7 @@ func RequirementFindings(risk RiskFile, st []RequirementStatus) []spec.Finding {
 	out := []spec.Finding{}
 	for _, s := range st {
 		if s.Status == RequirementMissing {
-			out = append(out, spec.Finding{Code: "RISK_REQ", Message: "Mức " + risk.Level + " yêu cầu " + s.Name + ": " + s.Detail})
+			out = append(out, spec.Finding{Code: "RISK_REQ", Message: i18n.Tf("Mức %s yêu cầu %s: %s", risk.Level, s.Name, s.Detail)})
 		}
 	}
 	return out
@@ -105,7 +105,7 @@ func covers(cs []spec.CaseSpec, rule string, kinds ...spec.CaseKind) bool {
 
 func rulePosNeg(r Requirement, name string, cs []spec.CaseSpec, brd *review.BrdDoc) RequirementStatus {
 	if brd == nil {
-		return RequirementStatus{r.ID, name, RequirementLater, noBRD}
+		return RequirementStatus{r.ID, name, RequirementLater, noBRD()}
 	}
 	var noPos, noNeg []string
 	for _, rule := range brd.Rules {
@@ -121,10 +121,10 @@ func rulePosNeg(r Requirement, name string, cs []spec.CaseSpec, brd *review.BrdD
 	}
 	var parts []string
 	if len(noPos) > 0 {
-		parts = append(parts, "thiếu case đúng cho "+strings.Join(noPos, ", "))
+		parts = append(parts, i18n.Tf("thiếu case đúng cho %s", strings.Join(noPos, ", ")))
 	}
 	if len(noNeg) > 0 {
-		parts = append(parts, "thiếu case sai hoặc biên cho "+strings.Join(noNeg, ", "))
+		parts = append(parts, i18n.Tf("thiếu case sai hoặc biên cho %s", strings.Join(noNeg, ", ")))
 	}
 	if len(parts) == 0 {
 		return RequirementStatus{r.ID, name, RequirementOK, ""}
@@ -134,7 +134,7 @@ func rulePosNeg(r Requirement, name string, cs []spec.CaseSpec, brd *review.BrdD
 
 func boundary(r Requirement, name string, cs []spec.CaseSpec, brd *review.BrdDoc) RequirementStatus {
 	if brd == nil {
-		return RequirementStatus{r.ID, name, RequirementLater, noBRD}
+		return RequirementStatus{r.ID, name, RequirementLater, noBRD()}
 	}
 	min := r.IntParam("min", 1)
 	var missing []string
@@ -164,7 +164,7 @@ func boundary(r Requirement, name string, cs []spec.CaseSpec, brd *review.BrdDoc
 			}
 		}
 	}
-	return statusOf(r, name, missing, fmt.Sprintf("rule gắn [biên] thiếu case biên (cần %d): ", min))
+	return statusOf(r, name, missing, i18n.Tf("rule gắn [biên] thiếu case biên (cần %d): ", min))
 }
 
 func idempotent(r Requirement, name string, cs []spec.CaseSpec, doc *review.DesignDoc) RequirementStatus {
@@ -188,7 +188,7 @@ func idempotent(r Requirement, name string, cs []spec.CaseSpec, doc *review.Desi
 	}
 	if len(endpoints) == 0 {
 		if len(repeats) == 0 {
-			return RequirementStatus{r.ID, name, RequirementMissing, "chưa có case nào gửi trùng (when.repeat >= 2)"}
+			return RequirementStatus{r.ID, name, RequirementMissing, i18n.T("chưa có case nào gửi trùng (when.repeat >= 2)")}
 		}
 		return RequirementStatus{r.ID, name, RequirementOK, ""}
 	}
@@ -206,7 +206,7 @@ func idempotent(r Requirement, name string, cs []spec.CaseSpec, doc *review.Desi
 			missing = append(missing, e[0]+" "+e[1])
 		}
 	}
-	return statusOf(r, name, missing, "endpoint ghi chưa có case gửi trùng (when.repeat >= 2): ")
+	return statusOf(r, name, missing, i18n.T("endpoint ghi chưa có case gửi trùng (when.repeat >= 2): "))
 }
 
 func stripQuery(path string) string {
@@ -237,7 +237,7 @@ func concurrent(r Requirement, name string, cs []spec.CaseSpec) RequirementStatu
 			return RequirementStatus{r.ID, name, RequirementOK, ""}
 		}
 	}
-	return RequirementStatus{r.ID, name, RequirementMissing, fmt.Sprintf("chưa có case nào có when.parallel >= %d", threads)}
+	return RequirementStatus{r.ID, name, RequirementMissing, i18n.Tf("chưa có case nào có when.parallel >= %d", threads)}
 }
 
 // invariant: FULL đếm bất biến trong design.yaml; LITE (không có design.yaml) đếm trong cases.yaml.
@@ -250,5 +250,5 @@ func invariant(r Requirement, name string, design *spec.DesignSpec, cases spec.C
 	if n >= min {
 		return RequirementStatus{r.ID, name, RequirementOK, ""}
 	}
-	return RequirementStatus{r.ID, name, RequirementMissing, fmt.Sprintf("%s có %d/%d invariants", file, n, min)}
+	return RequirementStatus{r.ID, name, RequirementMissing, i18n.Tf("%s có %d/%d invariants", file, n, min)}
 }

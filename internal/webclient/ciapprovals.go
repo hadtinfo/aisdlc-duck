@@ -10,6 +10,7 @@ import (
 
 	"aisdlc/internal/eval"
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -49,7 +50,7 @@ func (h *HTTPCIApprovals) Approvals(ctx context.Context, key model.FeatureKey, _
 		repo = h.Repo(ctx)
 	}
 	if repo == "" {
-		return eval.CIApprovals{}, errors.New("không xác định được repo")
+		return eval.CIApprovals{}, errors.New(i18n.T("không xác định được repo"))
 	}
 	timeout := h.Timeout
 	if timeout <= 0 {
@@ -68,7 +69,7 @@ func (h *HTTPCIApprovals) Approvals(ctx context.Context, key model.FeatureKey, _
 	}
 	out, err := parseCIApprovals(r.Body)
 	if err != nil {
-		return eval.CIApprovals{}, errors.New("phản hồi web không đọc được")
+		return eval.CIApprovals{}, errors.New(i18n.T("phản hồi web không đọc được"))
 	}
 	return out, nil
 }

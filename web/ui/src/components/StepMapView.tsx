@@ -1,4 +1,5 @@
 import { middleEllipsis, type MapNode, type StepMap } from "../reviewModel";
+import { useT } from "../i18n";
 
 const curve = (x1: number, y1: number, x2: number, y2: number) => {
   const mx = (x1 + x2) / 2;
@@ -12,6 +13,7 @@ const fit = (w: number, px: number) => Math.max(4, Math.floor((w - 28) / px));
 
 /** Bản đồ bước → vùng code, vẽ nguyên văn `stepMap`; cạnh tỏa đều theo chiều cao của nút hai đầu. */
 export function StepMapView({ map }: { map: StepMap }) {
+  const { t } = useT();
   const byId = new Map(map.nodes.map((n) => [n.id, n]));
   const outs = new Map<string, number>(), ins = new Map<string, number>();
   for (const e of map.edges) {
@@ -38,7 +40,7 @@ export function StepMapView({ map }: { map: StepMap }) {
   const aria = map.nodes.filter((n) => n.tone === "step").map((n) => n.full).join("; ");
   return (
     <div className="diagram">
-      <svg viewBox={`0 0 ${map.width} ${map.height}`} role="img" aria-label={`Bản đồ bước → vùng code: ${aria}`}>
+      <svg viewBox={`0 0 ${map.width} ${map.height}`} role="img" aria-label={t("stepmap.aria", { steps: aria })}>
         {edges.map((e, i) => (
           <path key={i} className={edgeClass(e.tone)} d={e.d}>{e.title && <title>{e.title}</title>}</path>
         ))}

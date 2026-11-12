@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -94,4 +96,37 @@ func TestInitWithoutLocaleKeyUsesVietnamese(t *testing.T) {
 	r.write("aisdlc/config.yaml", cfg)
 	eq(t, r.run("init", "PAY-1"), 0)
 	eq(t, r.read("aisdlc/features/PAY-1/brd.md"), mustTemplate(t, i18n.VI, "brd.md"))
+}
+
+func TestSetupWithoutFlagFollowsRepoLocale(t *testing.T) {
+	restoreLocale(t)
+	r := setupRepo(t)
+	eq(t, r.run("setup", "--locale", "en"), 0)
+	must(t, os.Remove(filepath.Join(r.root, "CLAUDE.md")))
+	eq(t, r.run("setup"), 0)
+	contains(t, r.read("CLAUDE.md"), "Feature documents live in")
+}
+
+func TestSetupLocaleFlagDiffersFromConfigWarns(t *testing.T) {
+	restoreLocale(t)
+	r := setupRepo(t)
+	eq(t, r.run("setup", "--locale", "en"), 0)
+	must(t, os.Remove(filepath.Join(r.root, "CLAUDE.md")))
+	eq(t, r.run("setup", "--locale", "vi"), 0)
+	contains(t, r.out, "Warning: aisdlc/config.yaml keeps its existing locale en; newly created files follow --locale vi.")
+	contains(t, r.read("aisdlc/config.yaml"), "locale: en")
+	eq(t, r.read("CLAUDE.md"), mustTemplate(t, i18n.VI, "CLAUDE.aisdlc.md"))
+}
+
+func TestSetupApprovalsWebLineIsEnglishInEnglishConfig(t *testing.T) {
+	restoreLocale(t)
+	r := setupRepo(t)
+	eq(t, r.run("setup", "--locale", "en", "--approvals", "web"), 0)
+	cfg := r.read("aisdlc/config.yaml")
+	contains(t, cfg, "approvals: web")
+	for _, c := range cfg {
+		if c > 0x7f {
+			t.Fatalf("config.yaml tiếng Anh có ký tự không ASCII %q:\n%s", c, cfg)
+		}
+	}
 }

@@ -32,3 +32,13 @@ func repoLocale(ctx *Context) (i18n.Locale, error) {
 	}
 	return i18n.FromEnv(ctx.Env), nil
 }
+
+// hasRepoConfig cho biết repo chứa thư mục hiện tại đã có aisdlc/config.yaml chưa.
+func hasRepoConfig(ctx *Context) bool {
+	root, ok := FindRepo(ctx.cwd)
+	if !ok {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(root, "aisdlc", "config.yaml"))
+	return err == nil
+}

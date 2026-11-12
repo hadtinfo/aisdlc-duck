@@ -59,12 +59,16 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool, localeFlag
 	if approvalsSet && approvals != "web" && approvals != "local" {
 		return 0, abort(2, "--approvals chỉ nhận web hoặc local, không phải '"+approvals+"'.")
 	}
-	// Thứ tự chọn locale: --locale, rồi AISDLC_LOCALE (sai thì bỏ qua), rồi vi.
-	loc := i18n.FromEnv(ctx.Env)
+	// Thứ tự chọn locale: --locale, rồi locale mặc định của lần chạy (runWith đã lấy từ config của repo, hoặc từ
+	// AISDLC_LOCALE / vi khi chưa có config).
+	loc := i18n.Default()
 	if localeSet {
 		l, err := i18n.Parse(localeFlag)
 		if err != nil {
 			return 0, abort(2, err.Error())
+		}
+		if old, err := repoLocale(ctx); err == nil && old != l && hasRepoConfig(ctx) {
+			ctx.Println(i18n.Tf("Cảnh báo: aisdlc/config.yaml giữ locale %s hiện có; file mới tạo theo --locale %s.", old, l))
 		}
 		loc = l
 	}
@@ -85,7 +89,7 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool, localeFlag
 	}
 	cfg, hints := detectService(root, cfg)
 	if web {
-		cfg += "# Duyệt cổng trên web (docs/user-guide.md mục 6.3); bỏ dòng này để duyệt local (gates.json).\napprovals: web\n"
+		cfg += loc.T("# Duyệt cổng trên web (docs/user-guide.md mục 6.3); bỏ dòng này để duyệt local (gates.json).\napprovals: web\n")
 	}
 	newConfig, err := createFile(ctx, root, "aisdlc/config.yaml", cfg)
 	if err != nil {

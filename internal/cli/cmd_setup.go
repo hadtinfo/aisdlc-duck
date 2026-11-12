@@ -142,9 +142,9 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool, localeFlag
 
 	if newGit {
 		ctx.Println("")
-		ctx.Println("Đã tạo git repo (nhánh main, chưa commit, chưa có remote).")
-		ctx.Println("  Khi có repo trên GitLab/GitHub: git remote add origin <url> && git push -u origin main" +
-			" (baseRef trong aisdlc/config.yaml mặc định là origin/main).")
+		ctx.Println(i18n.T("Đã tạo git repo (nhánh main, chưa commit, chưa có remote)."))
+		ctx.Println(i18n.T("  Khi có repo trên GitLab/GitHub: git remote add origin <url> && git push -u origin main" +
+			" (baseRef trong aisdlc/config.yaml mặc định là origin/main)."))
 	}
 
 	ctx.Println("")

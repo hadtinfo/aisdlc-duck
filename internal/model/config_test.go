@@ -167,7 +167,7 @@ func TestConfigSyntaxError(t *testing.T) {
 }
 
 func TestTemplateConfigParses(t *testing.T) {
-	data, err := templates.FS.ReadFile("config.yaml")
+	data, err := templates.FS.ReadFile("vi/config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

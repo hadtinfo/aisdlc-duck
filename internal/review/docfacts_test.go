@@ -143,7 +143,7 @@ func TestCaseSpecRulesOptional(t *testing.T) {
 
 func TestTemplatesHaveAssumptionsAndRuleIds(t *testing.T) {
 	read := func(n string) string {
-		b, err := os.ReadFile(filepath.Join("..", "..", "templates", n))
+		b, err := os.ReadFile(filepath.Join("..", "..", "templates", "vi", n))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,0 +1,68 @@
+# AISDLC configuration for this repo.
+# Language of generated documents and CLI messages: vi or en.
+locale: en
+# Language adapter; the first release only has "go".
+language: go
+# After this many minutes, stop build + test + cases (and the commands in checks) and treat it as a failure.
+timeoutMinutes: 30
+service:
+  # Main package to build.
+  main: ./cmd/server
+  # Extra go build flags, e.g. ["-tags=prod"].
+  buildFlags: []
+  # Health check endpoint that returns 2xx once the service is ready.
+  healthPath: /healthz
+  startTimeoutSeconds: 60
+  # After SIGTERM wait this many seconds, then SIGKILL (and coverage is N/A).
+  shutdownTimeoutSeconds: 15
+  # Names of the environment variables the service reads; the harness fills in the values.
+  env:
+    port: PORT
+    # Leave empty if the service does not use a DB.
+    databaseUrl: DATABASE_URL
+    # Uncomment the line below if the service uses Kafka: the Kafka container only starts when this key has a value.
+    # kafkaBrokers: KAFKA_BROKERS
+    # Variables that point to external systems; the harness fills in the stub server URL.
+    externalBaseUrls: []
+  # Fixed values added to the service environment.
+  extraEnv: {}
+  postgres: { image: "postgres:16-alpine" }
+  # Kafka starts when env.kafkaBrokers has a value.
+  kafka: { image: "apache/kafka:3.8.0", topics: [] }
+migrations:
+  # Main migration folder.
+  dir: db/migrations
+  # The first release only has goose.
+  tool: goose
+unitTest:
+  packages: ["./..."]
+  flags: []
+# Paths that may always be edited in every step (glob, relative to the repo root).
+alwaysAllowed: []
+# Paths that do not count toward scope and budget.
+unmanaged: ["*.md", "docs/**"]
+budgetWarnFactor: 1.5
+coverageWarn: 0.80
+# Lint/static analysis/security scans the repo already uses, e.g.:
+# checks:
+#   - { name: vet, cmd: "go vet ./..." }
+#   - { name: staticcheck, cmd: "staticcheck ./..." }
+#   - { name: govulncheck, cmd: "govulncheck ./..." }
+checks: []
+baseRef: origin/main
+# Allow approving gates inside Claude Code; only effective once merged into baseRef by a separate MR.
+# sessionApprove: true
+# CI: a code change that belongs to no AISDLC feature makes eval --ci fail.
+ciRequireFeature: true
+# Thresholds of the review card (the quick-look card before approving a gate); omit this block to use the values below.
+review:
+  # A step that matches more existing files than this gets a "scope too broad" warning.
+  scopeMaxFiles: 30
+  # A step budget above this many files or lines gets a warning.
+  budgetMaxFiles: 10
+  budgetMaxLines: 400
+  # Existing migration folders; a step scope should not match files in here.
+  # If not set, migrations.dir is used.
+  # migrationDirs: ["db/migrations"]
+  # Money/limit field names used to check case numbers against the BRD.
+  valueFields: [amount, limit, balance, fee, rate, max, min]

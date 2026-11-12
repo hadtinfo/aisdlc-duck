@@ -15,7 +15,7 @@ import (
 // tmplFile ghi template nhúng ra file tạm và trả đường dẫn.
 func tmplFile(t *testing.T, name string) string {
 	t.Helper()
-	data, err := templates.FS.ReadFile(name)
+	data, err := templates.FS.ReadFile("vi/" + name)
 	if err != nil {
 		t.Fatal(err)
 	}

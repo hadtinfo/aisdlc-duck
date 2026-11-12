@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 	"aisdlc/templates"
 )
@@ -21,17 +22,17 @@ const claudeMarker = "<!-- aisdlc -->"
 // migrationCandidates là các thư mục migration thường gặp, theo thứ tự ưu tiên khi dò.
 var migrationCandidates = []string{"db/migrations", "migrations", "db/migration", "sql/migrations"}
 
-// template đọc template nhúng.
-func template(name string) (string, error) {
-	b, err := templates.FS.ReadFile(name)
+// template đọc template nhúng của locale l.
+func template(l i18n.Locale, name string) (string, error) {
+	s, err := templates.Read(l, name)
 	if err != nil {
 		return "", abort(2, "Thiếu template "+name)
 	}
-	return string(b), nil
+	return s, nil
 }
 
 func newSetupCmd(ctx *Context) *cobra.Command {
-	var preset, approvals string
+	var preset, approvals, locale string
 	c := &cobra.Command{
 		Use:   "setup",
 		Short: "Cài AISDLC vào repo dịch vụ (chạy ở gốc repo; chạy lại không đổi gì).",
@@ -42,13 +43,15 @@ func newSetupCmd(ctx *Context) *cobra.Command {
 	c.Flags().StringVar(&approvals, "approvals", "",
 		"Nơi duyệt cổng ghi vào aisdlc/config.yaml: web hoặc local. Mặc định web nếu máy đã"+
 			" `aisdlc web login`, ngược lại local.")
+	c.Flags().StringVar(&locale, "locale", "",
+		"Ngôn ngữ của template và tài liệu: vi hoặc en. Mặc định lấy AISDLC_LOCALE, không có thì vi.")
 	c.RunE = Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
-		return setup(ctx, preset, approvals, cmd.Flags().Changed("approvals"))
+		return setup(ctx, preset, approvals, cmd.Flags().Changed("approvals"), locale, cmd.Flags().Changed("locale"))
 	})
 	return c
 }
 
-func setup(ctx *Context, preset, approvals string, approvalsSet bool) (int, error) {
+func setup(ctx *Context, preset, approvals string, approvalsSet bool, localeFlag string, localeSet bool) (int, error) {
 	if !slices.Contains(risk.PresetNames(), preset) {
 		return 0, abort(2, "Không có mẫu chính sách '"+preset+"'; các mẫu có sẵn: "+
 			strings.Join(risk.PresetNames(), ", ")+".")
@@ -56,6 +59,16 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool) (int, erro
 	if approvalsSet && approvals != "web" && approvals != "local" {
 		return 0, abort(2, "--approvals chỉ nhận web hoặc local, không phải '"+approvals+"'.")
 	}
+	// Thứ tự chọn locale: --locale, rồi AISDLC_LOCALE (sai thì bỏ qua), rồi vi.
+	loc := i18n.FromEnv(ctx.Env)
+	if localeSet {
+		l, err := i18n.Parse(localeFlag)
+		if err != nil {
+			return 0, abort(2, err.Error())
+		}
+		loc = l
+	}
+	i18n.SetDefault(loc)
 	_, loggedIn := LoadWebConfig(ctx)
 	web := loggedIn
 	if approvalsSet {
@@ -66,7 +79,7 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool) (int, erro
 		root = ctx.cwd
 	}
 
-	cfg, err := template("config.yaml")
+	cfg, err := template(loc, "config.yaml")
 	if err != nil {
 		return 0, err
 	}
@@ -78,7 +91,7 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool) (int, erro
 	if err != nil {
 		return 0, err
 	}
-	ci, err := template("gitlab-ci.aisdlc.yml")
+	ci, err := template(loc, "gitlab-ci.aisdlc.yml")
 	if err != nil {
 		return 0, err
 	}
@@ -93,7 +106,7 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool) (int, erro
 		return 0, err
 	}
 
-	if err := appendClaudeMd(ctx, root); err != nil {
+	if err := appendClaudeMd(ctx, root, loc); err != nil {
 		return 0, err
 	}
 	if err := appendGitignore(ctx, root); err != nil {
@@ -175,7 +188,7 @@ func readOptional(path string) (string, error) {
 	return string(b), err
 }
 
-func appendClaudeMd(ctx *Context, root string) error {
+func appendClaudeMd(ctx *Context, root string, loc i18n.Locale) error {
 	f := filepath.Join(root, "CLAUDE.md")
 	existing, err := readOptional(f)
 	if err != nil {
@@ -185,7 +198,7 @@ func appendClaudeMd(ctx *Context, root string) error {
 		ctx.Println("Giữ nguyên CLAUDE.md (đã có mục AISDLC).")
 		return nil
 	}
-	tpl, err := template("CLAUDE.aisdlc.md")
+	tpl, err := template(loc, "CLAUDE.aisdlc.md")
 	if err != nil {
 		return err
 	}

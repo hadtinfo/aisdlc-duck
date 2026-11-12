@@ -74,8 +74,16 @@ This adds a `Signed-off-by: Your Name <you@example.com>` line. To fix earlier co
 
 ## Language
 
-Documentation, issues and PRs are in English. The CLI messages, slash-command prompts and web UI are currently in
-Vietnamese; if you change them, keep the existing language. A proposal for English localisation is welcome as an issue.
+Documentation, issues and PRs are in English. AISDLC itself runs in English or Vietnamese (see section 2.3 of the
+[user guide](docs/user-guide.md)):
+
+- Go: user-facing strings are written in Vietnamese inside `i18n.T` / `i18n.Tf` (web server: the request's
+  `Locale`), and the English text goes in the catalog `internal/i18n/en*.go`. The catalog tests fail on a missing or
+  unused entry and on Vietnamese literals outside `T`/`Tf`.
+- Web UI: add each key to both `web/ui/src/i18n/vi.ts` and `en.ts` (`tsc` fails on a missing key).
+- Templates: change `templates/vi/` and `templates/en/` together.
+- Slash-command prompts and subagents (`plugin/`) are written in English and tell the agent to follow the repo's
+  `Locale:` line from `aisdlc status`.
 
 ## Code of Conduct
 

@@ -2,7 +2,9 @@
 
 > Tiếng Việt: [huong-dan-su-dung.md](huong-dan-su-dung.md).
 
-Updated: 2026-11-11
+Updated: 2026-11-12
+
+AISDLC runs in English or Vietnamese, chosen per repo (section 2.3). The CLI output quoted in this guide comes from a Vietnamese (`vi`, the default) repo, with an English gloss in parentheses; in an `en` repo the same messages are printed in English.
 
 ## 1. What AISDLC is
 
@@ -105,7 +107,7 @@ The command creates `aisdlc/config.yaml`, `aisdlc/risk-policy.yaml`, `aisdlc/git
 
 Approval mode: defaults to `web` if the machine running `setup` has done `aisdlc web login` (section 6), otherwise `local`. Set it explicitly with `--approvals web` or `--approvals local`. If `config.yaml` already exists, setup does not change the mode.
 
-Main keys of `aisdlc/config.yaml` (full annotated template: `templates/config.yaml`):
+Main keys of `aisdlc/config.yaml` (full annotated template: `templates/en/config.yaml`; Vietnamese: `templates/vi/`):
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -138,6 +140,27 @@ Then verify that the service meets the harness contract:
 5. Build and `go test` on `unitTest.packages` must run cleanly from the repo root.
 
 Merge the setup MR first, then enable CI in a later MR (section 5). The setup MR changes `config.yaml` without belonging to any feature, so the eval job would fail it.
+
+### 2.3. Language / Ngôn ngữ
+
+AISDLC speaks English (`en`) and Vietnamese (`vi`). The language is a property of the **repo**: a team picks one and works in it from `setup` to the Review gate. The web UI is the exception: each user picks their own language there.
+
+**Choosing the repo language.**
+
+- `locale: en` or `locale: vi` in `aisdlc/config.yaml` is the only source inside a repo. A missing (or empty) key means `vi`, so existing repos keep working unchanged. Any other value is a config error, reported by the commands that read the config; `--version` and the hooks keep working (hooks fail open).
+- `aisdlc setup --locale en|vi` writes the templates in that language, including the `locale:` line of a new `config.yaml`. Without `--locale`, setup uses the repo's locale, or `AISDLC_LOCALE` when the repo has no config yet, otherwise `vi`. If `config.yaml` already exists with another locale, setup keeps it, prints a warning and writes only the new files in the `--locale` language. To switch an existing repo, edit `locale:` yourself.
+- `AISDLC_LOCALE=en|vi` applies **only outside a repo** with `aisdlc/config.yaml` (e.g. `aisdlc web login`, or `setup` before the config exists). Inside such a repo it is ignored.
+- The first line of `aisdlc status` is always `Locale: vi` or `Locale: en`. The `/aisdlc:*` commands and the subagents read that line and write documents and reply to the dev in that language.
+
+**What follows the repo locale:** CLI messages and help, hook messages (including the block reasons the agent reads), harness and eval output (`eval/report.md`), the templates `aisdlc init` copies (BRD, design, cases), the AISDLC section of `CLAUDE.md`, risk messages, `feedback.md`, and the review card (flags and card text; a card made in an `en` repo carries `"locale": "en"`). The CLI passes the locale to `aisdlc-harness` through `AISDLC_LOCALE`.
+
+**Validators accept both languages.** BRD/design section headings (`Goal`/`Mục tiêu`, `Business rules`/`Quy tắc nghiệp vụ`, `Assumptions`/`Giả định`, `Open questions`/`Câu hỏi mở`, …), the boundary tag `[boundary]`/`[biên]` and the assumption sources (`own choice`/`tự chọn`, `inferred from BRD`/`suy ra từ BRD`, `answered open question`/`câu hỏi mở đã trả lời`, `out of scope`/`ngoài phạm vi`) are recognized in either language; a "missing section" message uses the repo's headings. Changing the locale in the middle of a feature is allowed: existing files are not converted and keep validating. Codes (error codes, flag codes, gate names, JSON/YAML keys, verdict labels such as `DAT`/`CAN_SUA`/`NGHIEM_TRONG`) are never translated. The rule descriptions in the built-in risk policy presets are in Vietnamese; the risk subagent reads them in either language, and you may rewrite them in English in your `aisdlc/risk-policy.yaml`.
+
+**What follows the viewer (web).** The web UI has an EN/VI switch in the user menu and on the sign-in page. The choice is stored per user on the server (`users.locale`, set with `PUT /api/me/locale`, returned by `GET /api/me`). Before signing in, or if the user has never chosen, the UI uses the browser's saved choice, then the browser language (`en*` → English, anything else → Vietnamese). Text the server generates (inbox, API errors) follows the viewer's language. Content made by the CLI (review card, `eval/report.md`) stays in the repo's language.
+
+**CLI → web.** Every request from the CLI carries `Accept-Language: vi` or `en` from the repo locale, so web errors shown in the terminal are in the repo's language. Requests without a signed-in user's choice fall back to `Accept-Language`, then `vi`.
+
+**Text stored by the server** (e.g. import reasons, pending-action reasons) is stored in Vietnamese as before and translated when displayed, so rows stored earlier also show in the viewer's language.
 
 ## 3. Working on a feature
 
@@ -199,7 +222,7 @@ Each Claude Code session remembers its own feature: the SessionStart hook sets `
 
 **FULL** (default): BRD → Design → Cases → Code step by step → Review, as in section 3. A complete example is in section 3.4.
 
-**LITE** (`--lite`): for bug fixes or small changes that do not alter the DB or API. It skips BRD and Design, leaving three gates: CASES → code → REVIEW. `cases.yaml` declares its own `scope`, `budget` (plus `invariants` when the repo has a risk policy) and has exactly one step `S1`. Template: `templates/cases.lite.yaml`; real example: `e2e/solutions/FIX-2/cases.yaml`.
+**LITE** (`--lite`): for bug fixes or small changes that do not alter the DB or API. It skips BRD and Design, leaving three gates: CASES → code → REVIEW. `cases.yaml` declares its own `scope`, `budget` (plus `invariants` when the repo has a risk policy) and has exactly one step `S1`. Template: `templates/en/cases.lite.yaml`; real example: `e2e/solutions/FIX-2/cases.yaml`.
 
 ```bash
 # runnable
@@ -349,7 +372,7 @@ aisdlc policy show
 
 ### 3.6. Writing `cases.yaml`
 
-A case has `given` (SQL to clean and load data, stub names), `when` (one HTTP request), `then` (status, body, DB, messages). Full template: `templates/cases.full.yaml`. Real examples in the repo: `e2e/solutions/PAY-1` (FULL flow: BRD, design, `cases.yaml`, step-by-step code), `e2e/solutions/FIX-2` (LITE: `cases.yaml` and code) and `e2e/solutions/FEE-3` (BRD, design, `cases.yaml`).
+A case has `given` (SQL to clean and load data, stub names), `when` (one HTTP request), `then` (status, body, DB, messages). Full template: `templates/en/cases.full.yaml`. Real examples in the repo: `e2e/solutions/PAY-1` (FULL flow: BRD, design, `cases.yaml`, step-by-step code), `e2e/solutions/FIX-2` (LITE: `cases.yaml` and code) and `e2e/solutions/FEE-3` (BRD, design, `cases.yaml`).
 
 ```yaml
 reset_sql: ["DELETE FROM account"]
@@ -738,6 +761,6 @@ Other limitations:
 | `aisdlc web status` / `aisdlc web push` | Check the web send queue / resend |
 | `aisdlc eval [--ci --base <ref>]` | Run eval (requires Docker) |
 
-Every feature-specific command accepts `--feature <KEY>` (`-f`). `aisdlc help <command>` or `aisdlc <command> --help` prints help in Vietnamese.
+Every feature-specific command accepts `--feature <KEY>` (`-f`). `aisdlc help <command>` or `aisdlc <command> --help` prints help in the repo's language (section 2.3).
 
 Web server operations: [web-operations.md](web-operations.md).

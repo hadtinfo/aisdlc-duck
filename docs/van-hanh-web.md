@@ -27,6 +27,7 @@ Muốn chạy không qua Docker: `make build-web` (dựng UI rồi build `bin/ai
 | `AISDLC_SIGNING_KEY_FILE` | `/data/signing-key` | File khóa ký Ed25519 (PEM). Chưa có thì tự sinh (quyền 0600) |
 | `AISDLC_SIGNING_PREVIOUS_KEY_FILE` | rỗng | Khóa ký cũ khi xoay khóa: server ký xác nhận khóa mới bằng khóa cũ để CLI đã ghim tự chuyển |
 | `TZ` | `UTC` | Múi giờ chạy purge hằng ngày (mục 5) |
+| `AISDLC_LOCALE` | `vi` | Ngôn ngữ cho người vận hành (`vi` hoặc `en`): log của server, lỗi khởi động và lệnh `aisdlc-web user ...`. Không ảnh hưởng tới người dùng: mỗi request theo lựa chọn của người dùng đã đăng nhập, rồi `Accept-Language`, rồi `vi` |
 
 Hai biến `AISDLC_WEB_URL` và `AISDLC_WEB_TOKEN` là của CLI/CI, không phải của server.
 
@@ -52,6 +53,7 @@ postgres://aisdlc-db:5432/aisdlc?sslmode=require&pool_max_conns=20&pool_min_conn
 - Mật khẩu để ở `AISDLC_DB_PASSWORD` (từ secret), không viết vào URL.
 - **Migration chạy tự động** lúc khởi động (goose, nhúng trong binary), có khóa phiên Postgres (advisory lock): nhiều replica khởi động cùng lúc thì lần lượt migrate, không đua nhau. Không cần bước migrate riêng. Migration lỗi thì server không lên và log nêu tên file lỗi.
 - Lệnh `aisdlc-web user ...` cũng migrate trước khi chạy.
+- Migration `00002_user_locale.sql` thêm cột `users.locale` cho phép `NULL` (`vi` hoặc `en`; `NULL` = chưa chọn), lưu ngôn ngữ giao diện mỗi người chọn ở bộ chọn EN/VI (`PUT /api/me/locale`). User đã có giữ `NULL` và thấy giao diện theo ngôn ngữ đã chọn lần trước trên trình duyệt đó, không có thì theo ngôn ngữ trình duyệt, cho tới khi tự chọn.
 
 ## 5. Dọn dữ liệu cũ (purge)
 

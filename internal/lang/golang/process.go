@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 )
 
@@ -62,6 +63,7 @@ func (Runtime) Start(ctx context.Context, binary string, env map[string]string, 
 			return nil, err
 		}
 	}
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command -- binary là dịch vụ do harness vừa build từ repo đang eval, không phải đầu vào ngoài
 	cmd := exec.CommandContext(ctx, binary)
 	cmd.Env = os.Environ()
 	for k, v := range env {
@@ -80,7 +82,7 @@ func (Runtime) Start(ctx context.Context, binary string, env map[string]string, 
 	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
 		logf.Close()
-		return nil, fmt.Errorf("không khởi động được dịch vụ: %w", err)
+		return nil, fmt.Errorf(i18n.T("không khởi động được dịch vụ: %w"), err)
 	}
 	go func() {
 		p.err = cmd.Wait()

@@ -143,7 +143,7 @@ func TestCaseSpecRulesOptional(t *testing.T) {
 
 func TestTemplatesHaveAssumptionsAndRuleIds(t *testing.T) {
 	read := func(n string) string {
-		b, err := os.ReadFile(filepath.Join("..", "..", "templates", n))
+		b, err := os.ReadFile(filepath.Join("..", "..", "templates", "vi", n))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -165,4 +165,14 @@ func TestTemplatesHaveAssumptionsAndRuleIds(t *testing.T) {
 func TestBoundaryTag(t *testing.T) {
 	d := ParseBRD("## Quy tắc nghiệp vụ\n- BR-3: Hạn mức tối đa 500 triệu/ngày [biên]\n- BR-4: thường\n")
 	eq(t, "rules", d.Rules, []Rule{{ID: "BR-3", Text: "Hạn mức tối đa 500 triệu/ngày", Boundary: true}, {ID: "BR-4", Text: "thường"}})
+}
+
+func TestParseBRDEnglish(t *testing.T) {
+	d := ParseBRD("## Business rules\n- BR-1: Max 500M per day [boundary]\n## Assumptions\n- Amounts in VND. (own choice)\n")
+	if len(d.Rules) != 1 || !d.Rules[0].Boundary || d.Rules[0].ID != "BR-1" || d.Rules[0].Text != "Max 500M per day" {
+		t.Fatalf("rules = %+v", d.Rules)
+	}
+	if !d.AssumptionsSection || len(d.Assumptions) != 1 || d.Assumptions[0].Source != "own choice" {
+		t.Fatalf("assumptions = %+v", d.Assumptions)
+	}
 }

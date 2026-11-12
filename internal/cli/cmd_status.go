@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/step"
@@ -67,6 +68,8 @@ func (o jsonObject) MarshalJSON() ([]byte, error) {
 func status(ctx *Context, fo *FeatureOption, asJSON bool) (int, error) {
 	if asJSON {
 		ctx.WithoutBanner()
+	} else {
+		ctx.Println("Locale: " + string(i18n.Default()))
 	}
 	_, explicit, err := fo.Key()
 	if err != nil {
@@ -262,7 +265,7 @@ func printRisk(ctx *Context, f *Feature) {
 		}
 		ctx.Println(line)
 	}
-	if !f.Web.PolicyWebMode() {
+	if !policyFromWeb(f) {
 		return
 	}
 	web, ok := f.Web.Policy()

@@ -20,7 +20,7 @@ func flowPolicy(t *testing.T) RiskPolicy { return mustParse(t, flowPolicyYAML) }
 
 func TestAutoGate_allowedWhenFlowAutoAndNoFlag(t *testing.T) {
 	p := flowPolicy(t)
-	for _, g := range []gate.Gate{gate.BRD, gate.DESIGN, gate.CASES} {
+	for _, g := range []gate.Gate{gate.DESIGN, gate.CASES} {
 		if r, manual := AutoGate(p, "low", g, false); manual {
 			t.Errorf("low %s phải tự duyệt được: %s", g, r)
 		}
@@ -28,8 +28,17 @@ func TestAutoGate_allowedWhenFlowAutoAndNoFlag(t *testing.T) {
 	if _, manual := AutoGate(p, "medium", gate.CASES, false); !manual {
 		t.Error("medium cases phải duyệt tay")
 	}
-	if r, manual := AutoGate(p, "high", gate.BRD, false); !manual || r != "Mức high: cổng brd đặt duyệt tay" {
-		t.Errorf("high brd: %q %v", r, manual)
+	if r, manual := AutoGate(p, "high", gate.DESIGN, false); !manual || r != "Mức high: cổng design đặt duyệt tay" {
+		t.Errorf("high design: %q %v", r, manual)
+	}
+}
+
+// Cổng BRD luôn duyệt tay, kể cả khi chính sách cũ khai flow brd: auto.
+func TestAutoGate_brdAlwaysManual(t *testing.T) {
+	for _, level := range []string{"low", "medium", "high"} {
+		if r, manual := AutoGate(flowPolicy(t), level, gate.BRD, false); !manual || r != "Cổng BRD luôn duyệt tay" {
+			t.Errorf("%s: %q %v", level, r, manual)
+		}
 	}
 }
 
@@ -41,7 +50,7 @@ func TestAutoGate_reviewAlwaysManual(t *testing.T) {
 }
 
 func TestAutoGate_highFlagBlocks(t *testing.T) {
-	if r, manual := AutoGate(flowPolicy(t), "low", gate.BRD, true); !manual || r != "Review card có cờ đỏ mức HIGH" {
+	if r, manual := AutoGate(flowPolicy(t), "low", gate.DESIGN, true); !manual || r != "Review card có cờ đỏ mức HIGH" {
 		t.Errorf("%q %v", r, manual)
 	}
 }
@@ -54,33 +63,21 @@ func TestFlowUnit(t *testing.T) {
 	}
 }
 
-func TestBrdLevel_raisedToDefault(t *testing.T) {
+func TestLevelForGate_riskFileLevelExceptBrdAndReview(t *testing.T) {
 	p := flowPolicy(t)
-	for in, want := range map[string]string{"low": "medium", "high": "high", "medium": "medium", "": "medium", "weird": "medium"} {
-		if got := BrdLevel(p, in); got != want {
-			t.Errorf("BrdLevel(%q) = %s", in, got)
-		}
-	}
-}
-
-func TestLevelForGate_brdTakesStricterOfPreviewAndRiskFile(t *testing.T) {
-	p := flowPolicy(t)
-	lowDefault := mustParse(t, "schema: 1\nlevels: [low, medium, high]\ndefault: low\n")
 	checks := []struct {
-		p                  RiskPolicy
-		g                  gate.Gate
-		preview, risk, out string
+		g         gate.Gate
+		risk, out string
 	}{
-		{lowDefault, gate.BRD, "low", "", "low"},
-		{lowDefault, gate.BRD, "low", "high", "high"},
-		{lowDefault, gate.BRD, "high", "low", "high"},
-		{p, gate.BRD, "low", "low", "medium"},
-		{p, gate.DESIGN, "high", "low", "low"},
-		{p, gate.DESIGN, "low", "", ""},
-		{p, gate.REVIEW, "low", "low", ""},
+		{gate.BRD, "low", ""},
+		{gate.BRD, "", ""},
+		{gate.DESIGN, "low", "low"},
+		{gate.CASES, "high", "high"},
+		{gate.DESIGN, "", ""},
+		{gate.REVIEW, "low", ""},
 	}
 	for i, c := range checks {
-		if got := LevelForGate(c.p, c.g, c.preview, c.risk); got != c.out {
+		if got := LevelForGate(p, c.g, c.risk); got != c.out {
 			t.Errorf("#%d: %q, want %q", i, got, c.out)
 		}
 	}

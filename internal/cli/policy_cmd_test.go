@@ -14,19 +14,18 @@ func policyRepo(t *testing.T) *testRepo {
 	return r
 }
 
-func TestShowListsLabels(t *testing.T) {
+func TestShowListsDescribedRules(t *testing.T) {
 	r := policyRepo(t)
 	r.ok(noConsole(), "setup")
 	r.ok(noConsole(), "policy", "show")
-	contains(t, r.out, "low < medium < high", "money-movement", "schema-change", "auth", "external-api", "G1",
-		"idempotent", "(file)")
-	contains(t, r.out, "Chính sách v0 (file) — mẫu generic v2\n",
+	contains(t, r.out, "Chính sách v0 (file) — mẫu generic v3\n",
 		"Thang mức: low < medium < high (mặc định: low)\n",
-		"Phân loại: agent=raise, devLower=reason\n",
-		"Rule:\n  G1   label    money-movement → high — Có dòng tiền hoặc giá trị đi qua\n",
-		"Nhãn cho impact.labels (rule label): money-movement, schema-change, auth, external-api\n",
+		"Phân loại: devLower=reason\n",
+		"Rule:\n  G1   high   Có dòng tiền hoặc giá trị đi qua (chuyển tiền, thanh toán, hoàn tiền, trừ hoặc cộng số dư)\n",
+		"  G2   medium Đổi cấu trúc dữ liệu",
 		"Yêu cầu theo mức:\n  low: (không có)\n",
 		"  high: rule-pos-neg, boundary, idempotent, concurrent threads=8, invariant, coverage min=90\n")
+	notContains(t, r.out, "agent=", "Nhãn cho impact.labels")
 }
 
 func TestPullWithoutWebExit2(t *testing.T) {
@@ -39,13 +38,13 @@ func TestPullWithoutWebExit2(t *testing.T) {
 func TestDiffPresetPrintsChanges(t *testing.T) {
 	r := policyRepo(t)
 	r.ok(noConsole(), "setup")
-	// Java so với banking v3 chỉ có trong test resources; bản Go so v1 với bản mới nhất thật (v2: thêm flow)
+	// Java so với banking v3 chỉ có trong test resources; bản Go so v1 với bản mới nhất thật (v3: schema 2, thêm flow)
 	y, err := risk.PresetYAML("banking", "1")
 	must(t, err)
 	r.write(policyFile, y)
 	r.ok(noConsole(), "policy", "diff-preset")
-	contains(t, r.out, "Mẫu banking v1 → v2: ", " thay đổi\n",
-		"  CHANGE_FLOW low/brd: manual → auto (nới)\n",
+	contains(t, r.out, "Mẫu banking v1 → v3: ", " thay đổi\n",
+		"  SCHEMA_MIGRATED schema: 1 → 2\n", "  CHANGE_FLOW low/design: manual → auto (nới)\n",
 		"Không tự áp dụng: chọn mục cần lấy rồi sửa aisdlc/risk-policy.yaml qua MR")
 }
 

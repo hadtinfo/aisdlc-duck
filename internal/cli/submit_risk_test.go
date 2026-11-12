@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -68,71 +67,39 @@ func hasItem(t *testing.T, list []string, want string) {
 	}
 }
 
-func replaceImpactLine(s, impact string) string {
-	return regexp.MustCompile(`(?m)^impact:.*$`).ReplaceAllLiteralString(s, impact)
-}
-
-func TestSubmitBrdPrintsKeywordPreviewWithoutWriting(t *testing.T) {
-	r := bankingRepo(t)
-	r.ok(noConsole(), "init", "PAY-1")
-	r.write("aisdlc/features/PAY-1/brd.md", strings.Replace(validBRD, "Giới hạn chuyển tiền theo ngày.",
-		"Miễn phí chuyển tiền theo ngày.", 1))
-	r.ok(noConsole(), "submit", "brd")
-	contains(t, r.out, "Rủi ro tạm (từ khóa): high", "R2")
-	eq(t, r.exists(riskFile), false)
-	r.ok(noConsole(), "review", "brd", "--json")
-	contains(t, r.out, `"riskPreview"`, `"R2"`)
-}
-
-func TestSubmitBrdBrokenPolicyOnlyWarns(t *testing.T) {
+// `submit brd` không còn đọc chính sách (không có mức tạm): chính sách hỏng không ảnh hưởng.
+func TestSubmitBrdIgnoresBrokenPolicy(t *testing.T) {
 	r := bankingRepo(t)
 	r.ok(noConsole(), "init", "PAY-1")
 	r.write(policyFile, "levels: [low]\n")
 	r.write("aisdlc/features/PAY-1/brd.md", validBRD)
 	r.ok(noConsole(), "submit", "brd")
-	contains(t, r.err, "Thang mức")
-	r.ok(noConsole(), "review", "brd", "--json")
-	notContains(t, r.out, "riskPreview")
+	notContains(t, r.out+r.err, "Thang mức", "Rủi ro")
 }
 
-func TestSubmitDesignWritesRiskYaml(t *testing.T) {
+// design.yaml không có impact: không còn lỗi, không cảnh báo.
+func TestSubmitDesignWithoutImpactPasses(t *testing.T) {
 	r := bankingRepo(t)
 	r.brdApproved()
-	if code := r.run("submit", "design"); code != 0 {
-		t.Fatalf("exit %d\n%s%s", code, r.out, r.err)
-	}
-	f := r.risk()
-	eq(t, f.Level, "high")
-	hasItem(t, ruleIDs(f.Matched), "R4")
-	var on []string
-	for _, m := range f.Matched {
-		if m.Rule == "R4" {
-			on = append(on, m.On)
-		}
-	}
-	eqList(t, on, "bảng ledger_entry")
-	if f.Agent == nil {
-		t.Fatal("agent phải có")
-	}
-	hasItem(t, reqIDs(f.Requirements), "idempotent")
-	contains(t, r.out, "Rủi ro: high", "R4")
+	r.ok(noConsole(), "submit", "design")
+	notContains(t, r.out+r.err, "IMPACT_")
 }
 
-func TestSubmitDesignMissingImpactBlocked(t *testing.T) {
+// design.yaml còn impact cũ: cảnh báo IMPACT_DEPRECATED trên stderr nhưng không chặn.
+func TestSubmitDesignWithImpactWarnsNotBlocks(t *testing.T) {
 	r := bankingRepo(t)
 	r.brdApproved()
-	y := r.read(designFile)
-	r.write(designFile, y[:strings.Index(y, "impact:")])
-	eq(t, r.run("submit", "design"), 1)
-	contains(t, r.out, "IMPACT_MISSING")
-	eq(t, r.exists(riskFile), false)
+	r.write(designFile, r.read(designFile)+"impact: { level: low, labels: [], reason: r }\n")
+	r.ok(noConsole(), "submit", "design")
+	contains(t, r.err, "Cảnh báo: IMPACT_DEPRECATED: Khối impact không còn dùng")
+	notContains(t, r.out, "IMPACT_MISSING")
 }
 
 func TestSubmitDesignBrokenPolicyExit2WithRuleID(t *testing.T) {
 	r := bankingRepo(t)
 	r.brdApproved()
-	r.write(policyFile, strings.Replace(r.read(policyFile), `account_balance"], level: high`,
-		`account_balance"], level: extreme`, 1))
+	r.write(policyFile, strings.Replace(r.read(policyFile), `account_balance)", level: high`,
+		`account_balance)", level: extreme`, 1))
 	eq(t, r.run("submit", "design"), 2)
 	contains(t, r.err, "R4", "extreme")
 	eq(t, r.exists(riskFile), false)
@@ -141,6 +108,7 @@ func TestSubmitDesignBrokenPolicyExit2WithRuleID(t *testing.T) {
 func TestSubmitCasesMissingIdempotentBlocked(t *testing.T) {
 	r := bankingRepo(t)
 	r.brdApproved()
+	r.llmLevel = "high"
 	r.ok(noConsole(), "submit", "design")
 	r.ok(typed("PAY-1"), "approve", "design")
 	r.runner.cases = failingCases
@@ -156,8 +124,7 @@ func TestSubmitCasesMissingIdempotentBlocked(t *testing.T) {
 func TestSubmitCasesLiteClassifies(t *testing.T) {
 	r := bankingRepo(t)
 	r.ok(noConsole(), "init", "PAY-1", "--lite")
-	r.write("aisdlc/features/PAY-1/cases.yaml", replaceImpactLine(r.read("aisdlc/features/PAY-1/cases.yaml"),
-		`impact: { level: low, labels: [money-movement], reason: "Chuyển tiền" }`))
+	r.llmLevel = "high" // subagent: G1 (dòng tiền)
 	r.runner.cases = func([]string) []run.CaseResult {
 		return []run.CaseResult{caseResult("C1", "S1", run.CaseOutcomeFailed)}
 	}
@@ -168,23 +135,10 @@ func TestSubmitCasesLiteClassifies(t *testing.T) {
 	contains(t, r.out, "RISK_REQ")
 }
 
-func TestSubmitCasesLiteUnknownImpactLevelBlocked(t *testing.T) {
-	r := bankingRepo(t)
-	r.ok(noConsole(), "init", "PAY-1", "--lite")
-	r.write("aisdlc/features/PAY-1/cases.yaml", replaceImpactLine(r.read("aisdlc/features/PAY-1/cases.yaml"),
-		`impact: { level: urgent, labels: [], reason: "x" }`))
-	r.runner.cases = func([]string) []run.CaseResult {
-		return []run.CaseResult{caseResult("C1", "S1", run.CaseOutcomeFailed)}
-	}
-	eq(t, r.run("submit", "cases"), 1)
-	contains(t, r.out, "IMPACT_LEVEL", "urgent")
-}
-
 func TestSubmitCasesLiteInvariantsInCasesYamlSatisfyRequirement(t *testing.T) {
 	r := bankingRepo(t)
 	r.ok(noConsole(), "init", "PAY-1", "--lite")
-	r.write("aisdlc/features/PAY-1/cases.yaml", replaceImpactLine(r.read("aisdlc/features/PAY-1/cases.yaml"),
-		`impact: { level: low, labels: [money-movement], reason: "Chuyển tiền" }`))
+	r.llmLevel = "high"
 	r.runner.cases = func([]string) []run.CaseResult {
 		return []run.CaseResult{caseResult("C1", "S1", run.CaseOutcomeFailed)}
 	}
@@ -202,9 +156,10 @@ func TestNoRiskFileLegacyFeatureCasesUnchanged(t *testing.T) {
 	r.brdApproved()
 	r.ok(noConsole(), "submit", "design")
 	r.ok(typed("PAY-1"), "approve", "design")
-	// như tính năng qua cổng Thiết kế trước khi có chính sách rủi ro: design.yaml không có impact, không risk.yaml
-	y := r.read(designFile)
-	r.write(designFile, y[:strings.Index(y, "impact:")])
+	// như tính năng qua cổng Thiết kế trước khi có chính sách rủi ro: không có dấu riskSchema, design.yaml không có
+	// impact, không risk.yaml
+	meta := "aisdlc/features/PAY-1/feature.yaml"
+	r.write(meta, strings.Replace(r.read(meta), "riskSchema: 2\n", "", 1))
 	must(t, os.Remove(filepath.Join(r.root, riskFile)))
 	cfg, err := model.LoadRepoConfig(r.root)
 	must(t, err)
@@ -227,27 +182,29 @@ func TestSubmitCasesDesignHasImpactButNoRiskFileClassifiesAndChecks(t *testing.T
 	r.brdApproved()
 	r.ok(noConsole(), "submit", "design")
 	r.ok(typed("PAY-1"), "approve", "design")
-	must(t, os.Remove(filepath.Join(r.root, riskFile))) // design.yaml có impact: không phải tính năng cũ
+	must(t, os.Remove(filepath.Join(r.root, riskFile))) // chưa có risk.yaml: xếp loại từ risk-agent.json
+	r.llmLevel = "high"
 	r.runner.cases = failingCases
 	eq(t, r.run("submit", "cases"), 1)
 	eq(t, r.risk().Level, "high")
 	contains(t, r.out, "RISK_REQ", "gửi trùng")
 }
 
-func TestSubmitCasesPolicyChangedKeepsOverrideAndWarns(t *testing.T) {
+// Chính sách đổi sau khi dev đổi mức tay: kết quả xếp loại đã cũ, cổng Case chặn (RISK_STALE); mức đổi tay giữ nguyên
+// cho tới khi dev chạy `aisdlc risk reclassify`.
+func TestSubmitCasesPolicyChangedAfterOverrideIsStale(t *testing.T) {
 	r := bankingRepo(t)
 	r.brdApproved()
+	r.llmLevel = "high"
 	r.ok(noConsole(), "submit", "design")
 	r.ok(typed("PAY-1"), "approve", "design")
 	r.ok(typed("PAY-1"), "risk", "set", "low", "--reason", "Chỉ đọc sổ cái")
 	r.write(policyFile, strings.Replace(r.read(policyFile), "min: 90", "min: 95", 1))
 	r.runner.cases = failingCases
-	if code := r.run("submit", "cases"); code != 0 {
-		t.Fatalf("exit %d\n%s%s", code, r.out, r.err)
-	}
+	eq(t, r.run("submit", "cases"), 1)
+	contains(t, r.out, "RISK_STALE", "aisdlc risk reclassify")
 	eq(t, r.risk().Level, "low")
 	if r.risk().Override == nil {
 		t.Fatal("override phải còn")
 	}
-	contains(t, r.err, "aisdlc risk reclassify")
 }

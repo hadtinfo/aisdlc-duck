@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/templates"
 )
 
@@ -166,7 +167,7 @@ func TestConfigSyntaxError(t *testing.T) {
 }
 
 func TestTemplateConfigParses(t *testing.T) {
-	data, err := templates.FS.ReadFile("config.yaml")
+	data, err := templates.FS.ReadFile("vi/config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,5 +244,22 @@ func TestExtraEnvNonStringKeys(t *testing.T) {
 	c := mustParse(t, "service:\n  extraEnv: {1: x, A: y}")
 	if !reflect.DeepEqual(c.Service.ExtraEnv, map[string]string{"1": "x", "A": "y"}) {
 		t.Errorf("%v", c.Service.ExtraEnv)
+	}
+}
+
+func TestConfigLocale(t *testing.T) {
+	eq := func(y string, want i18n.Locale) {
+		t.Helper()
+		if got := mustParse(t, y).Locale; got != want {
+			t.Fatalf("locale %q: %q, muốn %q", y, got, want)
+		}
+	}
+	eq("", i18n.VI)
+	eq("language: go\n", i18n.VI)
+	eq("locale: EN\n", i18n.EN)
+	eq("locale: vi\n", i18n.VI)
+	_, err := ParseRepoConfig("locale: fr\n")
+	if err == nil || !strings.Contains(err.Error(), "fr") {
+		t.Fatalf("locale: fr phải lỗi nêu fr: %v", err)
 	}
 }

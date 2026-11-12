@@ -55,6 +55,13 @@ type Service struct {
 	Specs    []spec.StepSpec
 	Adapter  lang.Adapter
 	Now      func() time.Time
+	// Policy là chính sách rủi ro đang hiệu lực (CLI nạp); dùng để tính lại inputsHash ở CI. nil thì không kiểm được.
+	Policy *risk.RiskPolicy
+	// PolicyErr là lý do không có Policy (không nạp/lấy được); đi vào chi tiết RISK_LLM.
+	PolicyErr string
+	// WebPolicy lấy chính sách hiện hành từ web (CI, token CI); chỉ gọi khi chế độ web có hiệu lực, cùng quyết định với
+	// cổng approval (server ghim thì theo server, chưa ghim thì theo config). nil thì chế độ web không có chính sách.
+	WebPolicy func(ctx context.Context) (*risk.RiskPolicy, error)
 }
 
 // OutDir là thư mục kết quả của harness cho tính năng: <root>/.aisdlc/run/<KEY>.
@@ -176,11 +183,13 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 		} else if ok {
 			rf = &f
 		}
-	} else if s.Meta.Flow == model.FlowFull {
-		// design.yaml có impact: không phải tính năng cũ, thiếu risk.yaml không được miễn yêu cầu
-		if required, _ := risk.RequiredByDesign(s.Paths.DesignYaml()); required {
-			hard = append(hard, HardCheck{"RISK_FILE", false, "thiếu risk.yaml; chạy aisdlc submit cases"})
-		}
+	} else if risk.RequiredFor(s.Meta, s.Paths.DesignYaml()) {
+		// có dấu riskSchema (mọi luồng) hoặc design.yaml có impact: không phải tính năng cũ, thiếu risk.yaml không
+		// được miễn yêu cầu
+		hard = append(hard, HardCheck{"RISK_FILE", false, "thiếu risk.yaml; chạy aisdlc submit cases"})
+	}
+	if ci && rf != nil && s.Meta.RiskSchema >= 2 {
+		hard = append(hard, s.riskLLM(ctx, *rf, webMode))
 	}
 	var covReq *risk.Requirement
 	if rf != nil {
@@ -225,6 +234,46 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 		return EvalReport{}, err
 	}
 	return report, nil
+}
+
+// riskLLM (CI, tính năng có dấu riskSchema): kết quả xếp loại LLM trong risk.yaml phải khớp chính sách và tài liệu
+// hiện tại. Không gọi LLM; tài liệu đã khóa theo hash cổng nên so trên file hiện tại không gây lỗi giả.
+func (s *Service) riskLLM(ctx context.Context, rf risk.RiskFile, webMode bool) HardCheck {
+	const id = "RISK_LLM"
+	if rf.LLM == nil {
+		return HardCheck{id, false, "thiếu kết quả xếp loại LLM"}
+	}
+	policy := s.Policy
+	if webMode {
+		// chế độ web có hiệu lực: chỉ dùng chính sách từ web, không rơi về file/mẫu trong repo
+		const pre = "không lấy được chính sách từ web: "
+		if s.WebPolicy == nil {
+			return HardCheck{id, false, pre + "thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN"}
+		}
+		p, err := s.WebPolicy(ctx)
+		if err != nil {
+			return HardCheck{id, false, pre + err.Error()}
+		}
+		policy = p
+	} else if policy == nil {
+		if s.PolicyErr != "" {
+			return HardCheck{id, false, s.PolicyErr}
+		}
+		return HardCheck{id, false, "không có chính sách rủi ro để kiểm inputsHash"}
+	}
+	files, err := risk.InputFiles(s.Paths.RepoRoot, s.Paths, s.Meta.Flow)
+	if err != nil {
+		return HardCheck{id, false, "Không đọc được tài liệu đầu vào: " + err.Error()}
+	}
+	if rf.LLM.InputsHash != risk.InputsHash(*policy, files) {
+		return HardCheck{id, false, "inputsHash không khớp tài liệu hiện tại"}
+	}
+	// mức trong risk.yaml phải là mức của subagent nâng lên mức mặc định (như risk.FromLLM), trừ khi dev đổi tay
+	if want := risk.Stricter(*policy, policy.DefaultLevel, rf.LLM.Level); rf.Override == nil && rf.Level != want {
+		return HardCheck{id, false, "mức " + rf.Level + " trong risk.yaml khác mức từ kết quả xếp loại LLM (" + want +
+			") mà không có đổi tay (override)"}
+	}
+	return HardCheck{id, true, "kết quả xếp loại LLM khớp tài liệu và chính sách hiện tại"}
 }
 
 // webApprovals: web trả lời sai/không trả lời không bao giờ được bỏ qua ở chế độ web. Không có nguồn web mà config

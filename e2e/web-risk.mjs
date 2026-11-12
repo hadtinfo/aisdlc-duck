@@ -1,12 +1,15 @@
-// Chính sách rủi ro trên web như dev thật: trang /risk/<repo>#rules có rule của fixture, trang tính năng có panel
-// "Rủi ro" với mức mong đợi. Đăng nhập bằng token login (POST /api/login, cookie phiên).
+// Chính sách rủi ro trên web như dev thật: trang /risk/<repo>#rules có rule (schema 2, mô tả bằng lời) của fixture và
+// không còn tab "Thử phân loại"; trang tính năng có panel "Rủi ro" với mức mong đợi và khối "Xếp loại LLM" (kết quả
+// subagent aisdlc-risk-classifier: mức, rule khớp kèm câu trích). Đăng nhập bằng token login (POST /api/login, cookie
+// phiên).
 // Env: WEB_URL, WEB_TOKEN, REPO_ID, KEY,
-//   RULE (id rule), MATCH (mẫu khớp của rule), LEVEL (mức trên panel), GATE (cổng có review card mang risk),
+//   RULE (id rule), DESCRIBE (một đoạn mô tả của rule), LEVEL (mức trên panel), GATE (cổng có review card mang risk),
+//   LLM_GATE (cổng có khối Xếp loại LLM: DESIGN, luồng nhẹ CASES), EVIDENCE (một đoạn câu trích của RULE),
 //   SHOTS (tùy chọn, thư mục): chụp risk-rules.png, risk-levels.png, risk-feature.png.
 // Không in token.
 import { chromium } from "playwright";
 
-const { WEB_URL, WEB_TOKEN, REPO_ID, KEY, RULE, MATCH, LEVEL, GATE, SHOTS } = process.env;
+const { WEB_URL, WEB_TOKEN, REPO_ID, KEY, RULE, DESCRIBE, LEVEL, GATE, LLM_GATE, EVIDENCE, SHOTS } = process.env;
 
 const browser = await chromium.launch();
 try {
@@ -32,12 +35,14 @@ try {
     }
   };
 
-  // Tab Rule nhận diện: dòng có id rule và mẫu khớp của fixture.
+  // Tab Rule nhận diện: dòng có id rule và mô tả của fixture; không còn tab thử phân loại (server không có LLM).
   const riskPath = `/risk/${REPO_ID}`;
   await waitFor(`${WEB_URL}${riskPath}#rules`, () =>
-    page.locator("table.grid tbody tr").filter({ hasText: RULE }).filter({ hasText: MATCH }));
+    page.locator("table.grid tbody tr").filter({ hasText: RULE }).filter({ hasText: DESCRIBE }));
   await noError();
-  console.log(`thấy rule ${RULE} (${MATCH}) ở ${riskPath}#rules`);
+  console.log(`thấy rule ${RULE} (${DESCRIBE}) ở ${riskPath}#rules`);
+  const tabs = page.getByRole("navigation", { name: "Chính sách rủi ro" });
+  if (await tabs.getByText(/thử phân loại/i).count()) throw new Error("trang chính sách còn tab Thử phân loại");
   if (SHOTS) {
     await page.waitForTimeout(500);
     await page.screenshot({ path: `${SHOTS}/risk-rules.png`, fullPage: true });
@@ -51,6 +56,16 @@ try {
   await waitFor(`${WEB_URL}/f/${REPO_ID}/${KEY}?g=${GATE}`, () => panel().locator(".pill.risk", { hasText: LEVEL }));
   await noError();
   console.log(`panel Rủi ro của ${KEY} (${GATE}) có mức ${LEVEL}`);
+
+  // Review card cổng LLM_GATE: khối "Xếp loại LLM" có mức LEVEL, rule RULE kèm câu trích EVIDENCE.
+  const llm = () => page.locator("section.rk-llm").filter({ hasText: "Xếp loại LLM" });
+  await waitFor(`${WEB_URL}/f/${REPO_ID}/${KEY}?g=${LLM_GATE}`, () =>
+    llm().filter({ has: page.locator(".pill.risk", { hasText: LEVEL }) }).filter({ hasText: EVIDENCE }));
+  await noError();
+  if (!(await llm().locator("li").filter({ hasText: RULE }).filter({ hasText: EVIDENCE }).count())) {
+    throw new Error(`khối Xếp loại LLM thiếu rule ${RULE} kèm câu trích`);
+  }
+  console.log(`khối Xếp loại LLM của ${KEY} (${LLM_GATE}): mức ${LEVEL}, ${RULE} kèm câu trích`);
   if (SHOTS) {
     await page.waitForTimeout(1000);
     await page.screenshot({ path: `${SHOTS}/risk-feature.png`, fullPage: true });

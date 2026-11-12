@@ -370,3 +370,13 @@ func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	return lines[len(lines)-1]
 }
+
+func TestPullImportRejectedShowsServerMessage(t *testing.T) {
+	r, web, _ := policyWeb(t)
+	msg := "Chính sách dùng schema 1 (luật so khớp); chạy `aisdlc policy migrate` để chuyển sang schema 2."
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/cli/policy/import"] = fakeweb.JSONResp(400, `{"error":"`+msg+`","errors":["`+msg+`"]}`)
+	})
+	eq(t, r.run("policy", "pull"), 2)
+	contains(t, r.err, "web không nhận chính sách (HTTP 400): "+msg)
+}

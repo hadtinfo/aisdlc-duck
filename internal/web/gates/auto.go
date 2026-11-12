@@ -54,11 +54,10 @@ func auditAuto(ctx context.Context, s *Service, tx pgx.Tx, action, repo, feature
 
 // AutoApprove là AfterSubmit của Service (AutoApprover.afterSubmit): vừa lưu bản nộp sub của cổng; tự duyệt khi bản nộp
 // sạch, review card trong snapshot mới nhất ứng với đúng nội dung này và không có cờ HIGH, và flow của mức áp cho cổng
-// là auto. Mức: risk.LevelForGate (BRD: mức tạm trong thẻ nâng lên mặc định và lên risk.level CLI gửi kèm; cổng khác:
-// risk.level), rồi nâng lên features.risk_level của server nếu mức đó chặt hơn. Mức không có trong chính sách → audit
-// gate.auto-skip, không tự duyệt.
+// là auto. Mức: risk.LevelForGate (risk.level CLI gửi kèm), rồi nâng lên features.risk_level của server nếu mức đó
+// chặt hơn. Mức không có trong chính sách → audit gate.auto-skip, không tự duyệt. BRD và Review luôn duyệt tay.
 func (s *Service) AutoApprove(ctx context.Context, tx pgx.Tx, sub Submitted) error {
-	if sub.Gate == gate.REVIEW || !sub.Clean { // Review luôn duyệt tay
+	if sub.Gate == gate.REVIEW || sub.Gate == gate.BRD || !sub.Clean {
 		return nil
 	}
 	pol, err := latestPolicy(ctx, tx, sub.Repo)
@@ -86,14 +85,6 @@ func (s *Service) AutoApprove(ctx context.Context, tx pgx.Tx, sub Submitted) err
 	if _, ok := card.(map[string]any); !ok { // không có thẻ: không biết cờ, để dev duyệt
 		return nil
 	}
-	preview := ""
-	if sub.Gate == gate.BRD {
-		pv, ok := textField(card, "riskPreview", "level")
-		if !ok {
-			return nil
-		}
-		preview = pv
-	}
 	known := func(level string) (bool, error) {
 		if pol.p.Rank(level) >= 0 {
 			return true, nil
@@ -108,15 +99,14 @@ func (s *Service) AutoApprove(ctx context.Context, tx pgx.Tx, sub Submitted) err
 			return err
 		}
 	}
-	level := risk.LevelForGate(pol.p, sub.Gate, preview, requested)
+	level := risk.LevelForGate(pol.p, sub.Gate, requested)
 	if level == "" {
 		return nil
 	}
 	if ok, err := known(level); !ok {
 		return err
 	}
-	// mức server đã biết (event rủi ro) chặt hơn thì lấy mức server — cả BRD: đã nâng mức thì nộp lại BRD không tự
-	// duyệt lại được ở mức tạm
+	// mức server đã biết (event rủi ro) chặt hơn thì lấy mức server
 	if serverLevel != nil {
 		if ok, err := known(*serverLevel); !ok {
 			return err

@@ -16,10 +16,13 @@
 # session = nhiều session song song. `make e2e-web` chạy E2E_PARTS=web,flow.
 # E2E_LATENCY_SLACK_MS (mặc định 0): nới ngưỡng p95 50 ms của hook cho máy CI chậm. E2E_PW_DIR: nơi cài Playwright
 # (mặc định ~/.cache/aisdlc-e2e/pw, ngoài repo).
-# Chính sách rủi ro: fixture có aisdlc/risk-policy.yaml (rule E1 "hạn mức" → high; high cần case gửi trùng và bất biến).
-# Quy trình theo mức (flow): repo flow-service có chính sách riêng (e2e/solutions/flow/risk-policy.yaml, flow.low
-# toàn auto, rule bảng daily_limit → high). FEE-3 mức thấp chạy một mạch tới Review; PAY-1 nâng mức ở `submit design`
-# nên BRD tự duyệt bị thay thế. WEB=0 thì CLI tự duyệt; WEB=1 thì repo ở approvals: web và server tự duyệt.
+# Chính sách rủi ro: fixture có aisdlc/risk-policy.yaml (schema 2, luật mô tả bằng lời; E1 "Chặn giao dịch theo hạn
+# mức" → high; high cần case gửi trùng và bất biến). Không gọi LLM: trước `submit design` (lite: `submit cases`) script
+# giả lập subagent aisdlc-risk-classifier bằng risk_agent (inputsHash của `aisdlc risk inputs` thay vào
+# e2e/solutions/<KEY>/risk-agent.json). Cổng BRD luôn duyệt tay.
+# Quy trình theo mức (flow): repo flow-service có chính sách riêng (e2e/solutions/flow/risk-policy.yaml, cùng luật,
+# flow.low tự duyệt Thiết kế/Case/bước). FEE-3 mức thấp: dev duyệt BRD rồi chạy một mạch tới Review; PAY-1 mức high
+# nên mọi cổng chờ dev. WEB=0 thì CLI tự duyệt; WEB=1 thì repo ở approvals: web và server tự duyệt.
 set -euo pipefail
 
 E2E="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -266,13 +269,28 @@ web_ui() {
     || die "Playwright: $1 ${2:-} thất bại (xem log)"
 }
 
-# web_risk: trang /risk/<repo>#rules có rule E1 của fixture, panel Rủi ro của $KEY (cổng CASES) mức high
+# web_risk: trang /risk/<repo>#rules có rule E1 (mô tả bằng lời) của fixture, không có tab thử phân loại; panel Rủi ro
+# của $KEY (cổng CASES) mức high; review card DESIGN có khối Xếp loại LLM với E1 và câu trích từ brd.md
 # (e2e/web-risk.mjs, repo chế độ web). SCREENSHOTS=1 thì chụp risk-rules/risk-levels/risk-feature.png.
 web_risk() {
   pw_install
-  WEB_URL="$WEB_URL" WEB_TOKEN="$WEB_TOKEN" REPO_ID="$WREPO_ID" KEY="$KEY" RULE=E1 MATCH="hạn mức" \
-    LEVEL=high GATE=CASES SHOTS="${SCREENSHOTS:+$SHOTS}" node "$PW_DIR/web-risk.mjs" >>"$LOG" 2>&1 \
+  WEB_URL="$WEB_URL" WEB_TOKEN="$WEB_TOKEN" REPO_ID="$WREPO_ID" KEY="$KEY" RULE=E1 \
+    DESCRIBE="Chặn giao dịch theo hạn mức" LEVEL=high GATE=CASES LLM_GATE=DESIGN \
+    EVIDENCE="chặn sớm giao dịch chuyển tiền vượt hạn mức ngày" \
+    SHOTS="${SCREENSHOTS:+$SHOTS}" node "$PW_DIR/web-risk.mjs" >>"$LOG" 2>&1 \
     || die "Playwright: web-risk thất bại (xem log)"
+}
+
+# risk_agent [KEY lời giải]: giả lập agent chạy subagent aisdlc-risk-classifier trước `submit design` (lite: `submit
+# cases`) hay `risk reclassify`: lấy inputsHash do `aisdlc risk inputs` in ra (tính năng $KEY), thay vào
+# e2e/solutions/<KEY>/risk-agent.json rồi ghi $P/risk-agent.json như agent ghi nguyên văn JSON của subagent.
+risk_agent() {
+  local sol=${1:-$KEY} hash
+  run 0 aisdlc risk inputs --feature "$KEY"
+  has "policy: .aisdlc/risk/policy-effective.yaml"
+  hash="$(sed -n 's/^inputsHash: *//p' <<<"$OUT")"
+  [ -n "$hash" ] || die "aisdlc risk inputs không in inputsHash"
+  jq --arg h "$hash" '.inputsHash = $h' "$SOL/$sol/risk-agent.json" >"$P/risk-agent.json"
 }
 
 # risk_level <thư mục tính năng>: mức trong risk.yaml (dòng `level:` đầu file).
@@ -438,7 +456,7 @@ step "Chính sách rủi ro từ file: setup giữ aisdlc/risk-policy.yaml của
 grep -q 'id: E1' "$REPO/aisdlc/risk-policy.yaml" || die "setup không được ghi đè aisdlc/risk-policy.yaml của fixture"
 run 0 aisdlc policy show
 has "(file)"
-has "E1   keyword  hạn mức → high"
+has "E1   high   Chặn giao dịch theo hạn mức (E2E)"
 
 # =============================================================================================
 KEY=PAY-1
@@ -449,6 +467,7 @@ run 0 aisdlc init "$KEY" --title "Kiểm tra hạn mức ngày"
 step "$KEY BRD: submit, lệnh dev không có console bị từ chối, approve qua pty"
 cp "$SOL/$KEY/brd.md" "$P/brd.md"
 run 0 aisdlc submit brd
+hasnt "Rủi ro" # không còn mức tạm ở BRD: xếp loại một lần lúc submit design
 if [ "$WEB" = 1 ]; then
   web_assert "board: PAY-1 ở cột BRD, chờ duyệt BRD" /api/board \
     "$(web_card PAY-1) | (.column==\"BRD\" and (.labels|index(\"AWAITING_APPROVAL:BRD\")!=null))"
@@ -464,12 +483,30 @@ step "$KEY hook: ghi code trước khi qua cổng → deny"
 hook Write "{\"file_path\":\"$REPO/internal/limit/web/handler.go\",\"content\":\"x\"}"
 has '"deny"'
 
-step "$KEY design: submit (migration-check thật), approve"
+step "$KEY design: chưa có risk-agent.json → submit bị chặn (RISK_AGENT_MISSING), không ghi risk.yaml"
 cp "$SOL/$KEY/design.md" "$SOL/$KEY/design.yaml" "$P/"
 cp "$SOL/$KEY/db/"*.sql "$P/db/"
+run 1 aisdlc submit design
+has "RISK_AGENT_MISSING"
+[ ! -e "$P/risk.yaml" ] || die "submit design bị chặn không được ghi risk.yaml"
+
+step "$KEY design: subagent xếp loại (risk-agent.json giả lập); tài liệu đổi sau đó → kết quả cũ bị chặn"
+risk_agent
+has "aisdlc/features/$KEY/brd.md"
+has "aisdlc/features/$KEY/db/00002_daily_limit.sql"
+echo "Ghi chú thêm sau khi xếp loại." >>"$P/design.md"
+run 1 aisdlc submit design
+has "RISK_AGENT_INVALID"
+has "inputsHash không khớp"
+[ ! -e "$P/risk.yaml" ] || die "submit design bị chặn không được ghi risk.yaml"
+cp "$SOL/$KEY/design.md" "$P/design.md" # trả design.md về đúng bản đã xếp loại: inputsHash khớp lại
+
+step "$KEY design: submit (migration-check thật), approve"
 run 0 aisdlc submit design
 has "schema-expected.json"
 has "Rủi ro: high"
+has "E1 ("
+grep -q 'inputsHash:' "$P/risk.yaml" || die "risk.yaml phải có llm.inputsHash"
 [ "$(risk_level "$P")" = high ] || die "risk.yaml: level phải là high, được '$(risk_level "$P")'"
 if [ "$WEB" = 1 ]; then
   web_assert "board: PAY-1 riskLevel high" /api/board "$(web_card PAY-1) | .riskLevel==\"high\""
@@ -574,6 +611,7 @@ git add -A && git commit -qm "$KEY"
 PAY="$(git rev-parse HEAD)"
 run 0 aisdlc eval --ci --base "$SETUP"
 has "Eval $KEY: ĐẠT"
+has "| RISK_LLM | ĐẠT |" # inputsHash trong risk.yaml khớp tài liệu và chính sách hiện tại, không gọi LLM
 hasnt "GATE:"
 git checkout -q -- aisdlc # CI ghi đè eval/report.*; bỏ, giữ bản đã commit
 
@@ -660,9 +698,12 @@ if [ "$WEB" = 1 ]; then
   web_assert "board: FIX-2 (LITE) bắt đầu ở cột CASES" /api/board "$(web_card FIX-2) | .column==\"CASES\""
 fi
 
-step "$KEY cases: submit (migration-check + case fail), approve"
+step "$KEY cases: subagent xếp loại (feature.yaml + cases.yaml), submit (migration-check + case fail), approve"
 cp "$SOL/$KEY/cases.yaml" "$P/cases.yaml"
+risk_agent
+has "aisdlc/features/$KEY/cases.yaml"
 run 0 aisdlc submit cases
+has "Rủi ro: low"
 run 0 aisdlc review cases
 hasnt "[HIGH]"
 hasnt "[WARN]"
@@ -706,7 +747,9 @@ if [ "$WEB" = 1 ] && part web; then
   git add -A && git commit -qm "aisdlc setup"
   KEY=FIX-2
   run 0 aisdlc init "$KEY" --lite --title "Sửa làm tròn phí"
-  cp "$SOL/$KEY/cases.yaml" "$WREPO/aisdlc/features/$KEY/cases.yaml"
+  P="$WREPO/aisdlc/features/$KEY"
+  cp "$SOL/$KEY/cases.yaml" "$P/cases.yaml"
+  risk_agent
   run 0 aisdlc submit cases
   dev approve cases
   has "Đã duyệt cổng CASES"
@@ -752,8 +795,9 @@ if [ "$WEB" = 1 ] && part web; then
   has "Chính sách v1 (web)"
   web_assert "policy local/web-service: đúng một phiên bản v1, nguồn import" "/api/policy/versions?repo=$WREPO_ID" \
     'length == 1 and .[0].version == 1 and .[0].source == "import"'
-  web_assert "policy local/web-service: v1 có rule E1 của fixture" "/api/policy?repo=$WREPO_ID" \
-    '.version == 1 and ([.policy.rules[] | select(.id=="E1" and .level=="high")] | length == 1)'
+  web_assert "policy local/web-service: v1 schema 2, có rule E1 (mô tả bằng lời) của fixture" "/api/policy?repo=$WREPO_ID" \
+    '.version == 1 and .policy.schema == 2
+     and ([.policy.rules[] | select(.id=="E1" and .level=="high" and (.describe | contains("hạn mức")))] | length == 1)'
   run 0 aisdlc policy show
   has "Chính sách v1 (web)"
 
@@ -796,6 +840,7 @@ if [ "$WEB" = 1 ] && part web; then
   step "web $KEY DESIGN: submit, duyệt từ terminal (token approve) → channel terminal, flags từ thẻ CLI"
   cp "$SOL/$KEY/design.md" "$SOL/$KEY/design.yaml" "$P/"
   cp "$SOL/$KEY/db/"*.sql "$P/db/"
+  risk_agent
   run 0 aisdlc submit design
   has "Rủi ro: high (chính sách v1)"
   [ "$(risk_level "$P")" = high ] || die "risk.yaml (web): level phải là high, được '$(risk_level "$P")'"
@@ -805,6 +850,7 @@ if [ "$WEB" = 1 ] && part web; then
     '[.snapshot.gates[] | select(.gate=="DESIGN" and .state=="AWAITING_APPROVAL")] | length == 1'
   web_ctl reject GATE=DESIGN TEXT="Mục API: ghi rõ gọi lặp có ghi used_amount không."
   cp "$SOL/$KEY/resubmit/design.md" "$P/design.md"
+  risk_agent # design.md đổi → chạy lại subagent (inputsHash mới)
   run 0 aisdlc submit design
   web_assert "resubmission DESIGN: n = 2, góp ý RELATED_CHANGED (mục API), design.md đổi" \
     "/api/features/$WREPO_ID/$KEY/resubmission?gate=DESIGN" \
@@ -839,7 +885,7 @@ if [ "$WEB" = 1 ] && part web; then
   dev approve cases
   has "Đã duyệt cổng CASES trên web"
 
-  step "web $KEY rủi ro trên web: /risk/$WREPO_ID#rules có rule E1, panel Rủi ro (cổng CASES) mức high"
+  step "web $KEY rủi ro trên web: /risk/$WREPO_ID#rules có rule E1, panel Rủi ro (CASES) mức high, Xếp loại LLM (DESIGN)"
   web_assert "board: PAY-1 (web-service) riskLevel high" /api/board \
     '.cards[] | select(.key=="PAY-1" and .repoId=="local/web-service") | .riskLevel=="high"'
   web_risk
@@ -1068,6 +1114,7 @@ if [ "$WEB" = 1 ] && part web; then
   run 0 aisdlc eval --ci --base "$WBASE"
   has "Eval $KEY: ĐẠT"
   has "| GATE:REVIEW | ĐẠT | đã duyệt trên web"
+  has "| RISK_LLM | ĐẠT |" # chính sách lấy từ web bằng token ci (GET /api/cli/policy)
   git checkout -q -- aisdlc
   echo "// sửa sau khi duyệt REVIEW" >>"$WREPO/internal/limit/web/handler.go"
   git add -A && git commit -qm "$KEY sửa sau duyệt"
@@ -1089,10 +1136,10 @@ fi # part web
 
 # =============================================================================================
 # Quy trình theo mức rủi ro (flow): repo thứ ba local/flow-service với chính sách e2e/solutions/flow/risk-policy.yaml
-# (generic v2 có flow; rule T1 bảng daily_limit → high; không rule từ khóa nên BRD nào cũng ở mức tạm low). Hai repo
-# trên giữ chính sách fixture không có flow (mọi cổng duyệt tay), nên các luồng ở trên không đổi.
+# (cùng luật với fixture, có flow: low tự duyệt Thiết kế, Case và bước). Cổng BRD luôn duyệt tay. Hai repo trên giữ
+# chính sách fixture không có flow (mọi cổng duyệt tay), nên các luồng ở trên không đổi.
 # WEB=0: CLI tự duyệt (gates.json, approver auto). WEB=1: approvals: web, policy pull nhập chính sách có flow làm v1,
-# server tự duyệt khi nhận bản nộp (channel auto), thay thế khi nhận event mức mới; CLI thấy qua cache cổng có chữ ký.
+# server tự duyệt khi nhận bản nộp (channel auto); CLI thấy qua cache cổng có chữ ký.
 if part flow; then
 FREPO="$WORK/flow-service"
 REPO="$FREPO" # hook()/copy()/step_status() dùng $REPO
@@ -1151,15 +1198,22 @@ auto_ok() {
 # ---------------------------------------------------------------------------------------------
 KEY=FEE-3
 P="$FREPO/aisdlc/features/$KEY"
-step "$KEY mức thấp chạy một mạch: BRD → Thiết kế → Case → S1 → eval, không approve, không step accept"
+step "$KEY mức thấp: BRD chờ dev duyệt (luôn duyệt tay), rồi Thiết kế → Case → S1 → eval chạy một mạch, không step accept"
 run 0 aisdlc init "$KEY" --title "Làm tròn phí tới đồng gần nhất"
 cp "$SOL/$KEY/brd.md" "$P/brd.md"
 run 0 aisdlc submit brd
-has "Rủi ro tạm (từ khóa): low"
-auto_ok BRD
+has "Đã nộp cổng BRD"
+hasnt "tự duyệt"
+hasnt "Rủi ro"
+run 0 aisdlc status
+gate_line BRD AWAITING_APPROVAL
+dev approve brd
+has "Đã duyệt cổng BRD"
 cp "$SOL/$KEY/design.md" "$SOL/$KEY/design.yaml" "$P/"
+risk_agent
 run 0 aisdlc submit design
 has "Rủi ro: low"
+has "không rule nào khớp"
 [ "$(risk_level "$P")" = low ] || die "risk.yaml: level phải là low, được '$(risk_level "$P")'"
 auto_ok DESIGN
 cp "$SOL/$KEY/cases.yaml" "$P/cases.yaml"
@@ -1180,11 +1234,13 @@ hasnt "tự duyệt"
 
 step "$KEY cuối luồng: chỉ cổng Review chờ dev duyệt; dev duyệt Review$([ "$WEB" = 1 ] && echo ' trên trang B, web hiện tự duyệt')"
 run 0 aisdlc status
-for g in BRD DESIGN CASES; do gate_line "$g" "APPROVED +tự duyệt \\(mức low\\)"; done
+gate_line BRD APPROVED
+for g in DESIGN CASES; do gate_line "$g" "APPROVED +tự duyệt \\(mức low\\)"; done
 gate_line REVIEW AWAITING_APPROVAL
 if [ "$WEB" = 1 ]; then
   web_gate REVIEW '.state=="AWAITING_APPROVAL"' "chỉ REVIEW chờ duyệt"
-  web_ctl expect PAGE=gate GATE=BRD TEXT="tự duyệt (mức low)" SHOT="${SCREENSHOTS:+$SHOTS/gate-auto.png}"
+  web_gate BRD '.state=="APPROVED" and .approval.approver!="auto" and .approval.label==null' "BRD do dev duyệt, không tự duyệt"
+  web_ctl expect PAGE=gate GATE=DESIGN TEXT="tự duyệt (mức low)" SHOT="${SCREENSHOTS:+$SHOTS/gate-auto.png}"
   web_ui approve REVIEW
   run 0 aisdlc status
   [ "$(cache_state "$KEY" | jq -r '[.approvals[] | select(.gate=="REVIEW")][-1].channel')" = web ] \
@@ -1195,6 +1251,7 @@ if [ "$WEB" = 1 ]; then
     echo "Ảnh: $SHOTS/gate-auto.png"
   fi
 else
+  [ "$(jq -r '.approvals.BRD.approver' "$P/gates.json")" = "Dev E2E" ] || die "gates.json: BRD phải do dev duyệt"
   dev approve review
   has "Đã duyệt cổng REVIEW"
   [ "$(jq -r '.approvals.REVIEW.approver' "$P/gates.json")" = "Dev E2E" ] || die "gates.json: REVIEW phải do dev duyệt"
@@ -1206,69 +1263,44 @@ git add -A && git commit -qm "$KEY"
 # ---------------------------------------------------------------------------------------------
 KEY=PAY-1
 P="$FREPO/aisdlc/features/$KEY"
-step "$KEY nâng mức: BRD tự duyệt ở mức tạm low; thiết kế chạm bảng daily_limit (T1 high) → BRD về chờ dev duyệt lại"
+step "$KEY mức high: BRD chờ dev duyệt; subagent xếp high (E1) ở submit design → Thiết kế chờ dev, không tự duyệt"
 run 0 aisdlc init "$KEY" --title "Kiểm tra hạn mức ngày"
 cp "$SOL/$KEY/brd.md" "$P/brd.md"
 run 0 aisdlc submit brd
-has "Rủi ro tạm (từ khóa): low"
-auto_ok BRD
-cp "$SOL/$KEY/design.md" "$SOL/$KEY/design.yaml" "$P/"
-cp "$SOL/$KEY/db/"*.sql "$P/db/"
-run 0 aisdlc submit design
-has "Rủi ro: high"
-has "T1 (bảng daily_limit)"
-has "Mức tăng low → high: cổng BRD cần dev duyệt lại."
-[ "$(risk_level "$P")" = high ] || die "risk.yaml: level phải là high, được '$(risk_level "$P")'"
-if [ "$WEB" = 1 ]; then
-  web_gate BRD '.state=="AWAITING_APPROVAL" and .approval==null and .superseded==true' "BRD về chờ duyệt (đã thay thế)"
-  web_gate DESIGN '.submission != null and .approval==null' "DESIGN đã nộp, chưa duyệt"
-  web_ctl expect PAGE=gate GATE=BRD TEXT="đã thay thế"
-else
-  [ "$(jq -r '.approvals.BRD | "\(.approver) \(.superseded)"' "$P/gates.json")" = "auto true" ] \
-    || die "gates.json: bản tự duyệt BRD phải bị thay thế (superseded)"
-  DESIGN_SUB="$(jq -c '.submissions.DESIGN' "$P/gates.json")"
-fi
-run 0 aisdlc status
-# web: cache có chữ ký mang bản tự duyệt đã thay thế (server bỏ khỏi approvals) nên status hiện như local
-gate_line BRD "AWAITING_APPROVAL +chờ dev duyệt \\(bản tự duyệt \\(mức low\\) đã bị thay thế khi nâng mức\\)"
-hook Write "{\"file_path\":\"$FREPO/internal/limit/web/handler.go\",\"content\":\"x\"}"
-has '"deny"'
-has "cổng BRD chưa được duyệt" # chính BRD (cổng đầu chưa mở) chặn agent viết code
-
-step "$KEY agent nộp lại BRD không đổi → không tự duyệt lại ở mức tạm low, BRD vẫn chờ dev"
-run 0 aisdlc submit brd
 has "Đã nộp cổng BRD"
-hasnt "tự duyệt (mức"
-if [ "$WEB" = 1 ]; then
-  web_gate BRD '.state=="AWAITING_APPROVAL" and .approval==null' "BRD nộp lại vẫn chờ duyệt"
-  run 0 aisdlc status
-  [ "$(cache_state "$KEY" | jq '[.approvals[] | select(.gate=="BRD")] | length')" = 0 ] \
-    || die "cache: BRD không được có approval hiệu lực sau khi nộp lại"
-else
-  [ "$(jq -r '.approvals.BRD | "\(.approver) \(.superseded)"' "$P/gates.json")" = "auto true" ] \
-    || die "gates.json: BRD nộp lại không được tự duyệt lại"
-fi
+hasnt "tự duyệt"
 run 0 aisdlc status
 gate_line BRD AWAITING_APPROVAL
 hook Write "{\"file_path\":\"$FREPO/internal/limit/web/handler.go\",\"content\":\"x\"}"
 has '"deny"'
-has "cổng BRD chưa được duyệt"
-
-step "$KEY dev duyệt lại BRD → DESIGN chờ duyệt ngay, không nộp lại; dev duyệt DESIGN"
+has "cổng BRD chưa được duyệt" # chính BRD (cổng đầu chưa mở) chặn agent viết code
 dev approve brd
 has "Đã duyệt cổng BRD"
+cp "$SOL/$KEY/design.md" "$SOL/$KEY/design.yaml" "$P/"
+cp "$SOL/$KEY/db/"*.sql "$P/db/"
+risk_agent
+run 0 aisdlc submit design
+has "Rủi ro: high"
+has "E1 ("
+hasnt "tự duyệt"
+[ "$(risk_level "$P")" = high ] || die "risk.yaml: level phải là high, được '$(risk_level "$P")'"
+if [ "$WEB" = 1 ]; then
+  web_gate DESIGN '.state=="AWAITING_APPROVAL" and .approval==null' "DESIGN chờ dev duyệt (mức high)"
+else
+  [ "$(jq -r '.approvals.DESIGN // "null"' "$P/gates.json")" = null ] || die "gates.json: DESIGN không được tự duyệt"
+fi
 run 0 aisdlc status
 gate_line BRD APPROVED
 gate_line DESIGN AWAITING_APPROVAL
+
+step "$KEY dev duyệt DESIGN"
 dev approve design
 has "Đã duyệt cổng DESIGN"
 if [ "$WEB" = 1 ]; then
-  web_assert "resubmission DESIGN: n = 1 (không nộp lại)" "/api/features/$WREPO_ID/$KEY/resubmission?gate=DESIGN" '.n == 1'
   web_gate DESIGN '.state=="APPROVED"' "DESIGN đã duyệt"
   [ "$(cache_state "$KEY" | jq -r '[.approvals[] | select(.gate=="BRD")][-1].channel')" = terminal ] \
-    || die "cache: approval BRD (duyệt lại) phải có channel terminal"
+    || die "cache: approval BRD phải có channel terminal"
 else
-  [ "$(jq -c '.submissions.DESIGN' "$P/gates.json")" = "$DESIGN_SUB" ] || die "DESIGN không được nộp lại"
   [ "$(jq -r '[.approvals.BRD.approver, .approvals.DESIGN.approver] | join(",")' "$P/gates.json")" = "Dev E2E,Dev E2E" ] \
     || die "gates.json: BRD và DESIGN phải do dev duyệt"
 fi
@@ -1351,6 +1383,40 @@ AISDLC_SESSION=sb run 0 aisdlc status
 gate_line BRD AWAITING_APPROVAL
 AISDLC_SESSION=sa run 2 aisdlc approve brd </dev/null # cổng đã duyệt, phiếu đã dùng
 has "Cổng BRD đang ở trạng thái APPROVED"
+
+step "Chính sách schema 1 (luật so khớp cũ): risk inputs báo lỗi kèm hướng dẫn, policy migrate in diff rồi --write"
+cat >"$SREPO/aisdlc/risk-policy.yaml" <<'YAML'
+schema: 1
+preset: { name: generic, version: "1" }
+levels: [low, medium, high]
+default: low
+rules:
+  - { id: G1, kind: label, match: money-movement, level: high, note: Có dòng tiền hoặc giá trị đi qua }
+  - { id: E1, kind: keyword, match: "hạn mức", level: high, note: Chặn giao dịch theo hạn mức }
+classification:
+  agent: raise
+  devLower: reason
+YAML
+if [ -f "$HOME/.config/aisdlc/web.json" ]; then
+  # máy đã web login (phần web đã chạy): chính sách lấy từ web, migrate chỉ nhắc chuyển trên trang chính sách
+  run 2 aisdlc policy migrate
+  has "Chế độ web: chuyển chính sách trên trang chính sách của web."
+fi
+# HOME chưa web login: nguồn chính sách là file trong repo
+mkdir -p "$WORK/home-noweb"
+NOWEB=(env HOME="$WORK/home-noweb")
+run 2 "${NOWEB[@]}" aisdlc risk inputs --feature SES-1
+has "aisdlc policy migrate"
+run 0 "${NOWEB[@]}" aisdlc policy migrate
+has "SCHEMA_MIGRATED"
+has "Chặn giao dịch theo hạn mức (từ khóa cũ: hạn mức)"
+has "--write"
+grep -q '^schema: 1' "$SREPO/aisdlc/risk-policy.yaml" || die "policy migrate không --write không được ghi file"
+run 0 "${NOWEB[@]}" aisdlc policy migrate --write
+grep -q '^schema: 2' "$SREPO/aisdlc/risk-policy.yaml" || die "policy migrate --write phải ghi schema: 2"
+run 0 "${NOWEB[@]}" aisdlc risk inputs --feature SES-1
+has "inputsHash: "
+git checkout -q -- aisdlc/risk-policy.yaml
 cd "$E2E"
 fi # part session
 

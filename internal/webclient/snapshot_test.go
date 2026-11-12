@@ -413,25 +413,6 @@ func TestSnapshotIncludesReviewCards(t *testing.T) {
 	}
 }
 
-func TestSnapshotCardHookChangesBrdCard(t *testing.T) {
-	f := newSnapFix(t)
-	in := f.input(false)
-	in.Flow, in.Meta.Flow = model.FlowFull, model.FlowFull
-	in.Gates = gate.NewService(f.paths, model.FlowFull, f.config, gate.NewLocalGateStore(f.paths), now)
-	in.Specs, in.Records, in.Cases = nil, nil, nil
-	in.CardHook = func(g gate.Gate, c review.ReviewCard) review.ReviewCard {
-		if g == gate.BRD {
-			return c.WithRiskPreview(review.RiskPreview{Level: "high", Matched: []review.RiskMatch{}})
-		}
-		return c
-	}
-	s, err := Build(in)
-	mustNil(t, err)
-	if p := s.ReviewCards.Get("BRD").RiskPreview; p == nil || p.Level != "high" {
-		t.Fatalf("%+v", p)
-	}
-}
-
 // treeOnlyWhenReviewOpen
 func TestSnapshotTreeOnlyWhenReviewOpen(t *testing.T) {
 	f := newSnapFix(t)

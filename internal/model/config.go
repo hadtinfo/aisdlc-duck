@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/yamlx"
 )
 
@@ -51,6 +52,7 @@ type UnitTestConfig struct{ Packages, Flags []string }
 // RepoConfig là nội dung aisdlc/config.yaml, đã điền mặc định.
 type RepoConfig struct {
 	Language         string
+	Locale           i18n.Locale // ngôn ngữ của repo: vi (mặc định) hoặc en
 	TimeoutMinutes   float64
 	Service          ServiceConfig
 	Migrations       MigrationsConfig
@@ -124,7 +126,12 @@ func (r *rd) config(n any) RepoConfig {
 	mig := get(n, "migrations")
 	ut := get(n, "unitTest")
 	migDir := str(mig, "dir", "db/migrations")
+	loc, err := i18n.Parse(str(n, "locale", ""))
+	if err != nil && r.err == nil {
+		r.err = err
+	}
 	return RepoConfig{
+		Locale:         loc,
 		Language:       str(n, "language", "go"),
 		TimeoutMinutes: r.positive(n, "timeoutMinutes", "timeoutMinutes", 30),
 		Service: ServiceConfig{

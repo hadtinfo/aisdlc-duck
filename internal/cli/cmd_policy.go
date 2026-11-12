@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -36,12 +39,26 @@ func newPolicyCmd(ctx *Context) *cobra.Command {
 			RunE:  Wrap(ctx, func(*cobra.Command, []string) (int, error) { return policyPull(ctx) }),
 		},
 		&cobra.Command{
+			Use:   "migrate",
+			Short: "Chuyển risk-policy.yaml từ schema 1 sang schema 2 (mặc định chỉ in diff; --write để ghi).",
+			Args:  cobra.NoArgs,
+			RunE: Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
+				write, _ := cmd.Flags().GetBool("write")
+				return policyMigrate(ctx, write)
+			}),
+		},
+		&cobra.Command{
 			Use:   "diff-preset",
 			Short: "So mẫu mà chính sách dựa trên với bản mới nhất của mẫu đó.",
 			Args:  cobra.NoArgs,
 			RunE:  Wrap(ctx, func(*cobra.Command, []string) (int, error) { return policyDiffPreset(ctx) }),
 		},
 	)
+	for _, sub := range c.Commands() {
+		if sub.Name() == "migrate" {
+			sub.Flags().Bool("write", false, "ghi kết quả vào "+RepoPolicyFile)
+		}
+	}
 	return c
 }
 
@@ -61,8 +78,12 @@ func policyShow(ctx *Context) (int, error) {
 	}
 	ctx.Println("Chính sách v" + strconv.Itoa(p.Version) + " (" + l.Origin + ")" + preset)
 	ctx.Println("Thang mức: " + strings.Join(p.Levels, " < ") + " (mặc định: " + p.DefaultLevel + ")")
-	ctx.Println("Phân loại: agent=" + string(p.Classification.Agent) + ", devLower=" +
-		string(p.Classification.DevLower))
+	if p.Schema == 2 {
+		ctx.Println("Phân loại: devLower=" + string(p.Classification.DevLower))
+	} else {
+		ctx.Println("Phân loại: agent=" + string(p.Classification.Agent) + ", devLower=" +
+			string(p.Classification.DevLower))
+	}
 	ctx.Println("Rule:")
 	if len(p.Rules) == 0 {
 		ctx.Println("  (không có)")
@@ -73,7 +94,15 @@ func policyShow(ctx *Context) (int, error) {
 		if kind == "" {
 			kind = "?"
 		}
-		note, off := "", ""
+		off := ""
+		if p.Schema == 2 {
+			if !r.Enabled {
+				off = " (tắt)"
+			}
+			fmt.Fprintf(ctx.Out(), "  %-4s %-6s %s%s\n", r.ID, r.Level, r.Describe, off)
+			continue
+		}
+		note := ""
 		if r.Note != "" {
 			note = " — " + r.Note
 		}
@@ -93,7 +122,9 @@ func policyShow(ctx *Context) (int, error) {
 	if len(labels) > 0 {
 		shown = strings.Join(labels, ", ")
 	}
-	ctx.Println("Nhãn cho impact.labels (rule label): " + shown)
+	if p.Schema != 2 {
+		ctx.Println("Nhãn cho impact.labels (rule label): " + shown)
+	}
 	ctx.Println("Yêu cầu theo mức:")
 	for _, level := range p.Levels {
 		reqs := p.RequirementsFor(level)
@@ -200,5 +231,61 @@ func policyDiffPreset(ctx *Context) (int, error) {
 	}
 	ctx.Println("Không tự áp dụng: chọn mục cần lấy rồi sửa " + RepoPolicyFile +
 		" qua MR (repo dùng web thì sửa trên web).")
+	return ExitOK, nil
+}
+
+// policyMigrate chuyển aisdlc/risk-policy.yaml từ schema 1 sang schema 2: in diff, chỉ ghi file khi có --write.
+func policyMigrate(ctx *Context, write bool) (int, error) {
+	root, err := ctx.RepoRoot()
+	if err != nil {
+		return 0, err
+	}
+	if NewWebCache(ctx, root).PolicyWebMode() {
+		return 0, abort(2, "Chế độ web: chuyển chính sách trên trang chính sách của web.")
+	}
+	f := filepath.Join(root, RepoPolicyFile)
+	b, err := os.ReadFile(f)
+	if err != nil {
+		return 0, abort(2, "Không đọc được "+RepoPolicyFile+": "+err.Error())
+	}
+	from, err := parsePolicy(string(b), RepoPolicyFile)
+	if err != nil {
+		return 0, err
+	}
+	if from.Schema == 2 {
+		ctx.Println(RepoPolicyFile + " đã là schema 2, không cần chuyển.")
+		return ExitOK, nil
+	}
+	to, err := risk.MigrateToV2(from)
+	if err != nil {
+		return 0, err
+	}
+	out, err := to.ToYAML()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := risk.ParsePolicy(out); err != nil {
+		return 0, err
+	}
+	changes := risk.DiffPolicies(from, to)
+	ctx.Println("Chuyển " + RepoPolicyFile + " sang schema 2: " + strconv.Itoa(len(changes)) + " thay đổi")
+	for _, c := range changes {
+		switch {
+		case c.Before == "":
+			ctx.Println("  " + c.Kind + " " + c.Key + ": " + c.After)
+		case c.After == "":
+			ctx.Println("  " + c.Kind + " " + c.Key + ": " + c.Before + " (bỏ)")
+		default:
+			ctx.Println("  " + c.Kind + " " + c.Key + ": " + c.Before + " → " + c.After)
+		}
+	}
+	if !write {
+		ctx.Println("Chưa ghi gì. Chạy lại với --write để ghi " + RepoPolicyFile + ", rồi commit qua MR.")
+		return ExitOK, nil
+	}
+	if err := os.WriteFile(f, []byte(out), 0o644); err != nil {
+		return 0, errors.New("Không ghi được " + RepoPolicyFile + ": " + err.Error())
+	}
+	ctx.Println("Đã ghi " + RepoPolicyFile + " (schema 2). Xem lại các mô tả rồi commit qua MR.")
 	return ExitOK, nil
 }

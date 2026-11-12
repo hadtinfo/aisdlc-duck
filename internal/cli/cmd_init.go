@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -88,7 +89,7 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 		}
 	}
 	for _, f := range files {
-		content, err := template(f.template)
+		content, err := template(i18n.Default(), f.template)
 		if err != nil {
 			return 0, err
 		}
@@ -97,7 +98,7 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 		}
 	}
 	meta := model.FeatureMeta{Key: k, Title: t, Flow: flow, BaseTree: baseTree, CreatedAt: ctx.Now().UTC(),
-		Owner: owner(ctx, root)}
+		Owner: owner(ctx, root), RiskSchema: riskSchemaMarker}
 	if err := meta.Write(paths.Meta()); err != nil {
 		return 0, err
 	}

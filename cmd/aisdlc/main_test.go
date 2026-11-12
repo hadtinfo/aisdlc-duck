@@ -18,6 +18,7 @@ import (
 
 	"aisdlc/internal/cli"
 	"aisdlc/internal/model"
+	"aisdlc/internal/risk"
 	"aisdlc/internal/run"
 	"aisdlc/internal/webclient"
 	"aisdlc/internal/webclient/fakeweb"
@@ -54,6 +55,7 @@ type result struct {
 
 func runCmd(t *testing.T, dir, stdin string, name string, args ...string) result {
 	t.Helper()
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command -- lệnh là git hoặc binary test tự build, tham số cố định trong test
 	c := exec.Command(name, args...)
 	c.Dir = dir
 	c.Env = hermeticEnv(t.TempDir())
@@ -225,6 +227,39 @@ const validBRD = "# BRD\n\n## Mục tiêu\nGiới hạn chuyển tiền theo ng�
 	"## Ngoài phạm vi\n- Giao diện.\n\n## Quy tắc nghiệp vụ\n- Hạn mức 50.000.000 VND/ngày.\n\n" +
 	"## Tiêu chí chấp nhận\n- Vượt hạn mức trả 422.\n\n## Câu hỏi mở\n- [x] Có tính giao dịch bị hủy không? → không\n"
 
+// writeRiskAgent giả subagent aisdlc-risk-classifier: risk-agent.json mức mặc định, không luật nào khớp, cho đúng
+// đầu vào hiện tại (luồng đầy đủ).
+func writeRiskAgent(t *testing.T, root, key string) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(root, "aisdlc", "risk-policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := risk.ParsePolicy(string(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := model.FeaturePaths{RepoRoot: root, Key: model.FeatureKey(key)}
+	files, err := risk.InputFiles(root, paths, model.FlowFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := risk.LLMResult{InputsHash: risk.InputsHash(p, files), Level: p.DefaultLevel, Matched: []risk.LLMMatch{},
+		Summary: "Giả lập subagent trong test."}
+	for _, r := range p.Rules {
+		if r.Enabled {
+			res.NotMatched = append(res.NotMatched, risk.LLMNotMatch{Rule: r.ID, Reason: "không liên quan"})
+		}
+	}
+	j, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.RiskAgent(), j, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // stepOneRepo dựng repo git có PAY-1 đã duyệt tới cổng case, S1 đang chạy (dựng trong tiến trình bằng cli.Run).
 func stepOneRepo(t *testing.T) string {
 	t.Helper()
@@ -273,6 +308,9 @@ func stepOneRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	for _, g := range []string{"brd", "design", "cases"} {
+		if g == "design" {
+			writeRiskAgent(t, root, "PAY-1")
+		}
 		step(noTerm{}, "submit", g)
 		step(typedConsole("PAY-1"), "approve", g)
 	}
@@ -425,6 +463,7 @@ func hookP95(t *testing.T, root string, off, v hookRun) {
 // hookOnce chạy binary hook một lần (HOME tạm), kiểm stdout, trả thời gian.
 func hookOnce(t *testing.T, root string, h hookRun) time.Duration {
 	t.Helper()
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command -- lệnh là git hoặc binary test tự build, tham số cố định trong test
 	c := exec.Command(binPath, "hook", h.event)
 	c.Dir = root
 	c.Env = append(hermeticEnv(t.TempDir()), h.vars...)
@@ -487,6 +526,7 @@ func TestPostToolUseFastWhenWebHangs(t *testing.T) {
 	in := strings.Replace(editJSON(root, filepath.Join(root, codePath)), `"PreToolUse"`, `"PostToolUse"`, 1)
 	vars := []string{"AISDLC_WEB_URL=" + web.URL(), "AISDLC_WEB_TOKEN=t0k"}
 	run := func() (time.Duration, result) {
+		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command -- lệnh là git hoặc binary test tự build, tham số cố định trong test
 		c := exec.Command(binPath, "hook", "post-tool-use")
 		c.Dir = root
 		c.Env = append(hermeticEnv(t.TempDir()), vars...)

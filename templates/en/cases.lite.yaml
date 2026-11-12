@@ -1,0 +1,16 @@
+scope: ["internal/limit/handler/*.go"]
+budget: { files: 3, lines: 120 }
+# DB invariants (the lite flow declares them here; checked after EVERY case, `step` is ignored). Each entry is a
+# SELECT that returns the VIOLATING rows (0 rows when correct), e.g.:
+#   - { name: "Used total is not negative", sql: "SELECT account_id FROM transfer_limit_usage WHERE used_amount < 0" }
+invariants: []
+reset_sql: ["DELETE FROM transfer_limit_usage"]
+stubs: []
+cases:
+  - id: C1
+    step: S1
+    kind: error
+    title: Missing accountId returns 400
+    given: { sql: [], stubs: [] }
+    when:  { method: POST, path: /api/v1/limits/check, body: { amount: 100 } }
+    then:  { status: 400, body: { code: "VALIDATION_ERROR" } }

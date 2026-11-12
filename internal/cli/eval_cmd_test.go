@@ -13,6 +13,7 @@ import (
 	"aisdlc/internal/harness"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
+	"aisdlc/internal/risk"
 	"aisdlc/internal/run"
 	"aisdlc/internal/webclient/fakeweb"
 )
@@ -233,6 +234,7 @@ func TestEvalCiReportWarnsAboutUnapprovedOrChangedGates(t *testing.T) {
 	notContains(t, r.out, "GATE:BRD", "GATE:DESIGN", "GATE:CASES")
 
 	r.write("aisdlc/features/PAY-1/brd.md", validBRD+"\nThêm dòng sau khi duyệt.\n")
+	r.refreshLLMHash("PAY-1") // test này chỉ xét cảnh báo cổng; RISK_LLM có test riêng ở eval
 	if c := r.run("eval", "--ci", "--base", "HEAD"); c != 0 {
 		t.Fatalf("exit %d\n%s%s", c, r.out, r.err)
 	}
@@ -346,4 +348,21 @@ func TestEvalVerifierErrorIsReportedNotPanicked(t *testing.T) {
 	r.verifier.err = errors.New("không ghi được .aisdlc/run/PAY-1")
 	eq(t, r.run("eval"), 2)
 	contains(t, r.err, "Lỗi: không ghi được .aisdlc/run/PAY-1")
+}
+
+// refreshLLMHash ghi lại llm.inputsHash của risk.yaml theo tài liệu hiện tại (như sau một lần xếp loại lại).
+func (r *testRepo) refreshLLMHash(key string) {
+	r.t.Helper()
+	p, ok := r.llmPolicy()
+	if !ok {
+		r.t.Fatal("không có chính sách dùng được")
+	}
+	paths, files, ok := r.llmInputs(key)
+	if !ok {
+		r.t.Fatal("không đọc được feature.yaml")
+	}
+	rf, _, err := risk.ReadRiskFile(paths.Risk())
+	must(r.t, err)
+	rf.LLM.InputsHash = risk.InputsHash(p, files)
+	must(r.t, rf.Write(paths.Risk()))
 }

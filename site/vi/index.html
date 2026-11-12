@@ -136,8 +136,8 @@ git status --short</code></pre>
 <section id="walkthrough">
   <div class="wrap">
     <h2>Ví dụ: PAY-1 “Kiểm tra hạn mức ngày”</h2>
-    <p class="sub">Cùng kịch bản mà test E2E chạy trên service mẫu <code>e2e/fixture-service</code>. Chính sách rủi ro của repo xếp mọi
-      thứ có chữ “hạn mức” vào mức <span class="pill bad">high</span>, mức này yêu cầu case gửi trùng và một bất biến DB.</p>
+    <p class="sub">Cùng kịch bản mà test E2E chạy trên service mẫu <code>e2e/fixture-service</code>. Chính sách rủi ro của repo có rule mô tả
+      “Chặn giao dịch theo hạn mức” ở mức <span class="pill bad">high</span>, mức này yêu cầu case gửi trùng và một bất biến DB.</p>
 
     <h3>1 · Khởi tạo và soạn BRD</h3>
     <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc init PAY-1 --title "Kiểm tra hạn mức ngày"</span>
@@ -149,8 +149,7 @@ git status --short</code></pre>
 <span class="d">Tiếp theo: soạn brd.md rồi chạy `aisdlc submit brd`.</span>
 
 <span class="p">$</span> <span class="c">aisdlc submit brd</span>
-<span class="w">Rủi ro tạm (từ khóa): high</span>
-<span class="ok">Đã nộp cổng BRD, không có phát hiện.</span></pre></div>
+<span class="ok">Đã nộp cổng BRD, không có phát hiện.</span>  <span class="d"># cổng BRD luôn do dev duyệt</span></pre></div>
 
     <h3>2 · Dev duyệt — ở terminal của mình</h3>
     <p>Agent thử duyệt thì bị từ chối (exit 3), và hook chặn ghi code khi cổng chưa mở. Dev đọc thẻ review rồi gõ lại feature key:</p>
@@ -174,9 +173,11 @@ Gõ lại feature key (PAY-1) để xác nhận: <span class="c">PAY-1</span>
     budget: { files: 3, lines: 80 }
 invariants:
   - name: Số đã dùng không vượt hạn mức
-    sql: "SELECT account_id FROM daily_limit WHERE used_amount &lt; 0 OR used_amount &gt; limit_amount"
-impact: { level: medium, labels: [schema-change] }</code></pre>
-    <p><code>submit design</code> chạy thử migration nháp trên Postgres thật và tính mức rủi ro đầy đủ. Thẻ review báo
+    sql: "SELECT account_id FROM daily_limit WHERE used_amount &lt; 0 OR used_amount &gt; limit_amount"</code></pre>
+    <p>Trước khi nộp, agent chạy <code>aisdlc risk inputs</code> và đưa các file đó cho subagent chỉ đọc
+      <code>aisdlc-risk-classifier</code>; subagent xét từng rule theo nghĩa và trích bằng chứng (rule <code>E1</code>:
+      “App chặn sớm giao dịch chuyển tiền vượt hạn mức ngày của tài khoản”). <code>submit design</code> kiểm kết quả đó
+      với tài liệu hiện tại, chạy thử migration nháp trên Postgres thật và ghi mức <span class="pill bad">high</span>. Thẻ review báo
       <span class="pill bad">SCOPE_OVERLAP</span> (S1 và S2 cùng chạm <code>internal/limit/web/**</code>) và
       <span class="pill warn">SCOPE_MATCHES_OLD_MIGRATION</span> — xem <a href="#web">ảnh cổng Thiết kế</a> bên dưới.</p>
 
@@ -259,15 +260,16 @@ aisdlc web login</code></pre>
 <section id="risk">
   <div class="wrap">
     <h2>Chính sách rủi ro</h2>
-    <p class="sub">Mỗi repo khai báo thang mức, rule nhận diện tính năng rủi ro (từ khóa, đường dẫn, bảng, endpoint, nhãn) và yêu cầu theo
-      mức. Agent chỉ được nâng mức, không được hạ. Mức thấp có thể tự duyệt lần nộp sạch — Review luôn do dev duyệt.</p>
+    <p class="sub">Mỗi repo khai báo thang mức, rule viết bằng lời và yêu cầu theo mức. Một subagent độc lập xếp loại mỗi tính
+      năng một lần, ở cổng Thiết kế, kèm câu trích cho mỗi rule khớp; CI kiểm lại kết quả còn khớp tài liệu. Mức thấp có thể
+      tự duyệt lần nộp sạch của Thiết kế, Case và bước — BRD và Review luôn do dev duyệt.</p>
 
     <div class="split">
       <div>
 <pre><code>flow:
-  low:    { brd: auto,   design: auto,   cases: auto,   step: auto }
-  medium: { brd: manual, design: manual, cases: manual, step: auto }
-  high:   { brd: manual, design: manual, cases: manual, step: manual }</code></pre>
+  low:    { design: auto,   cases: auto,   step: auto }
+  medium: { design: manual, cases: manual, step: auto }
+  high:   { design: manual, cases: manual, step: manual }</code></pre>
         <div class="tbl">
           <table>
             <tr><th>Yêu cầu</th><th>Ý nghĩa</th></tr>
@@ -283,11 +285,11 @@ aisdlc web login</code></pre>
       <div class="grid">
         <figure class="shot crop">
           <a href="../images/web-chinh-sach-rui-ro.png"><img src="../images/web-chinh-sach-rui-ro.png" alt="Trang chính sách rủi ro, tab Yêu cầu theo mức" loading="lazy" width="1440" height="1400"></a>
-          <figcaption><b>Sửa chính sách trên web</b> — bản nháp, xuất bản kèm lý do, lịch sử phiên bản và tab “Thử phân loại”.</figcaption>
+          <figcaption><b>Sửa chính sách trên web</b> — bản nháp, xuất bản kèm lý do, lịch sử phiên bản và nút tạo bản nháp chuyển từ schema 1.</figcaption>
         </figure>
         <figure class="shot crop">
-          <a href="../images/web-tu-duyet.png"><img src="../images/web-tu-duyet.png" alt="Trang cổng BRD của FEE-3: tự duyệt (mức low)" loading="lazy" width="1440" height="1400"></a>
-          <figcaption><b>Tự duyệt ở mức low.</b> FEE-3 chạy thẳng tới Review; chỉ cổng cuối chờ người duyệt.</figcaption>
+          <a href="../images/web-tu-duyet.png"><img src="../images/web-tu-duyet.png" alt="Trang cổng của FEE-3: tự duyệt (mức low)" loading="lazy" width="1440" height="1400"></a>
+          <figcaption><b>Tự duyệt ở mức low.</b> Dev duyệt BRD xong, FEE-3 chạy thẳng tới Review; chỉ cổng cuối chờ người duyệt.</figcaption>
         </figure>
       </div>
     </div>

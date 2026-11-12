@@ -14,6 +14,8 @@ type FeatureMeta struct {
 	BaseTree  string     `yaml:"baseTree" json:"baseTree"`
 	CreatedAt time.Time  `yaml:"createdAt" json:"createdAt"`
 	Owner     string     `yaml:"owner" json:"owner"`
+	// RiskSchema là schema chính sách rủi ro lúc tạo tính năng (0 = chưa ghi).
+	RiskSchema int `yaml:"riskSchema,omitempty" json:"riskSchema,omitempty"`
 }
 
 // ReadFeatureMeta đọc feature.yaml.

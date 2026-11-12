@@ -25,6 +25,8 @@ for c in init brd design cases step eval review status approve reject accept; do
   check "command $c: thân <= 25 dòng" "[ \$(awk 'BEGIN{n=0} /^---\$/{n++; next} n>=2' '$f' | grep -c .) -le 25 ]"
 done
 check "agent aisdlc-reviewer" "grep -q '^name: aisdlc-reviewer' '$P/agents/aisdlc-reviewer.md' && grep -q '^tools: Read, Grep, Glob' '$P/agents/aisdlc-reviewer.md'"
+check "agent aisdlc-risk-classifier: tools chỉ đọc, có schema" "grep -q '^name: aisdlc-risk-classifier' '$P/agents/aisdlc-risk-classifier.md' && grep -q '^tools: Read, Grep, Glob\$' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'inputsHash' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'notMatched' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'override' '$P/agents/aisdlc-risk-classifier.md'"
+check "design/cases dùng subagent risk-classifier, không còn impact" "grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/design.md' && grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/cases.md' && grep -q 'RISK_AGENT_INVALID' '$P/commands/design.md' && ! grep -qi 'impact' '$P'/commands/*.md && ! grep -qi 'rủi ro' '$P/commands/brd.md'"
 for id in sequence error-handling over-engineering naming security; do
   check "agent có tiêu chí $id" "grep -q '$id' '$P/agents/aisdlc-reviewer.md'"
 done

@@ -24,8 +24,10 @@ BRD ──▶ Design ──▶ Cases ──▶ Code step by step S1…Sn ──�
   `eval/report.md`; a CI job re-runs it on the MR.
 - **Review card:** each gate has a summary card with red flags (overlapping scopes, globs touching old migrations,
   changes to existing tables, missing cases…), a step map, an ER diff, an API table and the agent's assumptions.
-- **Risk:** the repo's risk policy assigns each feature a level; the higher the level, the stricter the case suite must
-  be. Low levels can let the system auto-approve cleanly submitted gates (Review is always approved by hand).
+- **Risk:** the repo's risk policy describes its rules in plain words; an independent subagent reads the feature's
+  documents at the Design gate and assigns a level, with a quote for every matched rule. The higher the level, the
+  stricter the case suite must be. Low levels can let the system auto-approve cleanly submitted Design, Cases and step
+  gates (BRD and Review are always approved by hand).
 - **Web (optional):** a feature board, live view of the running agent, approving gates on the web, pausing the agent,
   sending instructions, accepting steps / allowing files from the browser.
 

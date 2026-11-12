@@ -24,19 +24,36 @@ type ReviewCard struct {
 	Cases              *CasesPart        `json:"cases"`
 	Risk               *RiskPart         `json:"risk"`
 	RiskRequirements   []RiskRequirement `json:"riskRequirements"`
-	RiskPreview        *RiskPreview      `json:"riskPreview"`
+	RiskLLM            *RiskLLMBlock     `json:"riskLLM"`
 }
 
-// WithRiskPreview trả bản sao của thẻ kèm mức rủi ro tạm (chỉ thẻ BRD; CLI tính theo chính sách hiện tại).
-func (c ReviewCard) WithRiskPreview(p RiskPreview) ReviewCard {
-	c.RiskPreview = &p
-	return c
+// RiskLLMBlock là kết quả xếp loại của subagent aisdlc-risk-classifier (risk.yaml mục llm và risk-agent.json);
+// chỉ có ở thẻ DESIGN và CASES của tính năng được xếp loại theo chính sách schema 2.
+type RiskLLMBlock struct {
+	Level      string            `json:"level"`
+	Summary    string            `json:"summary"`
+	Matched    []RiskLLMMatch    `json:"matched"`
+	NotMatched []RiskLLMNotMatch `json:"notMatched"`
+	Override   *RiskLLMOverride  `json:"override"`
 }
 
-// RiskPreview là mức rủi ro tạm lúc nộp BRD: chỉ rule keyword trên tiêu đề và brd.md; không ghi file.
-type RiskPreview struct {
-	Level   string      `json:"level"`
-	Matched []RiskMatch `json:"matched"`
+// RiskLLMMatch là rule khớp; On là "“câu trích” (file)".
+type RiskLLMMatch struct {
+	Rule  string `json:"rule"`
+	Level string `json:"level"`
+	On    string `json:"on"`
+}
+
+// RiskLLMNotMatch là rule không khớp kèm lý do của subagent.
+type RiskLLMNotMatch struct {
+	Rule   string `json:"rule"`
+	Reason string `json:"reason"`
+}
+
+// RiskLLMOverride là lần subagent chủ động lệch khỏi mức tính từ rule; From là mức tính từ rule.
+type RiskLLMOverride struct {
+	From   string `json:"from"`
+	Reason string `json:"reason"`
 }
 
 // RiskPart là mức rủi ro từ risk.yaml; chỉ có ở thẻ DESIGN và CASES của tính năng có risk.yaml.
@@ -274,6 +291,9 @@ func marshalSkipNil(v any) ([]byte, error) {
 
 // MarshalJSON bỏ phần nil như Jackson NON_NULL.
 func (c ReviewCard) MarshalJSON() ([]byte, error) { return marshalSkipNil(c) }
+
+// MarshalJSON bỏ override nil như NON_NULL.
+func (b RiskLLMBlock) MarshalJSON() ([]byte, error) { return marshalSkipNil(b) }
 
 // MarshalJSON bỏ phần nil như Jackson NON_NULL.
 func (p RiskPart) MarshalJSON() ([]byte, error) { return marshalSkipNil(p) }

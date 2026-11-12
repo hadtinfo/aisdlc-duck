@@ -6,10 +6,48 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Breaking
+
+- Risk policy `schema: 2`: rules are described in words (`{ id, level, describe }`) and judged by an LLM subagent;
+  the matching rule kinds `keyword`, `path`, `table`, `endpoint` and `label` and `classification.agent` are gone. A
+  `schema: 1` policy stops classification with exit 2: run `aisdlc policy migrate` (prints the diff; `--write` writes
+  it) and merge the result, or in web mode publish the draft from **Chuyển sang schema 2** on the policy page. Presets
+  `generic` and `banking` v3 are schema 2.
+- The `impact` block in `design.yaml` (lite: `cases.yaml`) is no longer used; the validator only warns.
+- The BRD gate is always approved by the dev: no provisional risk level at `submit brd` (`Rủi ro tạm (từ khóa)` is
+  gone) and `flow.<level>.brd` is ignored with a warning.
+- `submit design` (lite: `submit cases`) requires a valid `aisdlc/features/<KEY>/risk-agent.json` whose `inputsHash`
+  matches `aisdlc risk inputs` (`RISK_AGENT_MISSING`, `RISK_AGENT_INVALID`). `aisdlc risk reclassify` now applies a
+  new `risk-agent.json` instead of recomputing from rules.
+
 ### Added
 
+- Locale foundation (English/Vietnamese): the `locale` key (`vi` or `en`) in `aisdlc/config.yaml`, the
+  `AISDLC_LOCALE` environment variable (a wrong value is ignored) and `aisdlc setup --locale vi|en`. Inside a repo
+  with `aisdlc/config.yaml` the language comes only from its `locale` key (missing or empty means `vi`; the
+  environment variable is ignored); `AISDLC_LOCALE` applies only outside such a repo. A repo without the key stays
+  Vietnamese, byte for byte. A wrong `locale` value is an error for commands that read the config but no longer
+  blocks `--version` or the fail-open hooks.
+- English templates (`templates/en/`) for `brd.md`, `design.md`, `design.yaml`, `cases.yaml`, `config.yaml`,
+  `CLAUDE.md` and the CI job; `aisdlc init` uses the repo locale. The Vietnamese templates are unchanged except for
+  the new `locale: vi` line in `config.yaml`.
+- The BRD validator accepts English section headings (`Goal`, `In scope`, `Out of scope`, `Business rules`,
+  `Acceptance criteria`, `Assumptions`, `Open questions`) as well as the Vietnamese ones.
+- `aisdlc status` prints a `Locale:` line. CLI messages, the web UI and the plugin are still Vietnamese; they are
+  translated in later waves.
 - Project site on GitHub Pages (`site/`, English and Vietnamese) with a guided tour and screenshots, assembled by
   `make site` and published by the `Pages` workflow.
+- Subagent `aisdlc-risk-classifier` (read-only): decides which policy rules match a feature's documents, with verbatim
+  quotes, and returns the JSON the agent saves as `risk-agent.json`. `/aisdlc:design` and lite `/aisdlc:cases` run it
+  before submitting.
+- `aisdlc risk inputs`: lists the classifier's input files and the effective policy
+  (`.aisdlc/risk/policy-effective.yaml`) and prints `inputsHash`.
+- `aisdlc policy migrate [--write]`: converts a `schema: 1` policy to `schema: 2`.
+- Web: the policy page shows rule descriptions and offers a schema 2 migration draft for a schema 1 policy (the "try
+  classification" tab is removed); the Design (lite: Cases) review card has an "Xếp loại LLM" block, with the WARN flag
+  `RISK_LLM_OVERRIDE` when the subagent departs from the rule-based level.
+- CI check `RISK_LLM` (`eval --ci`): `llm.inputsHash` in `risk.yaml` must match the current documents and policy; no
+  LLM is called. In web mode the CI token may read the live policy (`GET /api/cli/policy`).
 - `aisdlc setup` creates a git repository (`git init -b main`) when the directory is not inside one yet, so
   `aisdlc init` works right away in a new project; the remote can be added later.
 

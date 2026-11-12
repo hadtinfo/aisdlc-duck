@@ -5,7 +5,6 @@ import (
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/model"
-	"aisdlc/internal/review"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/spec"
@@ -132,7 +131,6 @@ func (c *Context) featureSnapshot(p *webclient.Publisher, f *Feature) ([]byte, e
 		Specs: f.Specs(), Records: records, Cases: cases, Git: git, Adapter: f.Adapter,
 		RepoID: f.Web.RepoID(), Branch: branch, ClientID: clientID, CapturedAt: c.now(),
 		Sender: webclient.Sender(git), WebMode: f.Mode == gate.ModeWeb,
-		CardHook: func(_ gate.Gate, card review.ReviewCard) review.ReviewCard { return withBrdPreview(c, f, card) },
 	})
 }
 

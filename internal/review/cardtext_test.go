@@ -111,3 +111,18 @@ func TestApprovalLineUnderTitle(t *testing.T) {
 	lines := strings.Split(RenderCard("PAY-1", textCard(), 100, false, "tự duyệt (mức low)"), "\n")
 	eq(t, "approval", lines[1], "Duyệt: tự duyệt (mức low)")
 }
+
+func TestCardTextRiskLLMBlock(t *testing.T) {
+	c := textCard()
+	c.RiskLLM = &RiskLLMBlock{Level: "high", Summary: "Ghi tiền",
+		Matched:    []RiskLLMMatch{{Rule: "R1", Level: "high", On: "“ghi số dư” (design.md)"}},
+		NotMatched: []RiskLLMNotMatch{{Rule: "R2", Reason: "không đổi lược đồ"}},
+		Override:   &RiskLLMOverride{From: "medium", Reason: "chỉ đọc"}}
+	out := RenderCard("PAY-1", c, 100, false, "")
+	for _, w := range []string{"Xếp loại LLM: high", "Ghi tiền", "R1 (high)", "“ghi số dư” (design.md)",
+		"Không khớp: R2 — không đổi lược đồ", "Lệch mức rule (medium): chỉ đọc"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("thiếu %q trong:\n%s", w, out)
+		}
+	}
+}

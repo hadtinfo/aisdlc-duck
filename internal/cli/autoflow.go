@@ -10,8 +10,8 @@ import (
 // AutoFlow của Java: quy trình theo mức rủi ro ở CLI (spec risk-flow §5): tự duyệt cổng sau khi nộp sạch (chỉ chế độ
 // local) và thay thế bản tự duyệt khi mức mới đặt cổng về duyệt tay. Cách hiển thị bản duyệt ở display.go.
 
-// afterSubmit: sau khi nộp g sạch ở chế độ local, tự duyệt nếu flow của mức áp cho cổng là auto và review card không
-// có cờ HIGH. Trả nhãn hiển thị khi đã tự duyệt ("" khi không); in lý do khi flow cho phép mà cờ HIGH chặn. Chế độ
+// afterSubmit: sau khi nộp g sạch ở chế độ local, tự duyệt nếu flow chụp trong risk.yaml cho cổng là auto và review card
+// không có cờ HIGH; BRD và Review luôn duyệt tay. Trả nhãn hiển thị khi đã tự duyệt ("" khi không); in lý do khi flow cho phép mà cờ HIGH chặn. Chế độ
 // web: CLI không duyệt; trả nhãn khi bản nộp (đã vào cache) có bản tự duyệt của server.
 func afterSubmit(ctx *Context, f *Feature, g gate.Gate) (string, error) {
 	if g == gate.REVIEW {
@@ -28,6 +28,9 @@ func afterSubmit(ctx *Context, f *Feature, g gate.Gate) (string, error) {
 		}
 		return autoLabel(a), nil
 	}
+	if g == gate.BRD {
+		return "", nil // cổng BRD luôn duyệt tay
+	}
 	st, err := f.Gates.State(g)
 	if err != nil || st != gate.AwaitingApproval {
 		return "", err
@@ -41,40 +44,19 @@ func afterSubmit(ctx *Context, f *Feature, g gate.Gate) (string, error) {
 	if err != nil {
 		return "", nil // risk.yaml hỏng: không biết mức, để dev duyệt
 	}
-	var level, reason string
-	var flowAuto, manual bool
-	if g == gate.BRD {
-		l, ok := TryLoadPolicy(ctx, f.Root)
-		if !ok || card.RiskPreview == nil {
-			return "", nil
-		}
-		p := l.Policy
-		fileLevel := ""
-		if hasRisk {
-			fileLevel = rf.Level
-		}
-		// đã có risk.yaml (vd. nâng mức ở submit design, risk set): mức chặt hơn của mức tạm và mức trong file, và flow
-		// chụp trong file cũng phải cho phép — nộp lại BRD không hoàn tác được bản thay thế
-		level = risk.LevelForGate(p, g, card.RiskPreview.Level, fileLevel)
-		flowAuto = p.FlowFor(level, risk.FlowUnit(g)) == "auto" && (!hasRisk || risk.AutoFromRiskFile(&rf, g))
-		if !flowAuto {
-			reason, manual = "Mức "+level+": cổng "+risk.FlowUnit(g)+" đặt duyệt tay", true
-		} else {
-			reason, manual = risk.AutoGate(p, level, g, high)
-		}
-	} else {
-		// Thiết kế trở đi: flow đã chụp trong risk.yaml (CI kiểm đúng nguồn này); không có risk.yaml thì duyệt tay
-		if !hasRisk {
-			return "", nil
-		}
-		level = rf.Level
-		flowAuto = risk.AutoFromRiskFile(&rf, g)
-		switch {
-		case !flowAuto:
-			reason, manual = "Mức "+level+": cổng "+risk.FlowUnit(g)+" đặt duyệt tay", true
-		case high:
-			reason, manual = "Review card có cờ đỏ mức HIGH", true
-		}
+	// flow đã chụp trong risk.yaml (CI kiểm đúng nguồn này); không có risk.yaml thì duyệt tay
+	if !hasRisk {
+		return "", nil
+	}
+	var reason string
+	var manual bool
+	level := rf.Level
+	flowAuto := risk.AutoFromRiskFile(&rf, g)
+	switch {
+	case !flowAuto:
+		reason, manual = "Mức "+level+": cổng "+risk.FlowUnit(g)+" đặt duyệt tay", true
+	case high:
+		reason, manual = "Review card có cờ đỏ mức HIGH", true
 	}
 	if manual {
 		if flowAuto {
@@ -102,7 +84,7 @@ func reconcile(ctx *Context, f *Feature) ([]gate.Gate, error) {
 		return nil, nil
 	}
 	var p *risk.RiskPolicy
-	if l, ok := TryLoadPolicy(ctx, f.Root); ok {
+	if l, ok := TryFeaturePolicy(ctx, f); ok {
 		p = &l.Policy
 	}
 	return supersede(ctx, f, p, "", rf)

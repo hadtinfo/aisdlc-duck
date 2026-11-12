@@ -1,4 +1,6 @@
 # Cấu hình AISDLC cho repo này.
+# Ngôn ngữ tài liệu và thông báo của CLI: vi hoặc en.
+locale: vi
 # Chọn adapter ngôn ngữ; bản đầu chỉ có "go".
 language: go
 # Quá thời gian thì dừng build + test + case (và lệnh trong checks) và coi là lỗi.

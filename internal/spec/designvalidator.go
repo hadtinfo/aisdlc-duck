@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"aisdlc/internal/i18n"
 	"regexp"
 	"strings"
 )
@@ -21,8 +22,8 @@ func firstNonBlankLine(s string) string {
 	return ""
 }
 
-// ValidateDesign kiểm design.md và design.yaml. levels == nil thì bỏ kiểm impact.
-func ValidateDesign(designMd string, spec DesignSpec, levels []string) []Finding {
+// ValidateDesign kiểm design.md và design.yaml. Khối impact không còn được kiểm (xem ImpactDeprecationWarning).
+func ValidateDesign(designMd string, spec DesignSpec) []Finding {
 	var findings []Finding
 
 	var sequences strings.Builder
@@ -84,18 +85,19 @@ func ValidateDesign(designMd string, spec DesignSpec, levels []string) []Finding
 				inv.Step + " nhưng design.yaml không có bước này."})
 		}
 	}
-	if levels != nil {
-		if spec.Impact == nil {
-			findings = append(findings, Finding{"IMPACT_MISSING", "design.yaml thiếu khối impact (level, labels, reason)."})
-		} else if !containsStr(levels, spec.Impact.Level) {
-			findings = append(findings, Finding{"IMPACT_LEVEL",
-				"impact.level \"" + spec.Impact.Level + "\" không thuộc các mức hợp lệ [" + strings.Join(levels, ", ") + "]."})
-		}
-	}
 	for _, q := range OpenQuestions(designMd) {
-		findings = append(findings, Finding{"DESIGN_OPEN_QUESTION", "Câu hỏi mở chưa được trả lời: " + q})
+		findings = append(findings, Finding{"DESIGN_OPEN_QUESTION", i18n.Tf("Câu hỏi mở chưa được trả lời: %s", q)})
 	}
 	return findings
 }
 
 func containsStr(l []string, s string) bool { return indexOf(l, s) >= 0 }
+
+// ImpactDeprecationWarning là dòng cảnh báo không chặn khi file còn khối impact (design.yaml hoặc cases.yaml cũ);
+// "" khi không còn khối này.
+func ImpactDeprecationWarning(i *Impact) string {
+	if i == nil {
+		return ""
+	}
+	return "IMPACT_DEPRECATED: Khối impact không còn dùng: subagent aisdlc-risk-classifier xếp loại rủi ro; xóa khối này."
+}

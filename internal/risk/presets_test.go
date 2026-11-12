@@ -28,7 +28,7 @@ func TestBothPresetsParse(t *testing.T) {
 
 func TestGenericHasNoBusinessRules(t *testing.T) {
 	labels := map[string]bool{"money-movement": true, "schema-change": true, "auth": true, "external-api": true}
-	for _, r := range latest(t, "generic").Rules {
+	for _, r := range mustPreset(t, "generic", "2").Rules {
 		if r.Kind != MatchLabel {
 			t.Errorf("%s: kind %s", r.ID, r.Kind)
 		}
@@ -41,8 +41,8 @@ func TestGenericHasNoBusinessRules(t *testing.T) {
 }
 
 func TestBankingExtendsGeneric(t *testing.T) {
-	banking := latest(t, "banking")
-	for _, g := range latest(t, "generic").Rules {
+	banking := mustPreset(t, "banking", "2")
+	for _, g := range mustPreset(t, "generic", "2").Rules {
 		found := false
 		for _, b := range banking.Rules {
 			if reflect.DeepEqual(b, g) {
@@ -64,11 +64,11 @@ func TestBankingExtendsGeneric(t *testing.T) {
 
 func TestPresetRefMatchesFile(t *testing.T) {
 	ref := latest(t, "banking").Preset
-	if ref == nil || ref.Name != "banking" || ref.Version != "2" {
+	if ref == nil || ref.Name != "banking" || ref.Version != "3" {
 		t.Errorf("ref = %+v", ref)
 	}
-	if PresetLatestVersion("generic") != "2" {
-		t.Error("generic phải ở phiên bản 2")
+	if PresetLatestVersion("generic") != "3" {
+		t.Error("generic phải ở phiên bản 3")
 	}
 }
 

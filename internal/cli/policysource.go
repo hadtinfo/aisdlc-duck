@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"aisdlc/internal/gate"
 	"aisdlc/internal/risk"
 )
 
@@ -16,12 +17,69 @@ type LoadedPolicy struct {
 	Origin string
 }
 
-// LoadPolicy là chính sách rủi ro đang hiệu lực của repo (PolicySource.load, spec §4): đã `aisdlc web login` thì chỉ
-// đọc cache đã ký .aisdlc/web/policy.json (không lặng lẽ dùng file trong repo); không có web thì
-// aisdlc/risk-policy.yaml, thiếu file thì mẫu generic (bỏ flow) kèm cảnh báo (quiet: không in). Không gọi mạng.
+// LoadPolicy là chính sách rủi ro đang hiệu lực của repo (PolicySource.load, spec §4), dùng cho lệnh cấp repo
+// (`aisdlc policy ...`): đã `aisdlc web login` thì chỉ đọc cache đã ký .aisdlc/web/policy.json (không lặng lẽ dùng file
+// trong repo); không có web thì aisdlc/risk-policy.yaml, thiếu file thì mẫu generic (bỏ flow) kèm cảnh báo (quiet:
+// không in). Không gọi mạng. Lệnh của một tính năng dùng FeaturePolicy.
 func LoadPolicy(ctx *Context, root string, quiet bool) (LoadedPolicy, error) {
-	web := NewWebCache(ctx, root)
-	if web.PolicyWebMode() {
+	return loadPolicy(ctx, root, NewWebCache(ctx, root).PolicyWebMode(), quiet)
+}
+
+// policyFromWeb là quyết định duy nhất về nguồn chính sách của một tính năng: chính sách từ web khi chế độ duyệt có
+// hiệu lực (f.Mode: server ghim trước, chưa ghim theo approvals trong config.yaml — cùng quyết định với cổng và với
+// eval --ci khi tính lại inputsHash) là web và máy đã đăng nhập; ngược lại file trong repo (hoặc mẫu).
+func policyFromWeb(f *Feature) bool {
+	return f.Mode == gate.ModeWeb && f.Web.PolicyWebMode()
+}
+
+// FeaturePolicy là chính sách rủi ro của tính năng f, nguồn theo policyFromWeb. Không gọi mạng.
+func FeaturePolicy(ctx *Context, f *Feature, quiet bool) (LoadedPolicy, error) {
+	return loadPolicy(ctx, f.Root, policyFromWeb(f), quiet)
+}
+
+// TryFeaturePolicy như FeaturePolicy nhưng mọi lỗi thành ok=false; không in gì.
+func TryFeaturePolicy(ctx *Context, f *Feature) (l LoadedPolicy, ok bool) {
+	defer func() {
+		if recover() != nil {
+			l, ok = LoadedPolicy{}, false
+		}
+	}()
+	l, err := FeaturePolicy(ctx, f, true)
+	return l, err == nil
+}
+
+// RepoFilePolicy là chính sách trong repo (file, thiếu thì mẫu generic bỏ flow), bỏ qua web: nguồn của chế độ local.
+func RepoFilePolicy(ctx *Context, root string, quiet bool) (LoadedPolicy, error) {
+	return loadPolicy(ctx, root, false, quiet)
+}
+
+// refreshWebPolicy: chế độ web có hiệu lực thì lấy lại chính sách từ web (admin có thể vừa xuất bản bản mới). Không
+// lấy được mà máy có cache đã ký thì dùng cache và cảnh báo trên stderr; không có cache thì trả lỗi.
+func refreshWebPolicy(ctx *Context, f *Feature) error {
+	if !policyFromWeb(f) {
+		return nil
+	}
+	var err error
+	if f.Web.unreachable() {
+		err = errors.New("Không lấy được chính sách từ web: web đang không truy cập được (thử lại sau).")
+	} else {
+		_, err = f.Web.PolicyPull()
+	}
+	if err == nil {
+		return nil
+	}
+	c, ok := f.Web.Policy()
+	if !ok {
+		return err
+	}
+	ctx.Eprintln("Cảnh báo: " + strings.TrimSuffix(oneLineErr(err), ".") + "; dùng bản v" + strconv.Itoa(c.Version) +
+		" đã lưu trên máy (có thể đã cũ).")
+	return nil
+}
+
+func loadPolicy(ctx *Context, root string, fromWeb, quiet bool) (LoadedPolicy, error) {
+	if fromWeb {
+		web := NewWebCache(ctx, root)
 		c, ok := web.Policy()
 		if !ok {
 			return LoadedPolicy{}, abort(2,
@@ -55,17 +113,6 @@ func LoadPolicy(ctx *Context, root string, quiet bool) (LoadedPolicy, error) {
 		return LoadedPolicy{}, err
 	}
 	return LoadedPolicy{p, "file"}, nil
-}
-
-// TryLoadPolicy như LoadPolicy nhưng mọi lỗi (thiếu cache, chính sách hỏng) thành ok=false; không in gì.
-func TryLoadPolicy(ctx *Context, root string) (l LoadedPolicy, ok bool) {
-	defer func() {
-		if recover() != nil {
-			l, ok = LoadedPolicy{}, false
-		}
-	}()
-	l, err := LoadPolicy(ctx, root, true)
-	return l, err == nil
 }
 
 func parsePolicy(yaml, where string) (risk.RiskPolicy, error) {

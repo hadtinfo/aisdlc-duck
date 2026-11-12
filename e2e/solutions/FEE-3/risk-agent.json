@@ -1,0 +1,14 @@
+{
+  "inputsHash": "<thay bằng inputsHash của aisdlc risk inputs>",
+  "level": "low",
+  "matched": [],
+  "notMatched": [
+    {"rule": "G1", "reason": "Chỉ đổi cách làm tròn phí trả về, không chuyển tiền hay đổi số dư."},
+    {"rule": "G2", "reason": "BRD ghi rõ ngoài phạm vi: đổi cấu trúc dữ liệu; không có migration."},
+    {"rule": "G3", "reason": "Không đổi xác thực hay phân quyền."},
+    {"rule": "G4", "reason": "Dùng lại GET /api/v1/fees có sẵn, không gọi hệ thống ngoài."},
+    {"rule": "E1", "reason": "Không chặn giao dịch theo hạn mức."}
+  ],
+  "override": null,
+  "summary": "Sửa làm tròn phí trong fee.Fee, không đổi API hay DB: không luật nào khớp, mức low."
+}

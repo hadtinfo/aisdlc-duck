@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -582,27 +583,27 @@ func SqlFlags(drafts []SqlStatement, existingNames []string) []ReviewFlag {
 	out := []ReviewFlag{}
 	if len(high) > 0 {
 		out = append(out, NewFlag("DB_TOUCHES_EXISTING", HIGH,
-			"SQL nháp xóa hoặc sửa hàng loạt bảng đã có: "+strings.Join(high.sorted(), ", "),
-			"DROP/TRUNCATE hoặc UPDATE/DELETE không WHERE: kiểm tra ảnh hưởng tới dữ liệu.", high.sorted()))
+			i18n.Tf("SQL nháp xóa hoặc sửa hàng loạt bảng đã có: %s", strings.Join(high.sorted(), ", ")),
+			i18n.T("DROP/TRUNCATE hoặc UPDATE/DELETE không WHERE: kiểm tra ảnh hưởng tới dữ liệu."), high.sorted()))
 	}
 	if len(warn) > 0 {
 		out = append(out, NewFlag("DB_TOUCHES_EXISTING", WARN,
-			"SQL nháp thay đổi cấu trúc bảng đã có: "+strings.Join(warn.sorted(), ", "),
-			"Kiểm tra ảnh hưởng tới dữ liệu và code hiện tại.", warn.sorted()))
+			i18n.Tf("SQL nháp thay đổi cấu trúc bảng đã có: %s", strings.Join(warn.sorted(), ", ")),
+			i18n.T("Kiểm tra ảnh hưởng tới dữ liệu và code hiện tại."), warn.sorted()))
 	}
 	if createOnly && len(high) == 0 && len(warn) == 0 && len(created) > 0 {
 		out = append(out, NewFlag("DB_CREATE_ONLY", INFO,
-			"SQL nháp chỉ tạo bảng mới: "+strings.Join(created.sorted(), ", "), "", created.sorted()))
+			i18n.Tf("SQL nháp chỉ tạo bảng mới: %s", strings.Join(created.sorted(), ", ")), "", created.sorted()))
 	}
 	if len(others) > 0 {
 		out = append(out, NewFlag("DB_UNRECOGNIZED_SQL", NA,
-			strconv.Itoa(len(others))+" câu SQL không nhận dạng được, cần đọc tay",
-			"Đọc trực tiếp file SQL nháp.", others.sorted()))
+			i18n.Tf("%d câu SQL không nhận dạng được, cần đọc tay", len(others)),
+			i18n.T("Đọc trực tiếp file SQL nháp."), others.sorted()))
 	}
 	if len(unparsed) > 0 {
 		out = append(out, NewFlag("DB_COLUMN_UNPARSED", NA,
-			strconv.Itoa(len(unparsed))+" dòng cột không đọc được, đã bỏ khỏi sơ đồ",
-			"Đọc trực tiếp file SQL nháp.", unparsed.sorted()))
+			i18n.Tf("%d dòng cột không đọc được, đã bỏ khỏi sơ đồ", len(unparsed)),
+			i18n.T("Đọc trực tiếp file SQL nháp."), unparsed.sorted()))
 	}
 	return out
 }

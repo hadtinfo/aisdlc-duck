@@ -1,0 +1,74 @@
+# daily_limit only exists from S2, so cases clean it in given.sql.
+reset_sql: []
+stubs: []
+cases:
+  - id: C1
+    step: S1
+    kind: error
+    title: Missing accountId returns 400
+    given: { sql: [], stubs: [] }
+    when:  { method: POST, path: /api/v1/limits/check, body: { amount: 100000 } }
+    then:  { status: 400, body: { code: VALIDATION_ERROR } }
+  - id: C2
+    step: S1
+    kind: error
+    title: Non-positive amount returns 400
+    given: { sql: [], stubs: [] }
+    when:  { method: POST, path: /api/v1/limits/check, body: { accountId: A1, amount: 0 } }
+    then:  { status: 400, body: { code: VALIDATION_ERROR } }
+  - id: C3
+    step: S2
+    kind: happy
+    title: Within the limit it is allowed and returns what is left
+    given:
+      sql:
+        - "DELETE FROM daily_limit"
+        - "DELETE FROM account"
+        - "INSERT INTO account (id, owner_name) VALUES ('A1', 'Nguyen Van A')"
+        - "INSERT INTO daily_limit (account_id, limit_amount, used_amount) VALUES ('A1', 1000000, 700000)"
+      stubs: []
+    when:  { method: POST, path: /api/v1/limits/check, body: { accountId: A1, amount: 200000 } }
+    then:  { status: 200, body: { allowed: true, remaining: 100000 } }
+  - id: C4
+    step: S2
+    kind: boundary
+    title: Using exactly the remaining limit is allowed
+    given:
+      sql:
+        - "DELETE FROM daily_limit"
+        - "DELETE FROM account"
+        - "INSERT INTO account (id, owner_name) VALUES ('A1', 'Nguyen Van A')"
+        - "INSERT INTO daily_limit (account_id, limit_amount, used_amount) VALUES ('A1', 1000000, 700000)"
+      stubs: []
+    when:  { method: POST, path: /api/v1/limits/check, body: { accountId: A1, amount: 300000 } }
+    then:  { status: 200, body: { allowed: true, remaining: 0 } }
+  - id: C5
+    step: S2
+    kind: error
+    title: Over the limit it is rejected and the used amount is unchanged
+    given:
+      sql:
+        - "DELETE FROM daily_limit"
+        - "DELETE FROM account"
+        - "INSERT INTO account (id, owner_name) VALUES ('A1', 'Nguyen Van A')"
+        - "INSERT INTO daily_limit (account_id, limit_amount, used_amount) VALUES ('A1', 1000000, 700000)"
+      stubs: []
+    when:  { method: POST, path: /api/v1/limits/check, body: { accountId: A1, amount: 300001 } }
+    then:
+      status: 200
+      body: { allowed: false, remaining: 300000 }
+      db:
+        - query: "SELECT used_amount FROM daily_limit WHERE account_id = 'A1'"
+          rows: [ { used_amount: 700000 } ]
+  - id: C6
+    step: S2
+    kind: error
+    title: Account without a limit returns 404
+    given:
+      sql:
+        - "DELETE FROM daily_limit"
+        - "DELETE FROM account"
+        - "INSERT INTO account (id, owner_name) VALUES ('A2', 'Tran Thi B')"
+      stubs: []
+    when:  { method: POST, path: /api/v1/limits/check, body: { accountId: A2, amount: 1000 } }
+    then:  { status: 404, body: { code: LIMIT_NOT_FOUND } }

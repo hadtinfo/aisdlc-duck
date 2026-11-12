@@ -50,7 +50,7 @@ type modePayload struct {
 
 func (h *Handlers) mode(w http.ResponseWriter, r *http.Request) {
 	if err := h.doMode(w, r); err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 	}
 }
 
@@ -68,7 +68,7 @@ func (h *Handlers) doMode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if configured != ModeLocal && configured != ModeWeb {
-		return httpx.NewError(400, "configured phải là local hoặc web")
+		return httpx.Err(400, httpx.T("configured phải là local hoặc web"))
 	}
 	p, _ := httpx.PrincipalFrom(r.Context())
 	m, err := h.Modes.Report(r.Context(), p, clientIP(r), repo, configured)
@@ -91,7 +91,7 @@ func (h *Handlers) doMode(w http.ResponseWriter, r *http.Request) error {
 func (h *Handlers) repos(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.Modes.List(r.Context())
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, rows)
@@ -99,14 +99,14 @@ func (h *Handlers) repos(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) setMode(w http.ResponseWriter, r *http.Request) {
 	if err := h.doSetMode(w, r); err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 	}
 }
 
 func (h *Handlers) doSetMode(w http.ResponseWriter, r *http.Request) error {
 	p, _ := httpx.PrincipalFrom(r.Context())
 	if !p.IsLead() {
-		return httpx.NewError(403, "Chỉ lead được đổi chế độ duyệt")
+		return httpx.Err(403, httpx.T("Chỉ lead được đổi chế độ duyệt"))
 	}
 	b, err := body(r)
 	if err != nil {
@@ -121,7 +121,7 @@ func (h *Handlers) doSetMode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if approvals != ModeLocal && approvals != ModeWeb {
-		return httpx.NewError(400, "approvals phải là local hoặc web")
+		return httpx.Err(400, httpx.T("approvals phải là local hoặc web"))
 	}
 	m, err := h.Modes.Set(r.Context(), p, clientIP(r), repo, approvals)
 	if err != nil {

@@ -8,23 +8,25 @@ import (
 	"strings"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/javaish"
 )
 
-// Đọc/kiểm body JSON của các API cổng (GateRequests.java); sai thì trả *httpx.ApiError 400/413.
+// Đọc/kiểm body JSON của các API cổng (GateRequests.java); sai thì trả *httpx.Error 400 hoặc *httpx.ApiError 413.
 
 // MaxBytes là giới hạn body của API cổng (nộp kèm toàn văn artifact).
 const MaxBytes = 8 << 20
 
 // tooLarge là lỗi 413 của API cổng.
+// tooLarge là *ApiError vì LimitBodyWith nhận kiểu đó; câu tiếng Việt là khóa catalog, Fail dịch lúc ghi.
 func tooLarge() *httpx.ApiError {
-	return httpx.NewError(http.StatusRequestEntityTooLarge, "Payload quá lớn")
+	return httpx.NewError(http.StatusRequestEntityTooLarge, i18n.VI.T("Payload quá lớn"))
 }
 
-func bad(msg string) error { return httpx.NewError(http.StatusBadRequest, msg) }
+func bad(msg httpx.Text) error { return httpx.Err(http.StatusBadRequest, msg) }
 
 // body đọc body thành object JSON (số giữ dạng json.Number).
 func body(r *http.Request) (map[string]any, error) {
@@ -33,17 +35,17 @@ func body(r *http.Request) (map[string]any, error) {
 		return nil, err
 	}
 	if len(bytes.TrimSpace(b)) == 0 {
-		return nil, bad("Body phải là object JSON") // Jackson readTree(rỗng) = MissingNode
+		return nil, bad(httpx.T("Body phải là object JSON")) // Jackson readTree(rỗng) = MissingNode
 	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
-		return nil, bad("JSON không hợp lệ")
+		return nil, bad(httpx.T("JSON không hợp lệ"))
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, bad("Body phải là object JSON")
+		return nil, bad(httpx.T("Body phải là object JSON"))
 	}
 	return m, nil
 }
@@ -55,7 +57,7 @@ func isBlank(s string) bool { return javaish.IsBlank(s) }
 func text(b map[string]any, field string) (string, error) {
 	s, ok := b[field].(string)
 	if !ok || isBlank(s) {
-		return "", bad("Thiếu " + field)
+		return "", bad(httpx.Tf("Thiếu %s", field))
 	}
 	return noNul(s, field)
 }
@@ -68,7 +70,7 @@ func optText(b map[string]any, field string) (*string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return nil, bad(field + " phải là chuỗi")
+		return nil, bad(httpx.Tf("%s phải là chuỗi", field))
 	}
 	if _, err := noNul(s, field); err != nil {
 		return nil, err
@@ -79,14 +81,14 @@ func optText(b map[string]any, field string) (*string, error) {
 // param là tham số query bắt buộc, khác rỗng, không NUL.
 func param(v, field string) (string, error) {
 	if isBlank(v) {
-		return "", bad("Thiếu " + field)
+		return "", bad(httpx.Tf("Thiếu %s", field))
 	}
 	return noNul(v, field)
 }
 
 func noNul(s, field string) (string, error) {
 	if strings.ContainsRune(s, 0) {
-		return "", bad(field + " chứa ký tự NUL (U+0000)")
+		return "", bad(httpx.Tf("%s chứa ký tự NUL (U+0000)", field))
 	}
 	return s, nil
 }
@@ -100,7 +102,7 @@ func parseGate(name string) (gate.Gate, error) {
 			return g, nil
 		}
 	}
-	return "", bad("Cổng không hợp lệ: " + name)
+	return "", bad(httpx.Tf("Cổng không hợp lệ: %s", name))
 }
 
 // finding lưu trong submissions.findings: message null giữ null như Java.
@@ -116,16 +118,16 @@ func findings(v any, present bool) ([]finding, error) {
 	}
 	arr, ok := v.([]any)
 	if !ok {
-		return nil, bad("findings phải là mảng")
+		return nil, bad(httpx.T("findings phải là mảng"))
 	}
 	for _, e := range arr {
 		o, ok := e.(map[string]any)
 		if !ok {
-			return nil, bad("finding phải là object {code, message}")
+			return nil, bad(httpx.T("finding phải là object {code, message}"))
 		}
 		code, ok := o["code"].(string)
 		if !ok {
-			return nil, bad("finding thiếu code")
+			return nil, bad(httpx.T("finding thiếu code"))
 		}
 		if _, err := noNul(code, "code"); err != nil {
 			return nil, err
@@ -160,10 +162,10 @@ func (a artifacts) hash() string { return model.SHA256Contents(a.contents) }
 func parseArtifacts(v any) (artifacts, error) {
 	arr, ok := v.([]any)
 	if !ok {
-		return artifacts{}, bad("Thiếu artifacts (mảng)")
+		return artifacts{}, bad(httpx.T("Thiếu artifacts (mảng)"))
 	}
 	if len(arr) == 0 {
-		return artifacts{}, bad("artifacts rỗng")
+		return artifacts{}, bad(httpx.T("artifacts rỗng"))
 	}
 	var out artifacts
 	seen := map[string]bool{}
@@ -174,7 +176,7 @@ func parseArtifacts(v any) (artifacts, error) {
 			return artifacts{}, err
 		}
 		if seen[path] {
-			return artifacts{}, bad("artifacts trùng đường dẫn: " + path)
+			return artifacts{}, bad(httpx.Tf("artifacts trùng đường dẫn: %s", path))
 		}
 		seen[path] = true
 		c, present := o["content"]
@@ -183,10 +185,10 @@ func parseArtifacts(v any) (artifacts, error) {
 		if present && c != nil {
 			s, ok := c.(string)
 			if !ok {
-				return artifacts{}, bad("content phải là base64 hoặc null")
+				return artifacts{}, bad(httpx.T("content phải là base64 hoặc null"))
 			}
 			if data, err = decodeBase64(s); err != nil {
-				return artifacts{}, bad("content không phải base64: " + path)
+				return artifacts{}, bad(httpx.Tf("content không phải base64: %s", path))
 			}
 			a.Content = &s
 		}
@@ -223,7 +225,7 @@ func riskLevel(v any, present bool) (*string, error) {
 	}
 	o, ok := v.(map[string]any)
 	if !ok {
-		return nil, bad("risk phải là object")
+		return nil, bad(httpx.T("risk phải là object"))
 	}
 	lv, present := o["level"]
 	if !present || lv == nil {
@@ -231,7 +233,7 @@ func riskLevel(v any, present bool) (*string, error) {
 	}
 	s, ok := lv.(string)
 	if !ok || isBlank(s) || utf16Len(s) > 100 || strings.ContainsRune(s, 0) {
-		return nil, bad("risk.level phải là chuỗi")
+		return nil, bad(httpx.T("risk.level phải là chuỗi"))
 	}
 	return &s, nil
 }

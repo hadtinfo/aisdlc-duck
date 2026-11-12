@@ -3,12 +3,12 @@ package gates
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/review"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/web/auth"
@@ -90,7 +90,8 @@ func (s *Service) AutoApprove(ctx context.Context, tx pgx.Tx, sub Submitted) err
 			return true, nil
 		}
 		return false, auditAuto(ctx, s, tx, "gate.auto-skip", sub.Repo, sub.Feature, string(sub.Gate), map[string]any{
-			"message": "auto: mức " + level + " không có trong chính sách v" + strconv.Itoa(pol.version), "submissionId": sub.SubmissionID})
+			"message":      i18n.VI.Tf("auto: mức %s không có trong chính sách v%d", level, pol.version), // audit lưu tiếng Việt
+			"submissionId": sub.SubmissionID})
 	}
 	requested := ""
 	if sub.RiskLevel != nil {

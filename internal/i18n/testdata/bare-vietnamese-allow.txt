@@ -1,40 +1,9 @@
 # Allowlist chuỗi tiếng Việt trần. Mỗi dòng: <đường dẫn>  # <lý do>.
 # Chỉ thêm tay, kèm lý do; `go test ./internal/i18n -run TestNoBareVietnamese -update-allowlist` chỉ gỡ dòng thừa.
-cmd/aisdlc-web/main.go  # chưa chuyển (đợt 4)
 internal/cli/servertext.go  # câu lỗi tiếng Việt của server (MsgNotWeb) để so khớp, không phải chữ CLI in ra
 internal/review/docfacts.go  # regex so khớp thẻ [biên]/[boundary] trong nội dung BRD (nhận cả hai ngôn ngữ), không phải chữ hiển thị
 internal/spec/sections.go  # bảng tiêu đề mục song ngữ
-internal/web/auth/admin.go  # chưa chuyển (đợt 4)
-internal/web/auth/audit.go  # chưa chuyển (đợt 4)
-internal/web/auth/handlers.go  # chưa chuyển (đợt 4)
-internal/web/auth/service.go  # chưa chuyển (đợt 4)
-internal/web/board/handlers.go  # chưa chuyển (đợt 4)
-internal/web/board/hub.go  # chưa chuyển (đợt 4)
-internal/web/board/rules.go  # chưa chuyển (đợt 4)
-internal/web/control/handlers.go  # chưa chuyển (đợt 4)
-internal/web/control/service.go  # chưa chuyển (đợt 4)
-internal/web/gates/actions.go  # chưa chuyển (đợt 4)
-internal/web/gates/auto.go  # chưa chuyển (đợt 4)
-internal/web/gates/handlers.go  # chưa chuyển (đợt 4)
-internal/web/gates/imports.go  # chưa chuyển (đợt 4)
-internal/web/gates/mode.go  # chưa chuyển (đợt 4)
-internal/web/gates/overlay.go  # chưa chuyển (đợt 4)
-internal/web/gates/requests.go  # chưa chuyển (đợt 4)
-internal/web/gates/service.go  # chưa chuyển (đợt 4)
-internal/web/httpx/httpx.go  # chưa chuyển (đợt 4)
-internal/web/ingest/events.go  # chưa chuyển (đợt 4)
-internal/web/ingest/ingest.go  # chưa chuyển (đợt 4)
-internal/web/ingest/snapshot.go  # chưa chuyển (đợt 4)
-internal/web/ingest/validate.go  # chưa chuyển (đợt 4)
-internal/web/policy/handlers.go  # chưa chuyển (đợt 4)
-internal/web/policy/service.go  # chưa chuyển (đợt 4)
-internal/web/purge.go  # chưa chuyển (đợt 4)
-internal/web/review/linediff.go  # chưa chuyển (đợt 4)
-internal/web/server.go  # chưa chuyển (đợt 4)
-internal/web/signing/signing.go  # chưa chuyển (đợt 4)
-internal/web/spa/spa.go  # chưa chuyển (đợt 4)
-internal/web/store/store.go  # chưa chuyển (đợt 4)
-internal/web/webtest/client.go  # chưa chuyển (đợt 4)
-internal/web/webtest/trickle.go  # chưa chuyển (đợt 4)
-internal/web/webtest/webtest.go  # chưa chuyển (đợt 4)
+internal/web/webtest/client.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng
+internal/web/webtest/trickle.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng
+internal/web/webtest/webtest.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng
 internal/webclient/feedback.go  # regex so khớp tiêu đề mục feedback.md (nhận cả "trả lại/mở lại" lẫn "rejected/reopened"), không phải chữ hiển thị

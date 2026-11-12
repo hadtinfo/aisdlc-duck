@@ -2,6 +2,7 @@ import { useState } from "react";
 import { flowUnits, type FlowMode, type Policy, type PolicyReq, REQ_CATALOG, flowOf, setFlow, SQL_ZERO, reqKey, setReqParam, setRequirement } from "../risk";
 import { LevelPill } from "./RiskPanel";
 import { RiskDialog } from "./RiskDialog";
+import { useT } from "../i18n";
 
 interface Row { key: string; name: string; desc: string; custom: boolean; param?: string; unit?: string; req?: PolicyReq }
 
@@ -11,6 +12,7 @@ const sig = (q: PolicyReq | undefined) =>
 
 /** Tab "Yêu cầu theo mức": ma trận yêu cầu × mức, ô số cho tham số, form yêu cầu tự viết `sql-zero`. */
 export function RiskRequirements({ policy, base, onChange }: { policy: Policy; base: Policy; onChange: (p: Policy) => void }) {
+  const { t } = useT();
   const [added, setAdded] = useState<PolicyReq[]>([]);
   const [form, setForm] = useState(false);
 
@@ -20,7 +22,7 @@ export function RiskRequirements({ policy, base, onChange }: { policy: Policy; b
   const rows: Row[] = [
     ...REQ_CATALOG.map((c) => ({ key: c.id, name: c.name, desc: c.desc, custom: false, param: c.param, unit: c.unit })),
     ...[...customs.values()].map((q) => ({
-      key: reqKey(q), name: `Tự viết: ${String(q.name ?? "")}`, desc: `SQL phải trả 0 dòng: ${String(q.sql ?? "")}`, custom: true, req: q,
+      key: reqKey(q), name: t("rk.custom", { name: String(q.name ?? "") }), desc: t("rq.sqlZeroDesc", { sql: String(q.sql ?? "") }), custom: true, req: q,
     })),
   ];
   const find = (p: Policy, level: string, key: string) => (p.requirements[level] ?? []).find((q) => reqKey(q) === key);
@@ -29,21 +31,20 @@ export function RiskRequirements({ policy, base, onChange }: { policy: Policy; b
   return (
     <div className="rk-stack">
       <div className="rk-note info"><div className="grow">
-        Validator kiểm các yêu cầu này ở cổng <b>Case</b> (bộ case) và ở <b>Review</b> (coverage, bất biến).
-        Thiếu yêu cầu nào thì cổng có cờ đỏ và không nộp được.
+        {t("rq.intro1")} <b>Case</b> {t("rq.intro2")} <b>Review</b> {t("rq.intro3")}
       </div></div>
       <section className="box">
         <div className="rk-head">
-          <h2>Yêu cầu theo mức</h2>
-          <button type="button" className="secondary" onClick={() => setForm(true)}>Yêu cầu tự viết</button>
+          <h2>{t("rq.title")}</h2>
+          <button type="button" className="secondary" onClick={() => setForm(true)}>{t("rq.custom")}</button>
         </div>
         <table className="grid rk-matrix">
-          <thead><tr><th>Yêu cầu</th>{policy.levels.map((l) => <th key={l} className="lv"><LevelPill level={l} levels={policy.levels} /></th>)}</tr></thead>
+          <thead><tr><th>{t("rq.requirement")}</th>{policy.levels.map((l) => <th key={l} className="lv"><LevelPill level={l} levels={policy.levels} /></th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.key} className={changed(r.key) ? "changed" : ""}>
                 <td>
-                  <div>{r.name} {r.custom && <span className="tag">tự viết</span>}</div>
+                  <div>{r.name} {r.custom && <span className="tag">{t("rq.customTag")}</span>}</div>
                   <div className={`rk-desc ${r.custom ? "mono" : ""}`}>{r.desc}</div>
                 </td>
                 {policy.levels.map((l) => {
@@ -71,20 +72,20 @@ export function RiskRequirements({ policy, base, onChange }: { policy: Policy; b
         </table>
       </section>
       <section className="box">
-        <div className="rk-head"><h2>Quy trình theo mức</h2></div>
+        <div className="rk-head"><h2>{t("rq.flowTitle")}</h2></div>
         <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-          <code>auto</code>: hệ thống tự duyệt cổng khi nộp sạch (không cờ HIGH); <code>manual</code>: dev duyệt tay.
-          Chưa chọn thì là <code>manual</code>. <b>Review: luôn duyệt tay</b>.
+          <code>auto</code>: {t("rq.flowAuto")} <code>manual</code>: {t("rq.flowManual")}{" "}
+          {t("rq.flowDefault")} <code>manual</code>. <b>{t("rq.reviewManual")}</b>.
         </p>
         <table className="grid rk-matrix">
-          <thead><tr><th>Cổng</th>{policy.levels.map((l) => <th key={l} className="lv"><LevelPill level={l} levels={policy.levels} /></th>)}</tr></thead>
+          <thead><tr><th>{t("rq.gate")}</th>{policy.levels.map((l) => <th key={l} className="lv"><LevelPill level={l} levels={policy.levels} /></th>)}</tr></thead>
           <tbody>
             {flowUnits(policy).map((u) => (
               <tr key={u.id} className={policy.levels.some((l) => flowOf(policy, l, u.id) !== flowOf(base, l, u.id)) ? "changed" : ""}>
                 <td>{u.name} <span className="muted mono">{u.id}</span></td>
                 {policy.levels.map((l) => (
                   <td key={l} className="cell">
-                    <select aria-label={`Quy trình ${u.name} – ${l}`} value={flowOf(policy, l, u.id)}
+                    <select aria-label={t("rq.flowAria", { unit: u.name, level: l })} value={flowOf(policy, l, u.id)}
                       onChange={(e) => onChange(setFlow(policy, l, u.id, e.target.value as FlowMode))}>
                       <option value="manual">manual</option>
                       <option value="auto">auto</option>
@@ -93,13 +94,12 @@ export function RiskRequirements({ policy, base, onChange }: { policy: Policy; b
                 ))}
               </tr>
             ))}
-            <tr><td>Review</td><td colSpan={policy.levels.length} className="muted">Review: luôn duyệt tay</td></tr>
+            <tr><td>Review</td><td colSpan={policy.levels.length} className="muted">{t("rq.reviewManual")}</td></tr>
           </tbody>
         </table>
       </section>
       <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-        Thư viện yêu cầu chung đi kèm AISDLC (harness <code>aisdlc-junit</code> hỗ trợ sẵn). Yêu cầu tự viết là truy vấn
-        SQL phải trả 0 dòng, harness chạy sau mọi case; dự án thêm được mà không cần sửa AISDLC.
+        {t("rq.lib1")} <code>aisdlc-junit</code> {t("rq.lib2")}
       </p>
       {form && (
         <SqlZeroDialog policy={policy} names={[...customs.values()].map((q) => String(q.name ?? ""))} onClose={() => setForm(false)}
@@ -112,6 +112,7 @@ export function RiskRequirements({ policy, base, onChange }: { policy: Policy; b
 function SqlZeroDialog({ policy, names, onClose, onSave }: {
   policy: Policy; names: string[]; onClose: () => void; onSave: (q: PolicyReq, level: string) => void;
 }) {
+  const { t } = useT();
   const [name, setName] = useState("");
   const [sql, setSql] = useState("");
   const [level, setLevel] = useState(policy.levels[policy.levels.length - 1] ?? "");
@@ -119,30 +120,30 @@ function SqlZeroDialog({ policy, names, onClose, onSave }: {
   function save() {
     const n = name.trim();
     const q = sql.trim();
-    if (!n) return setError("Cần tên yêu cầu");
-    if (names.includes(n)) return setError(`Đã có yêu cầu tự viết tên "${n}"`);
-    if (!/^(select|with)\b/i.test(q)) return setError("SQL chỉ được là một câu SELECT hoặc WITH");
+    if (!n) return setError(t("rq.needName"));
+    if (names.includes(n)) return setError(t("rq.nameExists", { name: n }));
+    if (!/^(select|with)\b/i.test(q)) return setError(t("rq.sqlOnly"));
     onSave({ id: SQL_ZERO, name: n, sql: q }, level);
   }
   return (
-    <RiskDialog title="Yêu cầu tự viết" onClose={onClose}>
+    <RiskDialog title={t("rq.custom")} onClose={onClose}>
       <div className="rk-form">
-        <label className="rk-field wide"><span>Tên (hiện trên review card và thông điệp lỗi)</span>
-          <input type="text" value={name} autoFocus placeholder="Ví dụ: Không có đơn treo quá hạn" onChange={(e) => setName(e.target.value)} />
+        <label className="rk-field wide"><span>{t("rq.nameLabel")}</span>
+          <input type="text" value={name} autoFocus placeholder={t("rq.namePh")} onChange={(e) => setName(e.target.value)} />
         </label>
-        <label className="rk-field wide"><span>SQL phải trả 0 dòng (SELECT hoặc WITH), harness chạy sau mọi case</span>
+        <label className="rk-field wide"><span>{t("rq.sqlLabel")}</span>
           <textarea className="mono" rows={4} value={sql} placeholder="SELECT id FROM orders WHERE status = 'PENDING' AND created_at < now() - interval '1 day'"
             onChange={(e) => setSql(e.target.value)} />
         </label>
-        <label className="rk-field"><span>Bật ở mức</span>
+        <label className="rk-field"><span>{t("rq.enableAt")}</span>
           <select value={level} onChange={(e) => setLevel(e.target.value)}>
             {policy.levels.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
         </label>
         {error && <p className="error wide" role="alert">{error}</p>}
         <div className="wide rk-row end">
-          <button type="button" className="secondary" onClick={onClose}>Hủy</button>
-          <button type="button" onClick={save}>Lưu vào nháp</button>
+          <button type="button" className="secondary" onClick={onClose}>{t("common.cancel")}</button>
+          <button type="button" onClick={save}>{t("rr.saveDraft")}</button>
         </div>
       </div>
     </RiskDialog>

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"aisdlc/internal/i18n"
 )
 
 // Port ResubmissionServiceTest (10).
@@ -47,7 +49,7 @@ func only(t *testing.T, r Result) FeedbackMatch {
 
 func run(comment, newDesign, newSQL string) Result {
 	return Compare("DESIGN", 2, prevSub(oldDesign, "s1"), latestSub(newDesign, newSQL),
-		[]FeedbackRow{fb(7, "DESIGN", mid, comment)})
+		[]FeedbackRow{fb(7, "DESIGN", mid, comment)}, i18n.VI)
 }
 
 func wantMatch(t *testing.T, m FeedbackMatch, status string, matched ...string) {
@@ -90,7 +92,7 @@ func TestSectionEndsAtSameOrHigherLevelHeading(t *testing.T) {
 func TestFeedbackOutsideRangeOrOtherGateIsDropped(t *testing.T) {
 	r := Compare("DESIGN", 2, prevSub(oldDesign, "s1"), latestSub(oldDesign, "s2"), []FeedbackRow{
 		fb(1, "DESIGN", t1.Add(-5*time.Second), "API"), fb(2, "BRD", mid, "API"),
-		fb(3, "DESIGN", t2.Add(5*time.Second), "API"), fb(4, "DESIGN", mid, "API")})
+		fb(3, "DESIGN", t2.Add(5*time.Second), "API"), fb(4, "DESIGN", mid, "API")}, i18n.VI)
 	if len(r.Feedback) != 1 || r.Feedback[0].ID != 4 {
 		t.Fatalf("%+v", r.Feedback)
 	}
@@ -99,7 +101,7 @@ func TestFeedbackOutsideRangeOrOtherGateIsDropped(t *testing.T) {
 func TestFileStatusesAndPatches(t *testing.T) {
 	p := StoredSubmission{ID: 1, At: t1, Artifacts: []StoredArtifact{art("a", "1\n"), art("b", "x\n"), art("c", "same\n")}}
 	l := StoredSubmission{ID: 2, At: t2, Artifacts: []StoredArtifact{art("a", "2\n"), art("c", "same\n"), art("d", "n\n")}}
-	r := Compare("DESIGN", 2, p, l, nil)
+	r := Compare("DESIGN", 2, p, l, nil, i18n.VI)
 	var got []string
 	for _, f := range r.Files {
 		got = append(got, f.Path+":"+f.Status)
@@ -118,7 +120,7 @@ func TestFileStatusesAndPatches(t *testing.T) {
 func TestBinaryFilesCompareByBytesWithoutPatch(t *testing.T) {
 	p := StoredSubmission{ID: 1, At: t1, Artifacts: []StoredArtifact{{"i.png", []byte{0, 1, 2}}, {"j.bin", []byte{0xff, 0xfe}}}}
 	l := StoredSubmission{ID: 2, At: t2, Artifacts: []StoredArtifact{{"i.png", []byte{0, 1, 3}}, {"j.bin", []byte{0xff, 0xfe}}}}
-	r := Compare("DESIGN", 2, p, l, nil)
+	r := Compare("DESIGN", 2, p, l, nil, i18n.VI)
 	if len(r.Files) != 2 || r.Files[0].Status != "CHANGED" || r.Files[1].Status != "SAME" {
 		t.Fatalf("%+v", r.Files)
 	}
@@ -135,7 +137,7 @@ func TestPatchesOver200KbAreTruncated(t *testing.T) {
 		big.WriteString("line number " + strconv.Itoa(i) + " xxxxxxxxxxxxxxxxxxxx\n")
 	}
 	l := StoredSubmission{ID: 2, At: t2, Artifacts: []StoredArtifact{art("big1", big.String()), art("big2", big.String()), art("big3", big.String())}}
-	r := Compare("DESIGN", 2, StoredSubmission{ID: 1, At: t1}, l, nil)
+	r := Compare("DESIGN", 2, StoredSubmission{ID: 1, At: t1}, l, nil, i18n.VI)
 	if !r.Truncated || r.Files[0].Patch == nil || r.Files[1].Patch != nil || r.Files[2].Added != 3000 {
 		t.Fatalf("truncated=%v %v %v %d", r.Truncated, r.Files[0].Patch == nil, r.Files[1].Patch == nil, r.Files[2].Added)
 	}

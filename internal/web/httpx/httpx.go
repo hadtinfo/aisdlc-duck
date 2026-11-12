@@ -10,6 +10,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"aisdlc/internal/i18n"
 )
 
 // ApiError là lỗi nghiệp vụ: HTTP status + {"error": "<câu tiếng Việt>"} như ApiError.java.
@@ -37,6 +39,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- JSON từ json.Marshal, Content-Type JSON, không phải HTML
 	_, _ = w.Write(b)
 }
 
@@ -47,7 +50,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		WriteJSON(w, ae.Status, map[string]string{"error": ae.Message})
 		return
 	}
-	log.Printf("httpx: lỗi nội bộ: %v", err)
+	log.Print(OpLocale().Tf("httpx: lỗi nội bộ: %v", err))
 	WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 }
 
@@ -60,7 +63,7 @@ func DecodeJSON(r *http.Request, dst any) error {
 		return err
 	}
 	if err := json.Unmarshal(b, dst); err != nil {
-		return NewError(http.StatusBadRequest, "JSON không hợp lệ")
+		return NewError(http.StatusBadRequest, i18n.VI.T("JSON không hợp lệ"))
 	}
 	return nil
 }
@@ -82,7 +85,7 @@ func ReadBody(r *http.Request) ([]byte, error) {
 		if errors.As(err, &ae) {
 			return nil, ae
 		}
-		return nil, NewError(http.StatusBadRequest, "JSON không hợp lệ")
+		return nil, NewError(http.StatusBadRequest, i18n.VI.T("JSON không hợp lệ"))
 	}
 	if !limited && int64(len(b)) > DefaultJSONLimit {
 		return nil, TooLargeFor(DefaultJSONLimit)
@@ -99,9 +102,9 @@ func TooLarge() *ApiError { return TooLargeFor(8 << 20) }
 // TooLargeFor là lỗi 413 {"error":"Payload vượt <n> MB"} của giới hạn max byte.
 func TooLargeFor(max int64) *ApiError {
 	if max >= 1<<20 && max%(1<<20) == 0 {
-		return NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf("Payload vượt %d MB", max>>20))
+		return NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf(i18n.VI.T("Payload vượt %d MB"), max>>20))
 	}
-	return NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf("Payload vượt %d byte", max))
+	return NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf(i18n.VI.T("Payload vượt %d byte"), max))
 }
 
 const maxDrain = 256 << 20
@@ -152,7 +155,7 @@ func LimitBodyWith(max int64, tooLarge *ApiError) func(http.Handler) http.Handle
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.ContentLength > max {
 				Drain(w, r)
-				WriteError(w, tooLarge)
+				Fail(w, r, tooLarge) // câu theo locale của request
 				return
 			}
 			wrap(w, r, max, tooLarge)

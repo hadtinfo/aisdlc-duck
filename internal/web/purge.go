@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"time"
+
+	"aisdlc/internal/web/httpx"
 )
 
 // PurgeHour là giờ địa phương chạy dọn sự kiện cũ (Java: @Scheduled(cron = "0 0 3 * * *"), múi giờ máy chủ).
@@ -35,9 +37,9 @@ func SchedulePurge(ctx context.Context, now func() time.Time, after func(time.Du
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("web: dọn sự kiện cũ lỗi: %v", err)
+			log.Print(httpx.OpLocale().Tf("web: dọn sự kiện cũ lỗi: %v", err))
 		} else if n > 0 {
-			log.Printf("web: đã xóa %d sự kiện cũ", n)
+			log.Print(httpx.OpLocale().Tf("web: đã xóa %d sự kiện cũ", n))
 		}
 	}
 }

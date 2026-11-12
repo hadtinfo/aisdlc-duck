@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n";
 
 let seq = 0;
 
@@ -16,6 +17,7 @@ function useDark(): boolean {
 
 /** Vẽ một sơ đồ Mermaid. Nguồn không tin cậy nên luôn dùng securityLevel 'strict'. */
 export function Mermaid({ code }: { code: string }) {
+  const { t } = useT();
   const ref = useRef<HTMLDivElement>(null);
   const dark = useDark();
   const [error, setError] = useState("");
@@ -35,10 +37,10 @@ export function Mermaid({ code }: { code: string }) {
   if (error) {
     return (
       <div className="mermaid-error">
-        <p className="warn">Không vẽ được sơ đồ: {error.split("\n")[0]}</p>
+        <p className="warn">{t("mermaid.failed", { error: error.split("\n")[0] })}</p>
         <pre><code>{code}</code></pre>
       </div>
     );
   }
-  return <div className="mermaid" ref={ref} role="img" aria-label="Sơ đồ" />;
+  return <div className="mermaid" ref={ref} role="img" aria-label={t("mermaid.aria")} />;
 }

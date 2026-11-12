@@ -7,14 +7,16 @@ import { LiveStep, StepProgress } from "../components/StepProgress";
 import { LiveEvent, editsByStep, mergeEvent, sessionState } from "../live";
 import { eventReloadsControl } from "../control";
 import { encodePath, featureHref } from "../routes";
+import { Key, useT } from "../i18n";
 import { subscribe } from "../sse";
 import type { ControlState } from "../types";
 
 interface FeatureResp { snapshot: { feature?: { key?: string; title?: string }; steps?: LiveStep[] }; syncedAt: string; owner?: string | null }
 
-const SESSION_TEXT = { ACTIVE: "Agent đang chạy", STOPPED: "Đã dừng", NONE: "Chưa có phiên" } as const;
+const SESSION_TEXT: Record<"ACTIVE" | "STOPPED" | "NONE", Key> = { ACTIVE: "live.session.active", STOPPED: "live.session.stopped", NONE: "live.session.none" };
 
 export function Live({ repoId, featureKey }: { repoId: string; featureKey: string }) {
+  const { t } = useT();
   const [feature, setFeature] = useState<FeatureResp | null>(null);
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [control, setControl] = useState<ControlState | null>(null);
@@ -24,7 +26,7 @@ export function Live({ repoId, featureKey }: { repoId: string; featureKey: strin
   const loadSnapshot = useCallback(() => {
     getFeature(repoId, featureKey)
       .then((f) => { setFeature(f as FeatureResp); setError(""); })
-      .catch((e) => { if (!(e instanceof UnauthorizedError)) setError("Không tải được tính năng"); });
+      .catch((e) => { if (!(e instanceof UnauthorizedError)) setError(t("feature.loadFailed")); });
   }, [repoId, featureKey]);
 
   const loadControl = useCallback(() => {
@@ -36,7 +38,7 @@ export function Live({ repoId, featureKey }: { repoId: string; featureKey: strin
     loadControl();
     getEvents(repoId, featureKey, 200)
       .then((ev) => setEvents(ev as LiveEvent[]))
-      .catch((e) => { if (!(e instanceof UnauthorizedError)) setError("Không tải được event"); });
+      .catch((e) => { if (!(e instanceof UnauthorizedError)) setError(t("live.eventsFailed")); });
   }, [repoId, featureKey, loadSnapshot, loadControl]);
 
   useEffect(() => {
@@ -62,30 +64,30 @@ export function Live({ repoId, featureKey }: { repoId: string; featureKey: strin
 
   return (
     <main className="page live">
-      <p className="small"><Link to="/">&larr; Bảng</Link></p>
+      <p className="small"><Link to="/">&larr; {t("nav.board")}</Link></p>
       <header className="live-head">
         <div>
           <span className="jira-key">{featureKey}</span>
           <h1>{title}</h1>
-          <p className="muted small">{repoId} · <Link to={featureHref(repoId, featureKey)}>Xem review</Link></p>
+          <p className="muted small">{repoId} · <Link to={featureHref(repoId, featureKey)}>{t("live.viewReview")}</Link></p>
         </div>
-        <span className={`session session-${session.toLowerCase()}`}><i className="dot" />{SESSION_TEXT[session]}</span>
+        <span className={`session session-${session.toLowerCase()}`}><i className="dot" />{t(SESSION_TEXT[session])}</span>
       </header>
       {error && <p className="error banner" role="alert">{error}</p>}
       <div className="live-grid">
-        <section aria-label="Các bước">
-          <h2>Các bước</h2>
-          <p className="muted small">Số dòng và số file chỉ cập nhật khi có snapshot mới. Số dòng cập nhật sau mỗi lệnh step</p>
+        <section aria-label={t("live.steps")}>
+          <h2>{t("live.steps")}</h2>
+          <p className="muted small">{t("live.stepsNote")}</p>
           <div className="steps">
-            {steps.length === 0 && feature && <p className="muted empty">Chưa có bước nào.</p>}
+            {steps.length === 0 && feature && <p className="muted empty">{t("live.noSteps")}</p>}
             {steps.map((s) => <StepProgress key={s.id} step={s} edits={edits.get(s.id) ?? []} />)}
           </div>
         </section>
         <div className="live-side">
           <ControlPanel control={control} owner={feature?.owner ?? null}
             repoId={repoId} featureKey={featureKey} onChanged={loadControl} />
-          <section aria-label="Dòng thời gian">
-            <h2>Sửa file trực tiếp</h2>
+          <section aria-label={t("live.timeline")}>
+            <h2>{t("live.edits")}</h2>
             <EditTimeline events={events} />
           </section>
         </div>

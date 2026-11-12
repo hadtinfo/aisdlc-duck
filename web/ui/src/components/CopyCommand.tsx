@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
+import { useT } from "../i18n";
 
 /** Hiện lệnh terminal kèm nút Chép; không có clipboard API thì chọn sẵn text để người dùng Ctrl+C. */
 export function CopyCommand({ command }: { command: string }) {
+  const { t } = useT();
   const ref = useRef<HTMLElement>(null);
   const [state, setState] = useState<"idle" | "copied" | "selected">("idle");
 
@@ -26,7 +28,7 @@ export function CopyCommand({ command }: { command: string }) {
     <span className="cmd">
       <code ref={ref}>{command}</code>
       <button type="button" className="ghost" onClick={copy}>
-        {state === "copied" ? "Đã chép" : state === "selected" ? "Nhấn Ctrl+C" : "Chép"}
+        {state === "copied" ? t("copy.done") : state === "selected" ? t("copy.pressCtrlC") : t("copy.copy")}
       </button>
     </span>
   );

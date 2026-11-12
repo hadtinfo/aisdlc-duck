@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/web/httpx"
 )
@@ -14,7 +15,7 @@ import (
 // (map[string]any, []any, string, json.Number, bool, nil).
 
 // Apply trả bản sao snapshot đã phủ trạng thái server; không sửa đầu vào. Snapshot không phải object → {}.
-func Apply(snap any, server snapshot.FeatureGateState) any {
+func Apply(snap any, server snapshot.FeatureGateState, loc i18n.Locale) any {
 	out, ok := deepCopy(snap).(map[string]any)
 	if !ok {
 		return map[string]any{}
@@ -37,7 +38,7 @@ func Apply(snap any, server snapshot.FeatureGateState) any {
 
 		g["approval"] = nil
 		if a != nil {
-			g["approval"] = approvalNode(*a)
+			g["approval"] = approvalNode(*a, loc)
 		}
 		g["submission"] = nil
 		if s != nil {
@@ -115,7 +116,7 @@ func asText(v any, present bool) string {
 	return ""
 }
 
-func approvalNode(a snapshot.Appr) map[string]any {
+func approvalNode(a snapshot.Appr, loc i18n.Locale) map[string]any {
 	o := map[string]any{"hash": a.Hash, "approver": a.Approver, "at": httpx.Instant(a.At)}
 	if a.Channel == "auto" {
 		// bản tự duyệt của server: hiện "tự duyệt (mức low)" thay cho người duyệt
@@ -128,10 +129,10 @@ func approvalNode(a snapshot.Appr) map[string]any {
 			rule = a.Rule
 		}
 		o["rule"] = rule
-		o["label"] = "tự duyệt (mức " + level + ")"
+		o["label"] = loc.Tf("tự duyệt (mức %s)", level)
 	}
 	if a.Channel == "claude-code" {
-		o["label"] = a.Approver + " (trong Claude Code)"
+		o["label"] = loc.Tf("%s (trong Claude Code)", a.Approver)
 	}
 	return o
 }

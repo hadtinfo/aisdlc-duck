@@ -65,7 +65,7 @@ type boardJSON struct {
 	Inbox []inboxJSON `json:"inbox"`
 }
 
-var badRequest = httpx.NewError(http.StatusBadRequest, "Bad Request")
+var badRequest = httpx.Err(http.StatusBadRequest, httpx.Plain("Bad Request"))
 
 // intParam như @RequestParam int có defaultValue của Spring: thiếu hoặc rỗng → def; bỏ mọi khoảng trắng; hex (0x, #)
 // qua Integer.decode, còn lại Integer.valueOf; sai → 400.
@@ -117,7 +117,7 @@ func (h *handlers) board(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	days, err := intParam(q, "hideDoneOlderThanDays", 7)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	repo, owner := textParam(q, "repo"), textParam(q, "owner")
@@ -128,12 +128,12 @@ func (h *handlers) board(w http.ResponseWriter, r *http.Request) {
 	}
 	emails, err := h.reader.EmailToLogin(ctx)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	sessions, err := h.reader.Sessions(ctx)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	var doneCutoff *time.Time
@@ -143,7 +143,7 @@ func (h *handlers) board(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.reader.All(ctx)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	// rows đã phủ trạng thái cổng của server cho repo chế độ web: cột, nhãn, hộp thư tính trên đó.
@@ -179,7 +179,7 @@ func (h *handlers) board(w http.ResponseWriter, r *http.Request) {
 			ApprovalsMode: row.ApprovalsMode, RiskLevel: row.RiskLevel,
 		})
 		if out.Me != nil && ownerLogin != nil && *out.Me == *ownerLogin {
-			for _, i := range Inbox(row.Tree) {
+			for _, i := range Inbox(row.Tree, httpx.LocaleFrom(ctx)) {
 				out.Inbox = append(out.Inbox, inboxJSON{row.RepoID, row.Key, i.Kind, i.Text, i.Command})
 			}
 		}
@@ -187,8 +187,8 @@ func (h *handlers) board(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
-func notFound() *httpx.ApiError {
-	return httpx.NewError(http.StatusNotFound, "Không tìm thấy tính năng")
+func notFound() *httpx.Error {
+	return httpx.Err(http.StatusNotFound, httpx.T("Không tìm thấy tính năng"))
 }
 
 // detailJSON là GET /api/features/{repo}/{key} (thứ tự trường như FeatureController.java).
@@ -211,12 +211,12 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, err := intParam(q, "limit", 200)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	p := r.URL.Path
 	if !strings.HasPrefix(p, featuresPrefix) {
-		httpx.WriteError(w, notFound())
+		httpx.Fail(w, r, notFound())
 		return
 	}
 	rest := p[len(featuresPrefix):]
@@ -229,7 +229,7 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 	}
 	slash := strings.LastIndexByte(rest, '/')
 	if slash <= 0 || slash == len(rest)-1 {
-		httpx.WriteError(w, notFound())
+		httpx.Fail(w, r, notFound())
 		return
 	}
 	repoID, key := rest[:slash], rest[slash+1:]
@@ -239,7 +239,7 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 		err = notFound()
 	}
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	switch suffix {
@@ -248,7 +248,7 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/resubmission":
 		v, err := h.resubmission(r, repoID, key, textParam(q, "gate"), row.ApprovalsMode)
-		writeResult(w, v, err)
+		writeResult(w, r, v, err)
 		return
 	case "/control":
 		if h.reader.Control == nil {
@@ -256,16 +256,16 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		v, err := h.reader.Control.View(ctx, repoID, key)
-		writeResult(w, v, err)
+		writeResult(w, r, v, err)
 		return
 	case "/events":
 		evs, err := h.reader.Events(ctx, repoID, key, max(1, min(limit, maxEventLimit)))
-		writeResult(w, evs, err)
+		writeResult(w, r, evs, err)
 		return
 	}
 	owner, err := h.reader.Owner(ctx, *row)
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	out := detailJSON{Snapshot: row.Snapshot, Column: Column(row.Tree), Labels: Labels(row.Tree), Owner: owner,
@@ -277,7 +277,7 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 			out.PendingImports, err = h.reader.Gates.PendingImports(ctx, repoID, key)
 		}
 		if err != nil {
-			httpx.WriteError(w, err)
+			httpx.Fail(w, r, err)
 			return
 		}
 		if out.SubmittedPaths == nil {
@@ -290,9 +290,9 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
-func writeResult[T any](w http.ResponseWriter, v T, err error) {
+func writeResult[T any](w http.ResponseWriter, r *http.Request, v T, err error) {
 	if err != nil {
-		httpx.WriteError(w, err)
+		httpx.Fail(w, r, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, v)
@@ -306,7 +306,7 @@ func (h *handlers) resubmission(r *http.Request, repoID, key string, gateName *s
 	switch gate.Gate(g) {
 	case gate.BRD, gate.DESIGN, gate.CASES, gate.REVIEW:
 	default:
-		return nil, httpx.NewError(http.StatusBadRequest, "Cổng không hợp lệ")
+		return nil, httpx.Err(http.StatusBadRequest, httpx.T("Cổng không hợp lệ"))
 	}
 	if mode != modeWeb || h.reader.Gates == nil {
 		return map[string]int{"n": 0}, nil

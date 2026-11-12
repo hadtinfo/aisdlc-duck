@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError, sendAction } from "../api";
 import { acceptStatusShown, actionLabel, latestAction, outOfScopeFiles, validScopePath } from "../control";
+import { t as tNow, useT } from "../i18n";
 import type { ControlAction, FeatureEvent, StepData } from "../types";
 import { CopyCommand } from "./CopyCommand";
 
@@ -12,6 +13,7 @@ export function StepActions({ step, events, actions, actor, repoId, featureKey, 
   step: StepData; events: FeatureEvent[]; actions: ControlAction[]; actor: boolean;
   repoId: string; featureKey: string; onChanged: () => void;
 }) {
+  const { t } = useT();
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -26,7 +28,7 @@ export function StepActions({ step, events, actions, actor, repoId, featureKey, 
       setConfirm(false);
       onChanged();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Không kết nối được máy chủ");
+      setError(e instanceof ApiError ? e.message : tNow("common.noServer"));
     } finally {
       setBusy(false);
     }
@@ -45,7 +47,7 @@ export function StepActions({ step, events, actions, actor, repoId, featureKey, 
 
   return (
     <section className="panel-sec step-actions">
-      <h3>Thao tác bước</h3>
+      <h3>{t("step.actions")}</h3>
       {showAccStatus && acc && (
         <p className={`ctl-status ${acc.status.toLowerCase()}`}>{actionLabel("ACCEPT_STEP", acc.status, acc.reason)}</p>
       )}
@@ -53,23 +55,23 @@ export function StepActions({ step, events, actions, actor, repoId, featureKey, 
         <button type="button" onClick={() => { setConfirm(true); setError(""); }}>Accept {step.id}</button>
       )}
       {awaiting && actor && accRetry && confirm && (
-        <div className="ga-confirm" role="group" aria-label="Xác nhận accept">
+        <div className="ga-confirm" role="group" aria-label={t("step.confirmAccept")}>
           <p className="ga-q">Accept {step.id}?</p>
           <ul className="ga-paths">
-            <li>Case đạt: {check ? `${check.casesPassed ?? 0}/${step.caseIds.length}` : "chưa có kết quả"}
-              {notPassed.length > 0 && <span className="pill bad">chưa qua: {notPassed.join(", ")}</span>}</li>
-            <li>{check?.files ?? 0} file, {check?.lines ?? 0} dòng (ngân sách {step.budget.files} file, {step.budget.lines} dòng)</li>
-            {oos.length > 0 && <li className="bad">File ngoài phạm vi: {oos.join(", ")}</li>}
+            <li>{t("step.casesPassed")}: {check ? `${check.casesPassed ?? 0}/${step.caseIds.length}` : t("step.noResult")}
+              {notPassed.length > 0 && <span className="pill bad">{t("step.notPassed", { list: notPassed.join(", ") })}</span>}</li>
+            <li>{t("step.sizeVsBudget", { files: check?.files ?? 0, lines: check?.lines ?? 0, bf: step.budget.files, bl: step.budget.lines })}</li>
+            {oos.length > 0 && <li className="bad">{t("step.outOfScope")}: {oos.join(", ")}</li>}
           </ul>
           <div className="ga-buttons">
-            <button type="button" disabled={busy} onClick={() => send("ACCEPT_STEP")}>Xác nhận accept</button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => setConfirm(false)}>Hủy</button>
+            <button type="button" disabled={busy} onClick={() => send("ACCEPT_STEP")}>{t("step.confirmAccept")}</button>
+            <button type="button" className="secondary" disabled={busy} onClick={() => setConfirm(false)}>{t("common.cancel")}</button>
           </div>
         </div>
       )}
       {oos.length > 0 && (
         <>
-          <p className="ga-sub">File ngoài phạm vi</p>
+          <p className="ga-sub">{t("step.outOfScope")}</p>
           <ul className="ctl-list">
             {oos.map((p) => {
               const a = latestAction(actions, "ALLOW_SCOPE", step.id, p);
@@ -79,10 +81,10 @@ export function StepActions({ step, events, actions, actor, repoId, featureKey, 
                   <code className="path">{p}</code>
                   {a && <span className={`ctl-status ${a.status.toLowerCase()}`}>{actionLabel("ALLOW_SCOPE", a.status, a.reason)}</span>}
                   {actor && canAllow && retry && validScopePath(p) && (
-                    <button type="button" className="secondary" disabled={busy} onClick={() => send("ALLOW_SCOPE", p)}>Cho phép</button>
+                    <button type="button" className="secondary" disabled={busy} onClick={() => send("ALLOW_SCOPE", p)}>{t("step.allow")}</button>
                   )}
                   {actor && canAllow && retry && !validScopePath(p) && (
-                    <span className="ga-sub">Dùng <code>aisdlc scope allow {p}</code> ở terminal</span>
+                    <span className="ga-sub">{t("step.use")} <code>aisdlc scope allow {p}</code> {t("step.inTerminal")}</span>
                   )}
                 </li>
               );

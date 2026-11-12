@@ -4,7 +4,7 @@ argument-hint: "<JIRA-KEY>"
 ---
 Create feature `$ARGUMENTS` (Jira key).
 
-0. Run `aisdlc status`. Its first line is `Locale: vi|en`: write documents and reply to the dev in that language (`vi` = Vietnamese, `en` = English).
+0. Run `aisdlc status`. Its first line is `Locale: vi|en`: write documents and reply to the dev in that language (`vi` = Vietnamese, `en` = English). Before init it reports no active feature and exits non-zero; that is expected, only the `Locale:` line matters here.
 1. Read the ticket. Without Jira, ask the dev to paste the ticket text.
 2. Propose the **full flow** or the **lite flow** with a one-line reason. Use the lite flow only for a bug fix or a small change that touches neither the DB nor an API.
 3. List at most 5 unclear points in the ticket.

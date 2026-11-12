@@ -147,10 +147,10 @@ AISDLC có tiếng Anh (`en`) và tiếng Việt (`vi`). Ngôn ngữ là thuộc
 
 **Chọn ngôn ngữ của repo.**
 
-- `locale: en` hoặc `locale: vi` trong `aisdlc/config.yaml` là nguồn duy nhất bên trong repo. Thiếu khóa (hoặc rỗng) nghĩa là `vi`, nên repo đang dùng không đổi gì. Giá trị khác là lỗi cấu hình, do các lệnh đọc config báo; `--version` và hook vẫn chạy (hook fail-open).
+- `locale: en` hoặc `locale: vi` trong `aisdlc/config.yaml` là nguồn duy nhất bên trong repo. Thiếu khóa (hoặc rỗng) nghĩa là `vi`, nên repo đang dùng không đổi gì. Giá trị khác là lỗi cấu hình, do các lệnh đọc config báo; `--version` vẫn chạy và hook vẫn chạy, nhưng hook PreToolUse chặn mọi thao tác sửa kèm lỗi cấu hình cho tới khi sửa giá trị (thao tác đọc vẫn được phép).
 - `aisdlc setup --locale en|vi` ghi template theo ngôn ngữ đó, kể cả dòng `locale:` của `config.yaml` mới. Không có `--locale` thì setup theo locale của repo, chưa có config thì theo `AISDLC_LOCALE`, không có thì `vi`. Nếu `config.yaml` đã có với locale khác, setup giữ nguyên, in cảnh báo và chỉ ghi file mới theo `--locale`. Muốn đổi ngôn ngữ của repo đang dùng thì tự sửa dòng `locale:`.
 - `AISDLC_LOCALE=en|vi` **chỉ có tác dụng ngoài repo** có `aisdlc/config.yaml` (ví dụ `aisdlc web login`, hoặc `setup` khi chưa có config). Trong repo như vậy biến này bị bỏ qua.
-- Dòng đầu của `aisdlc status` luôn là `Locale: vi` hoặc `Locale: en`. Các lệnh `/aisdlc:*` và subagent đọc dòng này rồi viết tài liệu, trả lời dev bằng ngôn ngữ đó.
+- Dòng đầu của `aisdlc status` luôn là `Locale: vi` hoặc `Locale: en`. Các lệnh `/aisdlc:*` đọc dòng này, truyền nó cho subagent, rồi viết tài liệu và trả lời dev bằng ngôn ngữ đó. Trước `aisdlc init` chưa có tính năng đang làm nên `status` thoát mã 2, nhưng vẫn in dòng `Locale:` trước tiên.
 
 **Theo locale của repo:** thông báo và trợ giúp của CLI, thông báo của hook (kể cả lý do chặn mà agent đọc), output của harness và eval (`eval/report.md`), template mà `aisdlc init` chép ra (BRD, thiết kế, case), mục AISDLC trong `CLAUDE.md`, thông báo rủi ro, `feedback.md`, và review card (cờ và chữ trên thẻ; thẻ tạo trong repo `en` có `"locale": "en"`). CLI truyền locale xuống `aisdlc-harness` qua `AISDLC_LOCALE`.
 
@@ -158,7 +158,7 @@ AISDLC có tiếng Anh (`en`) và tiếng Việt (`vi`). Ngôn ngữ là thuộc
 
 **Theo người xem (web).** Giao diện web có bộ chọn EN/VI trong menu người dùng và trên trang đăng nhập. Lựa chọn lưu theo người dùng trên server (`users.locale`, đặt bằng `PUT /api/me/locale`, trả về trong `GET /api/me`). Trước khi đăng nhập, hoặc khi người dùng chưa chọn, UI dùng lựa chọn đã lưu trong trình duyệt, rồi ngôn ngữ trình duyệt (`en*` → tiếng Anh, còn lại → tiếng Việt). Chữ do server sinh (inbox, lỗi API) theo ngôn ngữ của người xem. Nội dung do CLI tạo (review card, `eval/report.md`) giữ ngôn ngữ của repo.
 
-**CLI → web.** Mọi request từ CLI mang `Accept-Language: vi` hoặc `en` theo locale của repo, nên lỗi web hiện trong terminal theo ngôn ngữ của repo. Request không có lựa chọn của người dùng đã đăng nhập thì theo `Accept-Language`, rồi `vi`.
+**CLI → web.** Mọi request từ CLI mang `Accept-Language: vi` hoặc `en` theo locale của repo, nên lỗi web hiện trong terminal theo ngôn ngữ của repo. Phía server, phiên trình duyệt dùng lựa chọn đã lưu của người dùng, không có thì theo `Accept-Language`; request bằng token (CLI/CI) luôn theo `Accept-Language`, kể cả khi người dùng của token đã chọn ngôn ngữ; mặc định là `vi`.
 
 **Chữ server đã lưu** (ví dụ lý do import, lý do của lệnh chờ) vẫn lưu tiếng Việt như cũ và được dịch khi hiển thị, nên cả dòng lưu từ trước cũng hiện theo ngôn ngữ của người xem.
 

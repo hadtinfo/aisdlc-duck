@@ -34,7 +34,7 @@ for c in design cases review; do check "command $c: truyền dòng Locale: cho s
 check "agents: nhãn verdict và id là mã, không dịch" "grep -q 'DAT|CAN_SUA|NGHIEM_TRONG' '$P/agents/aisdlc-reviewer.md'"
 check "agent aisdlc-reviewer" "grep -q '^name: aisdlc-reviewer' '$P/agents/aisdlc-reviewer.md' && grep -q '^tools: Read, Grep, Glob' '$P/agents/aisdlc-reviewer.md'"
 check "agent aisdlc-risk-classifier: tools chỉ đọc, có schema" "grep -q '^name: aisdlc-risk-classifier' '$P/agents/aisdlc-risk-classifier.md' && grep -q '^tools: Read, Grep, Glob\$' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'inputsHash' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'notMatched' '$P/agents/aisdlc-risk-classifier.md' && grep -q 'override' '$P/agents/aisdlc-risk-classifier.md'"
-check "design/cases dùng subagent risk-classifier, không còn impact" "grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/design.md' && grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/cases.md' && grep -q 'RISK_AGENT_INVALID' '$P/commands/design.md' && ! grep -qi 'impact' '$P'/commands/*.md && ! grep -qi 'risk' '$P/commands/brd.md'"
+check "design/cases dùng subagent risk-classifier, không còn impact" "grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/design.md' && grep -q 'aisdlc:aisdlc-risk-classifier' '$P/commands/cases.md' && grep -q 'RISK_AGENT_INVALID' '$P/commands/design.md' && ! grep -qi 'impact' '$P'/commands/*.md && ! grep -qiE 'risk|rủi ro' '$P/commands/brd.md'"
 for id in sequence error-handling over-engineering naming security; do
   check "agent có tiêu chí $id" "grep -q '$id' '$P/agents/aisdlc-reviewer.md'"
 done

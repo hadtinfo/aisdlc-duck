@@ -27,7 +27,7 @@ To run without Docker: `make build-web` (builds the UI, then `bin/aisdlc-web`).
 | `AISDLC_SIGNING_KEY_FILE` | `/data/signing-key` | Ed25519 signing key file (PEM). Generated automatically if missing (mode 0600) |
 | `AISDLC_SIGNING_PREVIOUS_KEY_FILE` | empty | Previous signing key during key rotation: the server signs an endorsement of the new key with the old one so CLIs that pinned the old key switch over automatically |
 | `TZ` | `UTC` | Time zone for the daily purge (section 5) |
-| `AISDLC_LOCALE` | `vi` | Operator language (`vi` or `en`) of the server log, startup errors and the `aisdlc-web user ...` commands. It does not affect what users see: each request follows the signed-in user's choice, then `Accept-Language`, then `vi` |
+| `AISDLC_LOCALE` | `vi` | Operator language (`vi` or `en`) of the server log, startup errors and the `aisdlc-web user ...` commands. It does not affect what users see: a browser session uses the user's saved choice, else `Accept-Language`; token requests (CLI/CI) use `Accept-Language`; default `vi` |
 
 `AISDLC_WEB_URL` and `AISDLC_WEB_TOKEN` belong to the CLI/CI, not the server.
 

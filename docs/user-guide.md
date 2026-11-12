@@ -4,7 +4,7 @@
 
 Updated: 2026-11-12
 
-AISDLC runs in English or Vietnamese, chosen per repo (section 2.3). The CLI output quoted in this guide comes from a Vietnamese (`vi`, the default) repo, with an English gloss in parentheses; in an `en` repo the same messages are printed in English.
+AISDLC runs in English or Vietnamese, chosen per repo (section 2.3). The CLI output quoted in this guide comes from a Vietnamese (`vi`, the default) repo; most single-line messages have an English gloss in parentheses, the longer output blocks do not. In an `en` repo the same messages are printed in English.
 
 ## 1. What AISDLC is
 
@@ -147,10 +147,10 @@ AISDLC speaks English (`en`) and Vietnamese (`vi`). The language is a property o
 
 **Choosing the repo language.**
 
-- `locale: en` or `locale: vi` in `aisdlc/config.yaml` is the only source inside a repo. A missing (or empty) key means `vi`, so existing repos keep working unchanged. Any other value is a config error, reported by the commands that read the config; `--version` and the hooks keep working (hooks fail open).
+- `locale: en` or `locale: vi` in `aisdlc/config.yaml` is the only source inside a repo. A missing (or empty) key means `vi`, so existing repos keep working unchanged. Any other value is a config error, reported by the commands that read the config; `--version` still works and the hooks still run, but the PreToolUse hook blocks edits with the config error until the value is fixed (reads are allowed).
 - `aisdlc setup --locale en|vi` writes the templates in that language, including the `locale:` line of a new `config.yaml`. Without `--locale`, setup uses the repo's locale, or `AISDLC_LOCALE` when the repo has no config yet, otherwise `vi`. If `config.yaml` already exists with another locale, setup keeps it, prints a warning and writes only the new files in the `--locale` language. To switch an existing repo, edit `locale:` yourself.
 - `AISDLC_LOCALE=en|vi` applies **only outside a repo** with `aisdlc/config.yaml` (e.g. `aisdlc web login`, or `setup` before the config exists). Inside such a repo it is ignored.
-- The first line of `aisdlc status` is always `Locale: vi` or `Locale: en`. The `/aisdlc:*` commands and the subagents read that line and write documents and reply to the dev in that language.
+- The first line of `aisdlc status` is always `Locale: vi` or `Locale: en`. The `/aisdlc:*` commands read that line, pass it to the subagents, and write documents and reply to the dev in that language. Before `aisdlc init` there is no active feature, so `status` exits 2, but it still prints the `Locale:` line first.
 
 **What follows the repo locale:** CLI messages and help, hook messages (including the block reasons the agent reads), harness and eval output (`eval/report.md`), the templates `aisdlc init` copies (BRD, design, cases), the AISDLC section of `CLAUDE.md`, risk messages, `feedback.md`, and the review card (flags and card text; a card made in an `en` repo carries `"locale": "en"`). The CLI passes the locale to `aisdlc-harness` through `AISDLC_LOCALE`.
 
@@ -158,7 +158,7 @@ AISDLC speaks English (`en`) and Vietnamese (`vi`). The language is a property o
 
 **What follows the viewer (web).** The web UI has an EN/VI switch in the user menu and on the sign-in page. The choice is stored per user on the server (`users.locale`, set with `PUT /api/me/locale`, returned by `GET /api/me`). Before signing in, or if the user has never chosen, the UI uses the browser's saved choice, then the browser language (`en*` → English, anything else → Vietnamese). Text the server generates (inbox, API errors) follows the viewer's language. Content made by the CLI (review card, `eval/report.md`) stays in the repo's language.
 
-**CLI → web.** Every request from the CLI carries `Accept-Language: vi` or `en` from the repo locale, so web errors shown in the terminal are in the repo's language. Requests without a signed-in user's choice fall back to `Accept-Language`, then `vi`.
+**CLI → web.** Every request from the CLI carries `Accept-Language: vi` or `en` from the repo locale, so web errors shown in the terminal are in the repo's language. On the server, a browser session uses the user's saved choice, else `Accept-Language`; token requests (CLI/CI) always use `Accept-Language`, even when the token's user has chosen a language; the default is `vi`.
 
 **Text stored by the server** (e.g. import reasons, pending-action reasons) is stored in Vietnamese as before and translated when displayed, so rows stored earlier also show in the viewer's language.
 

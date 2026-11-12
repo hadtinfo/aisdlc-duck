@@ -27,7 +27,7 @@ Muốn chạy không qua Docker: `make build-web` (dựng UI rồi build `bin/ai
 | `AISDLC_SIGNING_KEY_FILE` | `/data/signing-key` | File khóa ký Ed25519 (PEM). Chưa có thì tự sinh (quyền 0600) |
 | `AISDLC_SIGNING_PREVIOUS_KEY_FILE` | rỗng | Khóa ký cũ khi xoay khóa: server ký xác nhận khóa mới bằng khóa cũ để CLI đã ghim tự chuyển |
 | `TZ` | `UTC` | Múi giờ chạy purge hằng ngày (mục 5) |
-| `AISDLC_LOCALE` | `vi` | Ngôn ngữ cho người vận hành (`vi` hoặc `en`): log của server, lỗi khởi động và lệnh `aisdlc-web user ...`. Không ảnh hưởng tới người dùng: mỗi request theo lựa chọn của người dùng đã đăng nhập, rồi `Accept-Language`, rồi `vi` |
+| `AISDLC_LOCALE` | `vi` | Ngôn ngữ cho người vận hành (`vi` hoặc `en`): log của server, lỗi khởi động và lệnh `aisdlc-web user ...`. Không ảnh hưởng tới người dùng: phiên trình duyệt dùng lựa chọn đã lưu của người dùng, không có thì theo `Accept-Language`; request bằng token (CLI/CI) theo `Accept-Language`; mặc định `vi` |
 
 Hai biến `AISDLC_WEB_URL` và `AISDLC_WEB_TOKEN` là của CLI/CI, không phải của server.
 

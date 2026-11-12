@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	neturl "net/url"
+
+	"aisdlc/internal/i18n"
 )
 
 // FetchCIPolicy lấy chính sách rủi ro hiện hành của repo qua GET /api/cli/policy với Bearer token CI. CI không có khóa
@@ -14,7 +16,7 @@ import (
 // đọc). Chỉ kiểm phong bì đúng cấu trúc và repoId khớp. Lỗi không chứa token.
 func FetchCIPolicy(ctx context.Context, baseURL, token, repo string) (yaml string, version int, err error) {
 	if repo == "" {
-		return "", 0, errors.New("không xác định được repo")
+		return "", 0, errors.New(i18n.T("không xác định được repo"))
 	}
 	ctx, cancel := context.WithTimeout(ctx, CIApprovalTimeout)
 	defer cancel()
@@ -30,11 +32,11 @@ func FetchCIPolicy(ctx context.Context, baseURL, token, repo string) (yaml strin
 		Payload string `json:"payload"`
 	}
 	if json.Unmarshal(r.Body, &env) != nil || env.Payload == "" {
-		return "", 0, errors.New("phản hồi web không đọc được")
+		return "", 0, errors.New(i18n.T("phản hồi web không đọc được"))
 	}
 	raw, err := base64.StdEncoding.DecodeString(env.Payload)
 	if err != nil {
-		return "", 0, errors.New("phản hồi web không đọc được")
+		return "", 0, errors.New(i18n.T("phản hồi web không đọc được"))
 	}
 	var p struct {
 		RepoID  string  `json:"repoId"`
@@ -42,10 +44,10 @@ func FetchCIPolicy(ctx context.Context, baseURL, token, repo string) (yaml strin
 		YAML    *string `json:"yaml"`
 	}
 	if json.Unmarshal(raw, &p) != nil || p.YAML == nil {
-		return "", 0, errors.New("phản hồi web không đọc được")
+		return "", 0, errors.New(i18n.T("phản hồi web không đọc được"))
 	}
 	if p.RepoID != repo {
-		return "", 0, errors.New("chính sách thuộc repo khác")
+		return "", 0, errors.New(i18n.T("chính sách thuộc repo khác"))
 	}
 	return *p.YAML, p.Version, nil
 }

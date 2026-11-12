@@ -12,6 +12,8 @@ import (
 	neturl "net/url"
 	"strings"
 	"time"
+
+	"aisdlc/internal/i18n"
 )
 
 // Giới hạn mặc định như WebClient.java: kết nối 1 giây; tổng thời gian một request tối đa 2 giây khi người gọi
@@ -37,9 +39,9 @@ type HTTPError struct {
 
 func (e *HTTPError) Error() string {
 	if e.Reason == "" {
-		return fmt.Sprintf("Web trả HTTP %d", e.Status)
+		return i18n.Tf("Web trả HTTP %d", e.Status)
 	}
-	return fmt.Sprintf("Web trả HTTP %d: %s", e.Status, e.Reason)
+	return i18n.Tf("Web trả HTTP %d: %s", e.Status, e.Reason)
 }
 
 // Response là phản hồi thô: status và body (có thể rỗng).
@@ -96,7 +98,7 @@ func (c *Client) GetJSON(ctx context.Context, path string, out any) error {
 func (c *Client) PostJSON(ctx context.Context, path string, body, out any) error {
 	b, err := json.Marshal(body)
 	if err != nil {
-		return fmt.Errorf("Không serialize được yêu cầu: %v", err)
+		return fmt.Errorf(i18n.T("Không serialize được yêu cầu: %v"), err)
 	}
 	return c.doJSON(ctx, http.MethodPost, path, b, out)
 }
@@ -113,7 +115,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body []byte, o
 		return nil
 	}
 	if err := json.Unmarshal(r.Body, out); err != nil {
-		return fmt.Errorf("Phản hồi %s không hợp lệ: %v", path, err)
+		return fmt.Errorf(i18n.T("Phản hồi %s không hợp lệ: %v"), path, err)
 	}
 	return nil
 }
@@ -128,7 +130,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body []byte) (Resp
 		defer cancel()
 	}
 	if err := ctx.Err(); err != nil {
-		return Response{}, errors.New("hết thời gian")
+		return Response{}, errors.New(i18n.T("hết thời gian"))
 	}
 	url := strings.TrimRight(c.BaseURL, "/") + path
 	var rd io.Reader
@@ -137,11 +139,13 @@ func (c *Client) Do(ctx context.Context, method, path string, body []byte) (Resp
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, rd)
 	if err != nil {
-		return Response{}, fmt.Errorf("URL không hợp lệ: %s", safeURL(url, c.Token))
+		return Response{}, fmt.Errorf(i18n.T("URL không hợp lệ: %s"), safeURL(url, c.Token))
 	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
+	// server trả lỗi (câu agent/dev đọc) theo locale của repo
+	req.Header.Set("Accept-Language", AcceptLanguage())
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -164,9 +168,18 @@ func netError(c *Client, err error) error {
 	}
 	msg := scrub(err.Error(), c.Token)
 	if errors.Is(err, context.DeadlineExceeded) {
-		msg = "hết thời gian"
+		msg = i18n.T("hết thời gian")
 	}
-	return fmt.Errorf("Không kết nối được web %s: %s", safeURL(c.BaseURL, c.Token), msg)
+	return fmt.Errorf(i18n.T("Không kết nối được web %s: %s"), safeURL(c.BaseURL, c.Token), msg)
+}
+
+// AcceptLanguage là giá trị header Accept-Language mọi request tới web mang theo: đúng "vi" hoặc "en", theo locale
+// mặc định của tiến trình (locale của repo).
+func AcceptLanguage() string {
+	if i18n.Default() == i18n.EN {
+		return string(i18n.EN)
+	}
+	return string(i18n.VI)
 }
 
 // scrub bỏ token khỏi s (phòng server hoặc thư viện phản chiếu header vào lỗi).

@@ -292,6 +292,27 @@ var enEngine = map[string]string{
 	"tự duyệt (mức %s), khớp flow trong risk.yaml":    "auto-approved (level %s), matches the flow in risk.yaml",
 	"Bản tự duyệt %s không khớp flow trong risk.yaml": "Auto-approval of %s does not match the flow in risk.yaml",
 	"lỗi nội bộ: %v": "internal error: %v",
+
+	// webclient
+	"không xác định được repo":         "cannot determine the repo",
+	"phản hồi web không đọc được":      "cannot read the web response",
+	"chính sách thuộc repo khác":       "the policy belongs to another repo",
+	"Web trả HTTP %d":                  "The web returned HTTP %d",
+	"Web trả HTTP %d: %s":              "The web returned HTTP %d: %s",
+	"Không serialize được yêu cầu: %v": "Cannot serialize the request: %v",
+	"Phản hồi %s không hợp lệ: %v":     "Invalid response from %s: %v",
+	"hết thời gian":                    "timed out",
+	"URL không hợp lệ: %s":             "Invalid URL: %s",
+	"Không kết nối được web %s: %s":    "Cannot connect to the web %s: %s",
+	"AISDLC_WEB_TOKEN đang đặt trong môi trường. Token đăng nhập (login) không dùng cho CLI và agent đọc được biến này: xóa nó khỏi môi trường, dùng `aisdlc web login` với token ingest.": "AISDLC_WEB_TOKEN is set in the environment. A login token is not used by the CLI, and the agent can read this variable: remove it from the environment and use `aisdlc web login` with an ingest token.",
+	"aisdlc web: không đọc được %s: %s":                 "aisdlc web: cannot read %s: %s",
+	"event không phải JSON hợp lệ":                      "event is not valid JSON",
+	"Khóa server đã đổi mà không được khóa cũ ký":       "The server key changed without being signed by the old key",
+	"aisdlc web: tiến trình khác đang gửi; thử lại sau": "aisdlc web: another process is sending; try again later",
+	"snapshot không phải JSON hợp lệ":                   "snapshot is not valid JSON",
+	"không phải file thường":                            "not a regular file",
+	"Không ghi được %s: %w":                             "Cannot write %s: %w",
+	"Không serialize được snapshot: %v":                 "Cannot serialize the snapshot: %v",
 }
 
 func init() { register(enEngine) }

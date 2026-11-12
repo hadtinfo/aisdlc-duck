@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 )
 
 // Config là cấu hình web của máy: ~/.config/aisdlc/web.json (do `aisdlc web login` ghi, token ingest) nếu có; chỉ
@@ -22,9 +23,11 @@ type Config struct {
 	URL, Token, ApproveToken string
 }
 
-const envTokenText = "AISDLC_WEB_TOKEN đang đặt trong môi trường. Token đăng nhập" +
-	" (login) không dùng cho CLI và agent đọc được biến này: xóa nó khỏi môi trường, dùng `aisdlc web login`" +
-	" với token ingest."
+func envTokenText() string {
+	return i18n.T("AISDLC_WEB_TOKEN đang đặt trong môi trường. Token đăng nhập" +
+		" (login) không dùng cho CLI và agent đọc được biến này: xóa nó khỏi môi trường, dùng `aisdlc web login`" +
+		" với token ingest.")
+}
 
 // ConfigDir là thư mục cấu hình web của dev: <home>/.config/aisdlc.
 func ConfigDir(home string) string { return filepath.Join(home, ".config", "aisdlc") }
@@ -66,7 +69,7 @@ func EnvTokenWarning(env func(string) string) (line string, set bool) {
 	if strings.TrimSpace(env("AISDLC_WEB_TOKEN")) == "" {
 		return "", false
 	}
-	return "aisdlc web: " + envTokenText, true
+	return "aisdlc web: " + envTokenText(), true
 }
 
 // SaveConfig ghi web.json {"url","token"} (0600, thư mục 0700) và approve-token nếu c.ApproveToken khác rỗng.
@@ -121,7 +124,7 @@ func fromFile(home string) (c Config, ok bool, warn string) {
 		err = json.Unmarshal(b, &n)
 	}
 	if err != nil {
-		return Config{}, false, "aisdlc web: không đọc được " + f + ": " + err.Error()
+		return Config{}, false, i18n.Tf("aisdlc web: không đọc được %s: %s", f, err.Error())
 	}
 	u, t := strings.TrimSpace(JSONText(n["url"])), strings.TrimSpace(JSONText(n["token"]))
 	if u == "" || t == "" {

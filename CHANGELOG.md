@@ -55,6 +55,11 @@ All notable changes to this project are documented here. The format follows
   in that language; command descriptions are bilingual (`English / Tiếng Việt`).
 - Documentation: a "Language / Ngôn ngữ" section in `docs/user-guide.md` and `docs/huong-dan-su-dung.md`; the README
   lists the supported languages; `docs/docs-check.sh` runs each guide on a `vi` repo and an `en` repo.
+- Every Vietnamese string literal in Go code must go through `i18n.T`/`Tf` (the bare-string allowlist is gone);
+  intentional data lines carry a `// i18n:data <reason>` marker. The web's "not in web mode" 409 error carries
+  `"code": "NOT_WEB_MODE"`, which the CLI matches (it still recognises older servers by the message). Reject/reopen
+  instructions in `feedback.md` follow the repo locale; the reviewer's own text stays verbatim. E2E adds a lite-flow
+  pass on an English repo and an EN/VI switch check in the web UI.
 - Project site on GitHub Pages (`site/`, English and Vietnamese) with a guided tour and screenshots, assembled by
   `make site` and published by the `Pages` workflow.
 - Subagent `aisdlc-risk-classifier` (read-only): decides which policy rules match a feature's documents, with verbatim

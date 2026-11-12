@@ -79,7 +79,8 @@ Documentation, issues and PRs are in English. AISDLC itself runs in English or V
 
 - Go: user-facing strings are written in Vietnamese inside `i18n.T` / `i18n.Tf` (web server: the request's
   `Locale`), and the English text goes in the catalog `internal/i18n/en*.go`. The catalog tests fail on a missing or
-  unused entry and on Vietnamese literals outside `T`/`Tf`.
+  unused entry and on Vietnamese literals outside `T`/`Tf`. A line that must keep Vietnamese as data (e.g. a
+  regex over Vietnamese document content) gets a `// i18n:data <reason>` comment.
 - Web UI: add each key to both `web/ui/src/i18n/vi.ts` and `en.ts` (`tsc` fails on a missing key).
 - Templates: change `templates/vi/` and `templates/en/` together.
 - Slash-command prompts and subagents (`plugin/`) are written in English and tell the agent to follow the repo's

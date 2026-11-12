@@ -13,8 +13,6 @@ var (
 	newlineRe = regexp.MustCompile(`\r\n|\n|\r`)
 )
 
-const openQuestionsSection = "Câu hỏi mở"
-
 // MarkdownSections tách markdown theo heading cấp 2 (chuẩn hóa NFC, bỏ comment HTML).
 // names giữ thứ tự xuất hiện đầu tiên của mỗi mục.
 func MarkdownSections(md string) (names []string, body map[string]string) {
@@ -43,10 +41,9 @@ func MarkdownSections(md string) (names []string, body map[string]string) {
 	return names, body
 }
 
-// OpenQuestions trả mỗi dòng "- [ ] ..." trong mục "Câu hỏi mở".
+// OpenQuestions trả mỗi dòng "- [ ] ..." trong mục câu hỏi mở (cả hai ngôn ngữ).
 func OpenQuestions(md string) []string {
-	_, body := MarkdownSections(md)
-	b, ok := body[openQuestionsSection]
+	b, ok := SectionsByID(md)[SecOpenQuestions]
 	if !ok {
 		return nil
 	}

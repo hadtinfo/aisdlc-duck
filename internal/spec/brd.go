@@ -1,23 +1,24 @@
 package spec
 
-import "aisdlc/internal/model"
+import "aisdlc/internal/i18n"
 
-var brdRequired = []string{"Mục tiêu", "Trong phạm vi", "Ngoài phạm vi", "Quy tắc nghiệp vụ", "Tiêu chí chấp nhận"}
+var brdRequired = []SectionID{SecGoal, SecInScope, SecOutOfScope, SecRules, SecAcceptance}
 
 // ValidateBRD kiểm các mục bắt buộc của brd.md và câu hỏi mở.
 func ValidateBRD(content string) []Finding {
-	_, sections := MarkdownSections(content)
+	sections := SectionsByID(content)
 	var findings []Finding
-	for _, name := range brdRequired {
-		body, ok := sections[model.NFC(name)]
+	for _, id := range brdRequired {
+		name := Heading(id, i18n.Default())
+		body, ok := sections[id]
 		if !ok {
-			findings = append(findings, Finding{"BRD_MISSING_SECTION", "BRD thiếu mục bắt buộc: \"" + name + "\"."})
+			findings = append(findings, Finding{"BRD_MISSING_SECTION", i18n.Tf("BRD thiếu mục bắt buộc: \"%s\".", name)})
 		} else if isBlank(body) {
-			findings = append(findings, Finding{"BRD_EMPTY_SECTION", "Mục \"" + name + "\" của BRD đang trống."})
+			findings = append(findings, Finding{"BRD_EMPTY_SECTION", i18n.Tf("Mục \"%s\" của BRD đang trống.", name)})
 		}
 	}
 	for _, q := range OpenQuestions(content) {
-		findings = append(findings, Finding{"BRD_OPEN_QUESTION", "Câu hỏi mở chưa được trả lời: " + q})
+		findings = append(findings, Finding{"BRD_OPEN_QUESTION", i18n.Tf("Câu hỏi mở chưa được trả lời: %s", q)})
 	}
 	return findings
 }

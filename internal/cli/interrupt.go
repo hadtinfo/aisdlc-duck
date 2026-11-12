@@ -7,15 +7,22 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+
+	"aisdlc/internal/i18n"
 )
 
 // ExitInterrupted là mã thoát khi dev hủy lệnh bằng Ctrl-C/SIGTERM lúc harness chạy (128 + SIGINT).
 const ExitInterrupted = 130
 
-const (
-	interruptingMsg = "Đang dừng harness và dọn container (tối đa 30 giây)…"
-	interruptedMsg  = "Đã hủy: harness đã dừng, không thay đổi trạng thái."
-)
+// interruptingMsg in ra khi dev bấm Ctrl-C lúc harness chạy.
+func interruptingMsg() string {
+	return i18n.T("Đang dừng harness và dọn container (tối đa 30 giây)…")
+}
+
+// interruptedMsg là thông báo kết thúc lệnh đã hủy.
+func interruptedMsg() string {
+	return i18n.T("Đã hủy: harness đã dừng, không thay đổi trạng thái.")
+}
 
 // Interrupts là nguồn tín hiệu khi harness chạy. Notify bắt đầu nhận Ctrl-C/SIGTERM (stop thôi nhận, trả lại hành vi
 // mặc định); Kill diệt ngay (đồng bộ) dịch vụ harness còn sống; Exit thoát tiến trình. Test tiêm kênh tín hiệu riêng.
@@ -66,7 +73,7 @@ func (c *Context) interruptible(fn func() error) error {
 				case <-ch:
 					if first {
 						first = false
-						fmt.Fprintln(c.err, interruptingMsg)
+						fmt.Fprintln(c.err, interruptingMsg())
 						cancel()
 						continue
 					}
@@ -84,7 +91,7 @@ func (c *Context) interruptible(fn func() error) error {
 	}
 	err := fn()
 	if ctx.Err() != nil {
-		return abort(ExitInterrupted, interruptedMsg)
+		return abort(ExitInterrupted, interruptedMsg())
 	}
 	return err
 }

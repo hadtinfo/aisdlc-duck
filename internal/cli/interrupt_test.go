@@ -78,7 +78,7 @@ func TestInterruptibleFirstSignalCancelsSecondKills(t *testing.T) {
 	})
 
 	var a *Abort
-	if !asAbort(err, &a) || a.Code != ExitInterrupted || a.Msg != interruptedMsg {
+	if !asAbort(err, &a) || a.Code != ExitInterrupted || a.Msg != interruptedMsg() {
 		t.Fatalf("err = %v", err)
 	}
 	eq(t, sig.next(t), "stop") // thôi bắt tín hiệu khi harness xong
@@ -160,7 +160,7 @@ func TestStepFinishInterruptedLeavesStateUnchanged(t *testing.T) {
 
 	eq(t, r.run("step", "finish", "S1"), ExitInterrupted)
 
-	contains(t, r.err, "Đang dừng harness và dọn container", interruptedMsg)
+	contains(t, r.err, "Đang dừng harness và dọn container", interruptedMsg())
 	notContains(t, r.out, "Đã chấp nhận bước")
 	eq(t, r.snapshot(gatesRel, stepsRel)[stepsRel], before[stepsRel])
 	eq(t, r.snapshot(gatesRel, stepsRel)[gatesRel], before[gatesRel])
@@ -180,7 +180,7 @@ func TestSubmitCasesCanceledLeavesGatesUnchanged(t *testing.T) {
 
 	eq(t, r.run("submit", "cases"), ExitInterrupted)
 
-	contains(t, r.err, interruptedMsg)
+	contains(t, r.err, interruptedMsg())
 	notContains(t, r.out, "Đã nộp cổng")
 	after := r.snapshot(gatesRel, stepsRel)
 	eq(t, after[gatesRel], before[gatesRel])
@@ -206,7 +206,7 @@ func TestSubmitDesignInterruptedLeavesGatesUnchanged(t *testing.T) {
 
 	eq(t, r.run("submit", "design"), ExitInterrupted)
 
-	contains(t, r.err, interruptedMsg)
+	contains(t, r.err, interruptedMsg())
 	notContains(t, r.out, "Đã ghi ", "Đã nộp cổng")
 	eq(t, r.snapshot(gatesRel)[gatesRel], before[gatesRel])
 	if r.exists("aisdlc/features/PAY-1/schema-expected.json") {
@@ -223,7 +223,7 @@ func TestEvalCanceledWritesNoReport(t *testing.T) {
 	cancel()
 	r.std = std
 	eq(t, r.run("eval"), ExitInterrupted)
-	contains(t, r.err, interruptedMsg)
+	contains(t, r.err, interruptedMsg())
 	if r.exists("aisdlc/features/PAY-1/eval/report.json") {
 		t.Error("không được ghi report.json khi bị hủy")
 	}

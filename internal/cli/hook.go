@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/policy"
 )
@@ -53,7 +54,7 @@ type hook struct {
 func newHookCmd(ctx *Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "hook",
-		Short: "Dùng cho hook của plugin Claude Code (đọc JSON từ stdin).",
+		Short: i18n.T("Dùng cho hook của plugin Claude Code (đọc JSON từ stdin)."),
 		Args:  cobra.NoArgs,
 		RunE: Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
 			fmt.Fprint(ctx.err, cmd.UsageString())
@@ -67,14 +68,14 @@ func newHookCmd(ctx *Context) *cobra.Command {
 			})}
 	}
 	cmd.AddCommand(
-		event("pre-tool-use", "Hook PreToolUse: chặn ghi sai quy trình.", []string{"pre-tool-use-read"},
+		event("pre-tool-use", i18n.T("Hook PreToolUse: chặn ghi sai quy trình."), []string{"pre-tool-use-read"},
 			(*hook).preToolUse),
-		event("stop", "Hook Stop: không cho agent dừng giữa bước.", nil, (*hook).stop),
-		event("session-start", "Hook SessionStart: nạp quy tắc và trạng thái vào ngữ cảnh.", nil,
+		event("stop", i18n.T("Hook Stop: không cho agent dừng giữa bước."), nil, (*hook).stop),
+		event("session-start", i18n.T("Hook SessionStart: nạp quy tắc và trạng thái vào ngữ cảnh."), nil,
 			(*hook).sessionStart),
-		event("post-tool-use", "Hook PostToolUse: giao chỉ dẫn từ web cho agent, gửi event sửa file lên web.", nil,
+		event("post-tool-use", i18n.T("Hook PostToolUse: giao chỉ dẫn từ web cho agent, gửi event sửa file lên web."), nil,
 			(*hook).postToolUse),
-		event("user-prompt-submit", "Hook UserPromptSubmit: làm mới điều khiển từ web ở nền, giao chỉ dẫn chưa giao.",
+		event("user-prompt-submit", i18n.T("Hook UserPromptSubmit: làm mới điều khiển từ web ở nền, giao chỉ dẫn chưa giao."),
 			nil, (*hook).userPromptSubmit),
 	)
 	return cmd
@@ -87,7 +88,7 @@ func runHookEvent(ctx *Context, preToolUse bool, run func(h *hook) int) (code in
 	defer func() {
 		if p := recover(); p != nil {
 			if preToolUse {
-				fmt.Fprintf(ctx.err, "Lỗi: %v\n", p)
+				fmt.Fprintf(ctx.err, i18n.T("Lỗi: %v\n"), p)
 				code = ExitUsage
 				return
 			}
@@ -111,7 +112,7 @@ func (h *hook) read() *hookInput {
 		} else if m, ok := v.(map[string]any); ok {
 			in.json = m
 		} else {
-			in.errMsg = "không phải object JSON"
+			in.errMsg = i18n.T("không phải object JSON")
 		}
 	}
 	if in.json != nil {
@@ -195,19 +196,19 @@ func (h *hook) decide(in *hookInput, root string, found bool) (d preDecision, ok
 		return preDecision{}, false
 	}
 	if in.json == nil {
-		return preDecision{"deny", "aisdlc lỗi: không đọc được JSON của hook (" + oneLine(in.errMsg) + ")"}, true
+		return preDecision{"deny", i18n.Tf("aisdlc lỗi: không đọc được JSON của hook (%s)", oneLine(in.errMsg))}, true
 	}
 	if tool != "" && !guardedTools[tool] {
 		return preDecision{}, false
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			d, ok = preDecision{"deny", "aisdlc lỗi: " + oneLine(fmt.Sprint(p))}, true
+			d, ok = preDecision{"deny", i18n.Tf("aisdlc lỗi: %s", oneLine(fmt.Sprint(p)))}, true
 		}
 	}()
 	d, ok, err := h.guarded(in, root, tool)
 	if err != nil {
-		return preDecision{"deny", "aisdlc lỗi: " + oneLine(err.Error())}, true
+		return preDecision{"deny", i18n.Tf("aisdlc lỗi: %s", oneLine(err.Error()))}, true
 	}
 	return d, ok
 }
@@ -215,7 +216,7 @@ func (h *hook) decide(in *hookInput, root string, found bool) (d preDecision, ok
 // guarded xét tool ghi; lỗi trả về thành "aisdlc lỗi: <msg>".
 func (h *hook) guarded(in *hookInput, root, tool string) (preDecision, bool, error) {
 	if tool == "" {
-		return preDecision{}, false, fmt.Errorf("thiếu tool_name")
+		return preDecision{}, false, fmt.Errorf("%s", i18n.T("thiếu tool_name"))
 	}
 	ti, _ := in.json["tool_input"].(map[string]any)
 	file := text(ti, "file_path")
@@ -246,7 +247,7 @@ func (h *hook) guarded(in *hookInput, root, tool string) (preDecision, bool, err
 		dec = policy.PreToolUse(call, st)
 	}
 	if dec.Allow && f != nil && f.ControlBusy {
-		return preDecision{"deny", controlBusyMsg}, true, nil
+		return preDecision{"deny", controlBusyMsg()}, true, nil
 	}
 	if !dec.Allow {
 		switch dec.Code {

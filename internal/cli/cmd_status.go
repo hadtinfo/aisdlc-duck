@@ -23,11 +23,11 @@ func newStatusCmd(ctx *Context) *cobra.Command {
 	var asJSON bool
 	c := &cobra.Command{
 		Use:   "status",
-		Short: "Trạng thái cổng và bước của tính năng đang làm.",
+		Short: i18n.T("Trạng thái cổng và bước của tính năng đang làm."),
 		Args:  cobra.NoArgs,
 	}
 	fo.AddTo(c)
-	c.Flags().BoolVar(&asJSON, "json", false, "In JSON (máy đọc)")
+	c.Flags().BoolVar(&asJSON, "json", false, i18n.T("In JSON (máy đọc)"))
 	c.RunE = Wrap(ctx, func(*cobra.Command, []string) (int, error) {
 		return status(ctx, &fo, asJSON)
 	})
@@ -155,22 +155,22 @@ func status(ctx *Context, fo *FeatureOption, asJSON bool) (int, error) {
 		return ExitOK, nil
 	}
 
-	ctx.Println("Tính năng " + f.Key.String() + " (" + string(f.Flow()) + "): " + f.Meta.Title)
+	ctx.Println(i18n.Tf("Tính năng %s (%s): %s", f.Key.String(), string(f.Flow()), f.Meta.Title))
 	if f.Mode == gate.ModeWeb {
 		suffix := ""
 		if !f.Web.LoggedIn() {
-			suffix = " (chưa `aisdlc web login`)"
+			suffix = i18n.T(" (chưa `aisdlc web login`)")
 		}
-		ctx.Println("Duyệt: trên web" + suffix)
+		ctx.Println(i18n.Tf("Duyệt: trên web%s", suffix))
 	}
-	on := "tắt"
+	on := i18n.T("tắt")
 	if sa.Enabled {
-		on = "bật"
+		on = i18n.T("bật")
 	}
-	ctx.Println("Duyệt trong Claude Code: " + on + " (" + sa.Reason + ")")
+	ctx.Println(i18n.Tf("Duyệt trong Claude Code: %s (%s)", on, sa.Reason))
 	printControl(ctx, f)
 	printRisk(ctx, f)
-	ctx.Println("Cổng:")
+	ctx.Println(i18n.T("Cổng:"))
 	for _, g := range gates {
 		a, ok, err := f.Gates.Approval(gate.Gate(g.key))
 		if err != nil {
@@ -182,9 +182,9 @@ func status(ctx *Context, fo *FeatureOption, asJSON bool) (int, error) {
 		}
 		fmt.Fprintf(ctx.out, "  %-8s %s%s\n", g.key, g.val, extra)
 	}
-	ctx.Println("Bước:")
+	ctx.Println(i18n.T("Bước:"))
 	if len(ids) == 0 {
-		ctx.Println("  (chưa có bước nào)")
+		ctx.Println(i18n.T("  (chưa có bước nào)"))
 	}
 	for _, id := range ids {
 		r := recs[id]
@@ -202,7 +202,7 @@ func status(ctx *Context, fo *FeatureOption, asJSON bool) (int, error) {
 		return 0, err
 	}
 	if ok {
-		ctx.Println("Cổng kế tiếp cần xử lý: " + string(next))
+		ctx.Println(i18n.Tf("Cổng kế tiếp cần xử lý: %s", string(next)))
 	}
 	return ExitOK, nil
 }
@@ -239,8 +239,7 @@ func listOpen(ctx *Context, root string, open []model.FeatureKey, asJSON bool) (
 		ctx.Println(string(b))
 		return ExitOK, nil
 	}
-	ctx.Println("Có " + strconv.Itoa(len(open)) +
-		" tính năng đang mở (không có session, dùng --feature <KEY> để xem một tính năng):")
+	ctx.Println(i18n.Tf("Có %s tính năng đang mở (không có session, dùng --feature <KEY> để xem một tính năng):", strconv.Itoa(len(open))))
 	for _, k := range open {
 		line := "  " + k.String()
 		if ss := sessionsOf(k); len(ss) > 0 {
@@ -257,11 +256,11 @@ func printRisk(ctx *Context, f *Feature) {
 	r, ok, err := risk.ReadRiskFile(f.Paths.Risk())
 	switch {
 	case err != nil:
-		ctx.Println("Rủi ro: không đọc được " + f.Paths.Rel(f.Paths.Risk()))
+		ctx.Println(i18n.Tf("Rủi ro: không đọc được %s", f.Paths.Rel(f.Paths.Risk())))
 	case ok:
-		line := "Rủi ro: " + r.Level + " (chính sách v" + strconv.Itoa(r.Policy.Version) + ")"
+		line := i18n.Tf("Rủi ro: %s (chính sách v%s)", r.Level, strconv.Itoa(r.Policy.Version))
 		if r.Override != nil {
-			line += ", đổi tay bởi " + r.Override.By
+			line += i18n.Tf(", đổi tay bởi %s", r.Override.By)
 		}
 		ctx.Println(line)
 	}
@@ -270,7 +269,7 @@ func printRisk(ctx *Context, f *Feature) {
 	}
 	web, ok := f.Web.Policy()
 	if !ok {
-		ctx.Println("Chính sách rủi ro: chưa có bản từ web trên máy này; chạy `aisdlc policy pull`.")
+		ctx.Println(i18n.T("Chính sách rủi ro: chưa có bản từ web trên máy này; chạy `aisdlc policy pull`."))
 		return
 	}
 	b, err := os.ReadFile(filepath.Join(f.Root, filepath.FromSlash(RepoPolicyFile)))
@@ -287,8 +286,7 @@ func printRisk(ctx *Context, f *Feature) {
 	}
 	w.Version = a.Version // so nội dung, bỏ qua số phiên bản (web đánh số riêng)
 	if a.ToJSON() != w.ToJSON() {
-		ctx.Println("Lưu ý: " + RepoPolicyFile + " khác chính sách v" + strconv.Itoa(web.Version) +
-			" trên web (web là nguồn). Tải YAML trên web rồi commit nếu muốn đồng bộ.")
+		ctx.Println(i18n.Tf("Lưu ý: %s khác chính sách v%s trên web (web là nguồn). Tải YAML trên web rồi commit nếu muốn đồng bộ.", RepoPolicyFile, strconv.Itoa(web.Version)))
 	}
 }
 
@@ -304,26 +302,25 @@ func printControl(ctx *Context, f *Feature) {
 		}
 		suffix := ""
 		if _, ok := f.Web.Config(); !ok {
-			suffix = " — chưa cấu hình web trên máy này; xóa .aisdlc/web/control/" + f.Key.String() +
-				".json để bỏ tạm dừng cũ"
+			suffix = i18n.Tf(" — chưa cấu hình web trên máy này; xóa .aisdlc/web/control/%s.json để bỏ tạm dừng cũ", f.Key.String())
 		} else if f.ControlOffline {
-			suffix = " — web không truy cập được, chưa nhận lệnh tiếp tục"
+			suffix = i18n.T(" — web không truy cập được, chưa nhận lệnh tiếp tục")
 		}
-		ctx.Println("Đang tạm dừng từ web (" + p.By + ", " + at + ")" + suffix)
+		ctx.Println(i18n.Tf("Đang tạm dừng từ web (%s, %s)%s", p.By, at, suffix))
 	}
 	var pending []string
 	for _, a := range f.PendingActions() {
 		if a.Kind == "ALLOW_SCOPE" {
-			pending = append(pending, "cho phép "+a.Path+" ở "+a.Step)
+			pending = append(pending, i18n.Tf("cho phép %s ở %s", a.Path, a.Step))
 		} else {
 			pending = append(pending, "accept "+a.Step)
 		}
 	}
 	if len(pending) > 0 {
-		ctx.Println("Lệnh từ web chờ áp dụng: " + strings.Join(pending, ", "))
+		ctx.Println(i18n.Tf("Lệnh từ web chờ áp dụng: %s", strings.Join(pending, ", ")))
 	}
 	if n := len(f.UndeliveredInstructions()); n > 0 {
-		ctx.Println("Chỉ dẫn chờ giao cho agent: " + strconv.Itoa(n))
+		ctx.Println(i18n.Tf("Chỉ dẫn chờ giao cho agent: %s", strconv.Itoa(n)))
 	}
 }
 
@@ -336,6 +333,5 @@ func warnLocalRepoID(ctx *Context, f *Feature) {
 	if _, ok, err := f.Git().RemoteURL(ctx.std, "origin"); err != nil || ok {
 		return
 	}
-	ctx.Eprintln("Cảnh báo: repo không có remote origin; web gom tính năng theo " + f.Web.RepoID() +
-		" (tên thư mục). Thêm remote origin để định danh đúng repo.")
+	ctx.Eprintln(i18n.Tf("Cảnh báo: repo không có remote origin; web gom tính năng theo %s (tên thư mục). Thêm remote origin để định danh đúng repo.", f.Web.RepoID()))
 }

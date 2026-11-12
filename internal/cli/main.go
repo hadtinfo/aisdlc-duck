@@ -26,7 +26,7 @@ const Version = "aisdlc 0.1.0-SNAPSHOT"
 func Main() {
 	cwd, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Lỗi: "+err.Error())
+		fmt.Fprintln(os.Stderr, i18n.Tf("Lỗi: %s", err.Error()))
 		os.Exit(ExitUsage)
 	}
 	args := os.Args[1:]
@@ -55,7 +55,7 @@ func Run(ctx *Context, args ...string) int {
 func runWith(ctx *Context, extra []func(*Context) *cobra.Command, args ...string) (code int) {
 	defer func() {
 		if p := recover(); p != nil {
-			fmt.Fprintf(ctx.err, "Lỗi: %v\n", p)
+			fmt.Fprintf(ctx.err, i18n.T("Lỗi: %v\n"), p)
 			code = ExitUsage
 		}
 	}()
@@ -80,7 +80,7 @@ func runWith(ctx *Context, extra []func(*Context) *cobra.Command, args ...string
 func newRoot(ctx *Context) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "aisdlc",
-		Short:         "Quy trình AISDLC: BRD -> Thiết kế -> Case -> Code từng bước -> Review.",
+		Short:         i18n.T("Quy trình AISDLC: BRD -> Thiết kế -> Case -> Code từng bước -> Review."),
 		Version:       Version,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -92,7 +92,7 @@ func newRoot(ctx *Context) *cobra.Command {
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.SetVersionTemplate("{{.Version}}\n")
-	root.Flags().BoolP("version", "V", false, "In phiên bản rồi thoát.")
+	root.Flags().BoolP("version", "V", false, i18n.T("In phiên bản rồi thoát."))
 	root.AddCommand(newSetupCmd(ctx), newInitCmd(ctx), newUseCmd(ctx), newStatusCmd(ctx),
 		newSubmitCmd(ctx), newApproveCmd(ctx), newRejectCmd(ctx), newReopenCmd(ctx), newReviewCmd(ctx),
 		newStepCmd(ctx), newScopeCmd(ctx), newDiffCmd(ctx), newRiskCmd(ctx), newPolicyCmd(ctx), newEvalCmd(ctx),
@@ -150,6 +150,6 @@ func (c *Context) report(err error) int {
 		fmt.Fprintln(c.err, a.Msg)
 		return a.Code
 	}
-	fmt.Fprintln(c.err, "Lỗi: "+err.Error())
+	fmt.Fprintln(c.err, i18n.Tf("Lỗi: %s", err.Error()))
 	return ExitUsage
 }

@@ -9,6 +9,7 @@ import (
 
 	"aisdlc/internal/eval"
 	"aisdlc/internal/harness/harnessapi"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/lang/langs"
 	"aisdlc/internal/model"
@@ -134,7 +135,7 @@ func (r *harnessCaseRunner) OutputTail(key model.FeatureKey, n int) string {
 }
 
 // harnessNoVerify: harness-result.json không có kết quả verify (cũng không panic hay lỗi).
-const harnessNoVerify = "aisdlc-harness không trả kết quả verify"
+func harnessNoVerify() string { return i18n.T("aisdlc-harness không trả kết quả verify") }
 
 // harnessVerifier là eval.Verifier thật (`aisdlc-harness verify`). Harness hỏng giữa chừng hoặc không tìm thấy binary
 // thành HarnessErr (không phải build hỏng: Build.OK=true để BUILD_AND_TESTS chỉ báo lỗi harness), lý do ghi vào
@@ -179,8 +180,8 @@ func (v harnessVerifier) Verify(ctx context.Context, key model.FeatureKey, out s
 	case res.Panic != "":
 		return failedVerify(res.Panic, harnessPanic+res.Panic), nil
 	case res.Verify == nil:
-		appendLog(out, harnessNoVerify)
-		return failedVerify(harnessNoVerify, harnessPanic+harnessNoVerify), nil
+		appendLog(out, harnessNoVerify())
+		return failedVerify(harnessNoVerify(), harnessPanic+harnessNoVerify()), nil
 	}
 	return *res.Verify, nil
 }

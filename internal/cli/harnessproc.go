@@ -20,8 +20,7 @@ import (
 )
 
 const (
-	harnessBin     = "aisdlc-harness"
-	harnessMissing = "không tìm thấy aisdlc-harness: "
+	harnessBin = "aisdlc-harness"
 	// harnessStopWait: sau Ctrl-C, chờ harness dọn dịch vụ và container (harness tự giới hạn dọn 30 giây) trước khi
 	// coi như tín hiệu thứ hai.
 	harnessStopWait = 45 * time.Second
@@ -57,8 +56,7 @@ func locateHarness(exe func() (string, error), lookPath func(string) (string, er
 	if p, err := lookPath(harnessBin); err == nil {
 		return p, nil
 	}
-	return "", errors.New(harnessMissing + "không có cạnh aisdlc (" + strings.Join(dirs, ", ") +
-		") và không có trên PATH. Cài lại plugin (plugin/install.sh) hoặc `make build`")
+	return "", errors.New(i18n.Tf("không tìm thấy aisdlc-harness: không có cạnh aisdlc (%s) và không có trên PATH. Cài lại plugin (plugin/install.sh) hoặc `make build`", strings.Join(dirs, ", ")))
 }
 
 func executable(p string) bool {
@@ -114,7 +112,7 @@ func execHarness(ctx context.Context, bin, out string, args ...string) (harnessa
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	if err := cmd.Start(); err != nil {
-		return harnessapi.Result{}, fmt.Errorf("không chạy được %s: %w", bin, err)
+		return harnessapi.Result{}, fmt.Errorf(i18n.T("không chạy được %s: %w"), bin, err)
 	}
 	exited := make(chan struct{})
 	liveHarness.Lock()
@@ -153,11 +151,11 @@ func execHarness(ctx context.Context, bin, out string, args ...string) (harnessa
 		}
 		return r, nil
 	}
-	why := "thoát bình thường"
+	why := i18n.T("thoát bình thường")
 	if err != nil {
 		why = err.Error()
 	}
-	msg := fmt.Sprintf("aisdlc-harness không ghi kết quả (%s)", why)
+	msg := fmt.Sprintf(i18n.T("aisdlc-harness không ghi kết quả (%s)"), why)
 	if l := harnessErrorLine(output.String()); l != "" {
 		msg += ": " + l
 	}
@@ -171,17 +169,16 @@ func (e *harnessVersionError) Error() string { return e.msg }
 
 func versionMismatch(cli, harness string) string {
 	if harness == "" {
-		harness = "không rõ"
+		harness = i18n.T("không rõ")
 	}
-	return "aisdlc-harness khác bản build với aisdlc (aisdlc " + cli + ", aisdlc-harness " + harness +
-		"). Cài lại plugin (plugin/install.sh hoặc make plugin-dist) để hai binary cùng bản"
+	return i18n.Tf("aisdlc-harness khác bản build với aisdlc (aisdlc %s, aisdlc-harness %s). Cài lại plugin (plugin/install.sh hoặc make plugin-dist) để hai binary cùng bản", cli, harness)
 }
 
 // logHarness ghi vào harness.log binary đã dùng và toàn bộ stdout/stderr của nó.
 func logHarness(out, bin, output string) {
 	line := "aisdlc-harness: " + bin
 	if o := strings.TrimRight(output, "\n"); o != "" {
-		line += "\n--- stdout/stderr của aisdlc-harness ---\n" + o + "\n--- hết ---"
+		line += i18n.Tf("\n--- stdout/stderr của aisdlc-harness ---\n%s\n--- hết ---", o)
 	}
 	appendLog(out, line)
 }

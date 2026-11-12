@@ -16,6 +16,7 @@ import (
 
 	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
 	"aisdlc/internal/risk"
@@ -35,10 +36,6 @@ type WebGates = WebCache
 const (
 	webReadTimeout  = 2 * time.Second
 	webWriteTimeout = 5 * time.Second
-	// webNotWeb là câu 409 của server khi repo không ở chế độ duyệt trên web (ApprovalService.NOT_WEB).
-	webNotWeb       = "Repo không ở chế độ duyệt trên web"
-	webUnauthorized = "Token không còn hiệu lực, chạy lại `aisdlc web login`"
-	webWrongKind    = "Token không đúng loại (cần token ingest cho CLI, approve cho duyệt)"
 )
 
 // FlagRef là cờ HIGH/WARN của review card lúc duyệt (R3).
@@ -92,9 +89,9 @@ func (w *WebCache) webError(r webclient.Response) string {
 	}
 	switch {
 	case r.Status == 401:
-		return webUnauthorized
+		return i18n.T("Token không còn hiệu lực, chạy lại `aisdlc web login`")
 	case r.Status == 403 && (!has || strings.TrimSpace(server) == "" || server == "forbidden"):
-		return webWrongKind
+		return i18n.T("Token không đúng loại (cần token ingest cho CLI, approve cho duyệt)")
 	case has:
 		return w.scrub(server)
 	}
@@ -116,13 +113,13 @@ func (w *WebCache) scrub(s string) string {
 func (w *WebCache) requireLogin(prefix string) (WebConfig, error) {
 	c, ok := w.Config()
 	if !ok {
-		return c, abort(2, prefix+"web chưa cấu hình; chạy `aisdlc web login`.")
+		return c, abort(2, i18n.Tf("%sweb chưa cấu hình; chạy `aisdlc web login`.", prefix))
 	}
 	if w.PinnedKey() == nil {
-		return c, abort(2, prefix+"chưa `aisdlc web login` (chưa ghim khóa web).")
+		return c, abort(2, i18n.Tf("%schưa `aisdlc web login` (chưa ghim khóa web).", prefix))
 	}
 	if w.RepoID() == "" {
-		return c, abort(2, prefix+"không xác định được định danh repo.")
+		return c, abort(2, i18n.Tf("%skhông xác định được định danh repo.", prefix))
 	}
 	return c, nil
 }
@@ -216,7 +213,7 @@ func (w *WebCache) writeModeIfNewerLocked(envelope []byte) bool {
 		return false
 	}
 	if err := fsx.WriteAtomic(w.ModeFile(), envelope, 0o644); err != nil {
-		w.ctx.Eprintln("aisdlc web: không ghi được " + w.ModeFile() + ": " + err.Error())
+		w.ctx.Eprintln(i18n.Tf("aisdlc web: không ghi được %s: %s", w.ModeFile(), err.Error()))
 		return false
 	}
 	return true
@@ -346,7 +343,7 @@ func (w *WebCache) rotate(c WebConfig, envelope []byte) (bool, error) {
 		return false, nil // khóa mới không được khóa đang ghim ký
 	}
 	w.pin, w.pinDone = pub, true
-	w.ctx.Eprintln("aisdlc web: web đã đổi khóa ký; đã ghim khóa mới " + env.KeyID + " (được khóa cũ xác nhận).")
+	w.ctx.Eprintln(i18n.Tf("aisdlc web: web đã đổi khóa ký; đã ghim khóa mới %s (được khóa cũ xác nhận).", env.KeyID))
 	return true, nil
 }
 
@@ -367,7 +364,7 @@ func (w *WebCache) accept(key model.FeatureKey, envelope []byte) bool {
 			return true
 		}
 		if err := fsx.WriteAtomic(w.CacheFile(key), envelope, 0o644); err != nil {
-			w.ctx.Eprintln("aisdlc web: không ghi được " + w.CacheFile(key) + ": " + err.Error())
+			w.ctx.Eprintln(i18n.Tf("aisdlc web: không ghi được %s: %s", w.CacheFile(key), err.Error()))
 			return false
 		}
 		// phong bì đã xác minh nói repo ở local (lead vừa chuyển): lưu làm phong bì chế độ để CLI/hook theo ngay.
@@ -385,7 +382,7 @@ func (w *WebCache) accept(key model.FeatureKey, envelope []byte) bool {
 func (w *WebCache) locked(body func() bool) bool {
 	lock := filepath.Join(w.Dir(), "gates.lock")
 	fail := func(err error) bool {
-		w.ctx.Eprintln("aisdlc web: không khóa được " + lock + ": " + err.Error())
+		w.ctx.Eprintln(i18n.Tf("aisdlc web: không khóa được %s: %s", lock, err.Error()))
 		return false
 	}
 	if err := os.MkdirAll(w.Dir(), 0o755); err != nil {
@@ -423,7 +420,7 @@ func (w *WebCache) appendFeedback(key model.FeatureKey, s snapshot.FeatureGateSt
 	if st, err := os.Stat(p.Feedback()); err == nil && st.Mode().IsRegular() {
 		b, err := os.ReadFile(p.Feedback())
 		if err != nil {
-			w.ctx.Eprintln("aisdlc web: không ghi được feedback.md: " + err.Error())
+			w.ctx.Eprintln(i18n.Tf("aisdlc web: không ghi được feedback.md: %s", err.Error()))
 			return
 		}
 		existing = string(b)
@@ -437,12 +434,11 @@ func (w *WebCache) appendFeedback(key model.FeatureKey, s snapshot.FeatureGateSt
 		if strings.Contains(existing, marker+"\n") || strings.Contains(add.String(), marker+"\n") {
 			continue
 		}
-		kind := "trả lại"
+		kind := i18n.T("trả lại")
 		if fb.Kind == "REOPENED" {
-			kind = "mở lại"
+			kind = i18n.T("mở lại")
 		}
-		add.WriteString("## " + fb.Gate + " — " + kind + " bởi " + oneLineOr(fb.By) + " lúc " +
-			review.InstantString(fb.At) + "\n" + marker + "\n\n")
+		add.WriteString(i18n.Tf("## %s — %s bởi %s lúc %s\n%s\n\n", fb.Gate, kind, oneLineOr(fb.By), review.InstantString(fb.At), marker))
 		if c := strings.TrimSpace(fb.Comment); c != "" {
 			add.WriteString(c + "\n\n")
 		}
@@ -451,7 +447,7 @@ func (w *WebCache) appendFeedback(key model.FeatureKey, s snapshot.FeatureGateSt
 		return
 	}
 	if err := fsx.WriteAtomic(p.Feedback(), []byte(existing+add.String()), 0o644); err != nil {
-		w.ctx.Eprintln("aisdlc web: không ghi được feedback.md: " + err.Error())
+		w.ctx.Eprintln(i18n.Tf("aisdlc web: không ghi được feedback.md: %s", err.Error()))
 	}
 }
 
@@ -499,7 +495,7 @@ func webArtifacts(c []model.Content) []webArtifact {
 // Submit nộp cổng lên web (5 giây): artifact gửi toàn văn; riskLevel (mức trong risk.yaml, "" khi không có) để server
 // tự duyệt theo flow. Lỗi → Abort(2, "Không nộp được lên web: ..."), không ghi gì.
 func (w *WebCache) Submit(f *Feature, g gate.Gate, findings []spec.Finding, riskLevel string) error {
-	prefix := "Không nộp được lên web: "
+	prefix := i18n.T("Không nộp được lên web: ")
 	c, err := w.requireLogin(prefix)
 	if err != nil {
 		return err
@@ -532,8 +528,7 @@ func (w *WebCache) Submit(f *Feature, g gate.Gate, findings []spec.Finding, risk
 		return abort(2, prefix+w.webError(r))
 	}
 	if !w.accept(f.Key, r.Body) {
-		w.ctx.Eprintln("aisdlc web: web đã nhận bản nộp nhưng phản hồi không xác minh được bằng khóa đã ghim;" +
-			" chạy `aisdlc status` để làm mới.")
+		w.ctx.Eprintln(i18n.T("aisdlc web: web đã nhận bản nộp nhưng phản hồi không xác minh được bằng khóa đã ghim; chạy `aisdlc status` để làm mới."))
 	}
 	return f.Store.Refresh()
 }
@@ -556,8 +551,7 @@ func (w *WebCache) RequireApproveToken(f *Feature, g gate.Gate) error {
 	if c, ok := w.Config(); ok {
 		u = webclient.SafeURL(c.URL, c.Token) // không in userinfo hay token
 	}
-	return abort(2, "Chưa có token approve. Duyệt trên web: "+u+"/f/"+repoPath(w.RepoID())+"/"+
-		enc(f.Key.String())+"?g="+string(g)+" hoặc chạy `aisdlc web approve-token`")
+	return abort(2, i18n.Tf("Chưa có token approve. Duyệt trên web: %s/f/%s/%s?g=%s hoặc chạy `aisdlc web approve-token`", u, repoPath(w.RepoID()), enc(f.Key.String()), string(g)))
 }
 
 // Act duyệt / trả lại / mở lại (action: approve|reject|reopen) bằng token approve (5 giây). Server 409 → Abort(1,
@@ -567,7 +561,7 @@ func (w *WebCache) Act(action string, f *Feature, g gate.Gate, comment *string, 
 	if err := w.RequireApproveToken(f, g); err != nil {
 		return err
 	}
-	prefix := "Không gửi được lên web: "
+	prefix := i18n.T("Không gửi được lên web: ")
 	if _, err := w.requireLogin(prefix); err != nil {
 		return err
 	}
@@ -602,7 +596,7 @@ func (w *WebCache) Act(action string, f *Feature, g gate.Gate, comment *string, 
 	if r.Status == http.StatusConflict {
 		e := w.webError(r)
 		// thiếu điều kiện (repo không ở chế độ web) là exit 2; vi phạm luật duyệt là exit 1
-		if e == webNotWeb {
+		if isNotWeb(e) {
 			return abort(2, e)
 		}
 		return abort(1, e)
@@ -611,7 +605,7 @@ func (w *WebCache) Act(action string, f *Feature, g gate.Gate, comment *string, 
 		return abort(2, prefix+w.webError(r))
 	}
 	if !w.accept(f.Key, r.Body) {
-		w.ctx.Eprintln("aisdlc web: phản hồi không xác minh được bằng khóa đã ghim; chạy `aisdlc status`.")
+		w.ctx.Eprintln(i18n.T("aisdlc web: phản hồi không xác minh được bằng khóa đã ghim; chạy `aisdlc status`."))
 	}
 	return f.Store.Refresh()
 }
@@ -619,7 +613,7 @@ func (w *WebCache) Act(action string, f *Feature, g gate.Gate, comment *string, 
 // Migrate (`web migrate`): gửi mỗi approval cục bộ (gates.json) còn khớp nội dung hiện tại lên /api/cli/import.
 // REVIEW không gửi (web từ chối nhập REVIEW). Trả số bản đã gửi; lỗi từng bản in ra stderr rồi bỏ qua.
 func (w *WebCache) Migrate(f *Feature) (int, error) {
-	c, err := w.requireLogin("Không gửi được lên web: ")
+	c, err := w.requireLogin(i18n.T("Không gửi được lên web: "))
 	if err != nil {
 		return 0, err
 	}
@@ -635,8 +629,7 @@ func (w *WebCache) Migrate(f *Feature) (int, error) {
 		}
 		if g == gate.REVIEW {
 			// web không nhận nhập cổng REVIEW (cần kiểm eval trên cây code hiện tại): duyệt lại trên web
-			w.ctx.Println("Bỏ qua REVIEW của " + f.Key.String() + ": web không nhận nhập cổng REVIEW; nộp lại " +
-				"`aisdlc submit review` rồi duyệt trên web.")
+			w.ctx.Println(i18n.Tf("Bỏ qua REVIEW của %s: web không nhận nhập cổng REVIEW; nộp lại `aisdlc submit review` rồi duyệt trên web.", f.Key.String()))
 			continue
 		}
 		entries, err := g.ArtifactContents(f.Paths, f.Flow())
@@ -666,14 +659,14 @@ func (w *WebCache) Migrate(f *Feature) (int, error) {
 		var ab *Abort
 		switch {
 		case asAbort(err, &ab):
-			w.ctx.Eprintln("Không gửi được " + f.Key.String() + " " + string(g) + ": " + ab.Msg)
+			w.ctx.Eprintln(i18n.Tf("Không gửi được %s %s: %s", f.Key.String(), string(g), ab.Msg))
 		case err != nil:
 			return sent, err
 		case r.OK():
 			sent++
 			w.accept(f.Key, r.Body)
 		default:
-			w.ctx.Eprintln("Không gửi được " + f.Key.String() + " " + string(g) + ": " + w.webError(r))
+			w.ctx.Eprintln(i18n.Tf("Không gửi được %s %s: %s", f.Key.String(), string(g), w.webError(r)))
 		}
 	}
 	return sent, nil
@@ -684,13 +677,13 @@ func (w *WebCache) Migrate(f *Feature) (int, error) {
 // PolicyPull (`aisdlc policy pull`): GET /api/cli/policy; 404 (web chưa có) thì gửi chính sách trong repo lên
 // (không có file thì mẫu generic bỏ flow) rồi hỏi lại; xác minh rồi ghi .aisdlc/web/policy.json. Lỗi → Abort(2).
 func (w *WebCache) PolicyPull() (snapshot.CachedPolicy, error) {
-	prefix := "Không lấy được chính sách từ web: "
+	prefix := i18n.T("Không lấy được chính sách từ web: ")
 	c, ok := w.Config()
 	if !ok || w.PinnedKey() == nil {
-		return snapshot.CachedPolicy{}, abort(2, prefix+"chưa `aisdlc web login` trên máy này.")
+		return snapshot.CachedPolicy{}, abort(2, i18n.Tf("%schưa `aisdlc web login` trên máy này.", prefix))
 	}
 	if w.RepoID() == "" {
-		return snapshot.CachedPolicy{}, abort(2, prefix+"không xác định được định danh repo.")
+		return snapshot.CachedPolicy{}, abort(2, i18n.Tf("%skhông xác định được định danh repo.", prefix))
 	}
 	netErr := func(err error) (snapshot.CachedPolicy, error) {
 		w.down()
@@ -729,7 +722,7 @@ func (w *WebCache) PolicyPull() (snapshot.CachedPolicy, error) {
 		}
 	}
 	if !ok {
-		return snapshot.CachedPolicy{}, abort(2, prefix+"phản hồi không xác minh được bằng khóa đã ghim (hoặc sai repo).")
+		return snapshot.CachedPolicy{}, abort(2, i18n.Tf("%sphản hồi không xác minh được bằng khóa đã ghim (hoặc sai repo).", prefix))
 	}
 	if err := fsx.WriteAtomic(snapshot.PolicyCacheFile(w.root), r.Body, 0o644); err != nil {
 		return snapshot.CachedPolicy{}, err
@@ -774,9 +767,9 @@ func (w *WebCache) importRepoPolicy(c WebConfig, prefix string) error {
 			Error string `json:"error"`
 		}
 		if r.Status == http.StatusBadRequest && json.Unmarshal(r.Body, &e) == nil && strings.TrimSpace(e.Error) != "" {
-			return abort(2, prefix+"web không nhận chính sách (HTTP 400): "+w.scrub(oneLineErr(errors.New(e.Error))))
+			return abort(2, i18n.Tf("%sweb không nhận chính sách (HTTP 400): %s", prefix, w.scrub(oneLineErr(errors.New(e.Error)))))
 		}
-		return abort(2, prefix+"web không nhận chính sách (HTTP "+strconv.Itoa(r.Status)+").")
+		return abort(2, i18n.Tf("%sweb không nhận chính sách (HTTP %s).", prefix, strconv.Itoa(r.Status)))
 	}
 	return nil
 }

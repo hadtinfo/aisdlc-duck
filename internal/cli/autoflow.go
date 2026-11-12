@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 )
 
@@ -54,13 +55,13 @@ func afterSubmit(ctx *Context, f *Feature, g gate.Gate) (string, error) {
 	flowAuto := risk.AutoFromRiskFile(&rf, g)
 	switch {
 	case !flowAuto:
-		reason, manual = "Mức "+level+": cổng "+risk.FlowUnit(g)+" đặt duyệt tay", true
+		reason, manual = i18n.Tf("Mức %s: cổng %s đặt duyệt tay", level, risk.FlowUnit(g)), true
 	case high:
-		reason, manual = "Review card có cờ đỏ mức HIGH", true
+		reason, manual = i18n.T("Review card có cờ đỏ mức HIGH"), true
 	}
 	if manual {
 		if flowAuto {
-			ctx.Println("Không tự duyệt cổng " + string(g) + ": " + reason + ".")
+			ctx.Println(i18n.Tf("Không tự duyệt cổng %s: %s.", string(g), reason))
 		}
 		return "", nil
 	}

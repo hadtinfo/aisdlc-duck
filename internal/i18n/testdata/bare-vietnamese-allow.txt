@@ -1,9 +1,0 @@
-# Allowlist chuỗi tiếng Việt trần. Mỗi dòng: <đường dẫn>  # <lý do>.
-# Chỉ thêm tay, kèm lý do; `go test ./internal/i18n -run TestNoBareVietnamese -update-allowlist` chỉ gỡ dòng thừa.
-internal/cli/servertext.go  # câu lỗi tiếng Việt của server (MsgNotWeb) để so khớp, không phải chữ CLI in ra
-internal/review/docfacts.go  # regex so khớp thẻ [biên]/[boundary] trong nội dung BRD (nhận cả hai ngôn ngữ), không phải chữ hiển thị
-internal/spec/sections.go  # bảng tiêu đề mục song ngữ
-internal/web/webtest/client.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng
-internal/web/webtest/trickle.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng
-internal/web/webtest/webtest.go  # trợ giúp test dùng chung (t.Fatalf cho người chạy test), không tới người dùng
-internal/webclient/feedback.go  # regex so khớp tiêu đề mục feedback.md (nhận cả "trả lại/mở lại" lẫn "rejected/reopened"), không phải chữ hiển thị

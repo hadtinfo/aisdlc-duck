@@ -238,7 +238,7 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p httpx.Principal, r
 		return nil, err
 	}
 	if mode != ModeWeb {
-		return nil, httpx.Err(http.StatusConflict, MsgNotWeb)
+		return nil, errNotWeb()
 	}
 	row, err := readFeature(ctx, tx, repo, feature)
 	if err != nil {
@@ -288,6 +288,11 @@ type ApproveRequest struct {
 }
 
 func conflict(msg httpx.Text) error { return httpx.Err(http.StatusConflict, msg) }
+
+// errNotWeb: 409 repo không ở chế độ duyệt trên web, kèm mã NOT_WEB_MODE để CLI nhận ra ở mọi locale.
+func errNotWeb() error {
+	return httpx.ErrCode(http.StatusConflict, snapshot.ErrCodeNotWebMode, MsgNotWeb)
+}
 
 // Approve duyệt cổng theo luật giai đoạn 1; channel: web | terminal | claude-code. Duyệt lại đúng bản đã duyệt là
 // idempotent (200, không ghi thêm).
@@ -560,7 +565,7 @@ func (s *Service) Submit(ctx context.Context, p httpx.Principal, ip string, r Su
 		return snapshot.FeatureGateState{}, err
 	}
 	if mode != ModeWeb {
-		return snapshot.FeatureGateState{}, conflict(MsgNotWeb)
+		return snapshot.FeatureGateState{}, errNotWeb()
 	}
 	if r.artifacts.hash() != r.Hash {
 		return snapshot.FeatureGateState{}, bad(httpx.T("Hash không khớp nội dung"))

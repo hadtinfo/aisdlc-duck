@@ -1,0 +1,11 @@
+{
+  "summary": "One-line fee rounding fix, within the lite flow scope.",
+  "criteria": [
+    {"id": "sequence", "label": "DAT", "reason": "Flow unchanged: the handler still calls fee.Fee."},
+    {"id": "error-handling", "label": "DAT", "reason": "Error handling unchanged; a negative amount still returns 400."},
+    {"id": "over-engineering", "label": "DAT", "reason": "Only adds 5000 before the integer division to round half up."},
+    {"id": "naming", "label": "DAT", "reason": "No new names."},
+    {"id": "security", "label": "DAT", "reason": "No new input."}
+  ],
+  "issues": []
+}

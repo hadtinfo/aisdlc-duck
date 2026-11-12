@@ -11,6 +11,7 @@ import (
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
 	"aisdlc/internal/snapshot"
@@ -633,6 +634,29 @@ func TestInstructionContextFormat(t *testing.T) {
 	}
 	if InstructionContext(nil, time.UTC) != "" {
 		t.Error("empty")
+	}
+}
+
+// Chỉ dẫn feedback web lưu tiếng Việt: repo en nhận bản tiếng Anh, ghi chú tự do của người duyệt giữ nguyên văn;
+// repo vi giữ nguyên câu.
+func TestInstructionContextLocalizesFeedback(t *testing.T) {
+	at := time.Date(2026, 11, 4, 2, 5, 0, 0, time.UTC)
+	items := []snapshot.Instruction{
+		{ID: 1, By: "an", At: at, Text: "Cổng DESIGN bị trả lại bởi an: thiếu mục API"},
+		{ID: 2, By: "an", At: at, Text: "Cổng CASES được mở lại bởi binh"},
+		{ID: 3, By: "an", At: at, Text: "sửa test trước"},
+	}
+	vi := InstructionContext(items, time.UTC)
+	if vi != "Chỉ dẫn của dev (02:05): Cổng DESIGN bị trả lại bởi an: thiếu mục API\n\n"+
+		"Chỉ dẫn của dev (02:05): Cổng CASES được mở lại bởi binh\n\nChỉ dẫn của dev (02:05): sửa test trước" {
+		t.Errorf("vi: %q", vi)
+	}
+	i18n.SetDefault(i18n.EN)
+	t.Cleanup(func() { i18n.SetDefault(i18n.VI) })
+	en := InstructionContext(items, time.UTC)
+	if en != "Dev instruction (02:05): Gate DESIGN was rejected by an: thiếu mục API\n\n"+
+		"Dev instruction (02:05): Gate CASES was reopened by binh\n\nDev instruction (02:05): sửa test trước" {
+		t.Errorf("en: %q", en)
 	}
 }
 

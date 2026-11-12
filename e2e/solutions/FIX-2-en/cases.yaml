@@ -1,0 +1,26 @@
+scope: ["internal/fee/**"]
+budget: { files: 1, lines: 10 }
+reset_sql: []
+stubs: []
+cases:
+  - id: C1
+    step: S1
+    kind: boundary
+    title: A fee with a remainder of exactly half rounds up (1000 -> 2)
+    given: { sql: [], stubs: [] }
+    when:  { method: GET, path: "/api/v1/fees?amount=1000" }
+    then:  { status: 200, body: { fee: 2 } }
+  - id: C2
+    step: S1
+    kind: happy
+    title: A fee with a remainder below half rounds down (900 -> 1)
+    given: { sql: [], stubs: [] }
+    when:  { method: GET, path: "/api/v1/fees?amount=900" }
+    then:  { status: 200, body: { fee: 1 } }
+  - id: C3
+    step: S1
+    kind: error
+    title: A negative amount returns 400
+    given: { sql: [], stubs: [] }
+    when:  { method: GET, path: "/api/v1/fees?amount=-1" }
+    then:  { status: 400, body: { code: VALIDATION_ERROR } }

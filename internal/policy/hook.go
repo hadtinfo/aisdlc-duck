@@ -775,13 +775,17 @@ func Stop(stopHookActive bool, s PolicyState) Decision {
 }
 
 // InstructionContext: mỗi chỉ dẫn một khối "Chỉ dẫn của dev (HH:mm): <text>", nối bằng dòng trống; rỗng thì "".
+// Chỉ dẫn feedback (trả lại / mở lại) web lưu tiếng Việt: dịch theo locale của repo; ghi chú của người duyệt giữ
+// nguyên văn.
 func InstructionContext(items []snapshot.Instruction, zone *time.Location) string {
 	if zone == nil {
 		zone = time.UTC
 	}
+	loc := i18n.Default()
 	blocks := make([]string, 0, len(items))
 	for _, i := range items {
-		blocks = append(blocks, i18n.Tf("Chỉ dẫn của dev (%s): %s", i.At.In(zone).Format("15:04"), i.Text))
+		blocks = append(blocks, i18n.Tf("Chỉ dẫn của dev (%s): %s", i.At.In(zone).Format("15:04"),
+			snapshot.LocalizeFeedback(i.Text, loc)))
 	}
 	return strings.Join(blocks, "\n\n")
 }

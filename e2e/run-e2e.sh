@@ -11,9 +11,9 @@
 # và Cho phép file trên trang B, lệnh hết hiệu lực, web chết, cache bị sửa, review, eval --ci với token ci.
 # HOME của E2E là thư mục tạm (không đụng ~/.config/aisdlc thật); token không bao giờ vào log.
 # WEB=0 bỏ phần web. SCREENSHOTS=1: chụp các trang web ra e2e/out/screens (cần WEB=1).
-# E2E_PARTS (mặc định local,web,flow,session): chọn nhóm bước. local = repo đầu (PAY-1 FULL, FIX-2 LITE, âm tính,
+# E2E_PARTS (mặc định local,web,flow,session,en): chọn nhóm bước. local = repo đầu (PAY-1 FULL, FIX-2 LITE, âm tính,
 # DOCKER_HOST sai, fixture bỏ qua SIGTERM); web = repo local/web-service; flow = quy trình theo mức (repo flow-service);
-# session = nhiều session song song. `make e2e-web` chạy E2E_PARTS=web,flow.
+# session = nhiều session song song; en = FIX-2 LITE trên repo locale: en và UI web tiếng Anh. `make e2e-web` chạy E2E_PARTS=web,flow.
 # E2E_LATENCY_SLACK_MS (mặc định 0): nới ngưỡng p95 50 ms của hook cho máy CI chậm. E2E_PW_DIR: nơi cài Playwright
 # (mặc định ~/.cache/aisdlc-e2e/pw, ngoài repo).
 # Chính sách rủi ro: fixture có aisdlc/risk-policy.yaml (schema 2, luật mô tả bằng lời; E1 "Chặn giao dịch theo hạn
@@ -34,7 +34,7 @@ REPO="$WORK/fixture-service"
 LOG="$OUTDIR/e2e.log"
 STEP="khởi động"
 WEB="${WEB:-1}"
-E2E_PARTS="${E2E_PARTS:-local,web,flow,session}"
+E2E_PARTS="${E2E_PARTS:-local,web,flow,session,en}"
 WEB_PID=""
 PG_CTR=""
 LABEL="aisdlc-e2e"
@@ -1419,6 +1419,101 @@ has "inputsHash: "
 git checkout -q -- aisdlc/risk-policy.yaml
 cd "$E2E"
 fi # part session
+
+# ---------------------------------------------------------------------------------------------
+# Tiếng Anh (spec i18n, mục Kiểm thử): một lượt luồng nhẹ FIX-2 trên repo `locale: en` (chính sách rủi ro, case và
+# kết quả subagent giả lập bằng tiếng Anh ở e2e/solutions/FIX-2-en). Mọi output CLI và eval/report.md không được có
+# ký tự tiếng Việt. WEB=1: người dùng chọn EN trên web (bộ chọn EN/VI) → UI tiếng Anh, lưu users.locale, phiên mới
+# cũng tiếng Anh; xong đặt lại VI.
+if part en; then
+EREPO="$WORK/en-service"
+REPO="$EREPO" # copy() dùng $REPO
+unset AISDLC_WEB_URL AISDLC_WEB_TOKEN # repo duyệt local, không gửi web (phần local có thể đã đặt)
+EN_SOL="$SOL/FIX-2-en"
+# vi_grep <văn bản>: grep -P tìm chữ Latin có dấu (U+00C0–U+1EF9: mọi ký tự tiếng Việt có dấu, cả dạng tổ hợp NFD vì
+# chữ gốc + dấu U+0300–U+036F nằm trong dải); in các dòng khớp. Exit 0 = có, 1 = không, khác = grep lỗi (không PCRE).
+vi_grep() { LC_ALL=C.UTF-8 grep -nP '[\x{00C0}-\x{1EF9}]' <<<"$1"; }
+# no_vi <mô tả> <văn bản>: văn bản không có tiếng Việt; grep lỗi thì die, không bao giờ coi là sạch.
+no_vi() {
+  local hit rc=0
+  hit="$(vi_grep "$2")" || rc=$?
+  case "$rc" in
+    0) die "$1 có ký tự tiếng Việt: $(head -n 3 <<<"$hit")" ;;
+    1) ;;
+    *) die "no_vi: grep -P lỗi (exit $rc; cần grep có PCRE)" ;;
+  esac
+}
+# Đối chứng: vi_grep phải bắt được tiếng Việt (cả NFD) và để yên ASCII, không thì mọi kiểm tra dưới đây vô nghĩa.
+rc=0; vi_grep "Cổng" >/dev/null || rc=$?
+[ "$rc" = 0 ] || die "no_vi: không bắt được tiếng Việt (grep exit $rc)"
+rc=0; vi_grep "$(printf 'Vie\xcc\xa3\xcc\x82t')" >/dev/null || rc=$?
+[ "$rc" = 0 ] || die "no_vi: không bắt được tiếng Việt dạng NFD (grep exit $rc)"
+no_vi "đối chứng ASCII" "plain ASCII — arrows → ok"
+# en <exit> <lệnh...>: như run, rồi output không được có tiếng Việt.
+en() { run "$@"; no_vi "output của '${*:2}'" "$OUT"; }
+# en_dev <đối số aisdlc...>: lệnh chỉ dev qua pty (như dev), output không có tiếng Việt.
+en_dev() { dev "$@"; no_vi "output của 'aisdlc $*'" "$OUT"; }
+
+step "EN: repo locale: en (config.yaml), chính sách rủi ro tiếng Anh, setup in tiếng Anh"
+new_repo "$EREPO"
+printf 'locale: en\n' >>aisdlc/config.yaml
+cp "$EN_SOL/risk-policy.yaml" aisdlc/risk-policy.yaml
+git add -A && git commit -qm "locale: en"
+en 0 aisdlc setup --approvals local
+has "Kept aisdlc/config.yaml"
+git add -A && git commit -qm "aisdlc setup"
+EN_SETUP="$(git rev-parse HEAD)"
+en 2 aisdlc status # chưa có tính năng: exit 2, vẫn in dòng locale
+has "Locale: en"
+
+KEY=FIX-2
+P="$EREPO/aisdlc/features/$KEY"
+step "EN $KEY init (LITE), cases: subagent xếp loại, submit, review, approve"
+en 0 aisdlc init "$KEY" --lite --title "Fix fee rounding"
+cp "$EN_SOL/cases.yaml" "$P/cases.yaml"
+run 0 aisdlc risk inputs --feature "$KEY"
+no_vi "output của 'aisdlc risk inputs'" "$OUT"
+hash="$(sed -n 's/^inputsHash: *//p' <<<"$OUT")"
+[ -n "$hash" ] || die "aisdlc risk inputs không in inputsHash"
+jq --arg h "$hash" '.inputsHash = $h' "$EN_SOL/risk-agent.json" >"$P/risk-agent.json"
+en 0 aisdlc submit cases
+has "Risk: low"
+en 0 aisdlc review cases
+hasnt "[HIGH]"
+hasnt "[WARN]"
+en_dev approve cases
+
+step "EN $KEY S1: start, finish (pass), accept"
+en 0 aisdlc step start S1
+copy "$SOL/FIX-2/S1"
+en 0 aisdlc step finish S1
+has "3/3 pass"
+en_dev step accept S1
+
+step "EN $KEY eval, review: eval/report.md tiếng Anh"
+en 0 aisdlc eval
+[ "$(head -n 1 "$P/eval/report.md")" = "Eval $KEY: PASS" ] || die "report.md dòng đầu: $(head -n 1 "$P/eval/report.md")"
+no_vi "eval/report.md" "$(cat "$P/eval/report.md")"
+cp "$EN_SOL/review-agent.json" "$P/"
+en 0 aisdlc submit review
+en_dev approve review
+en 0 aisdlc status
+
+step "EN $KEY commit (MR) và eval --ci so với commit setup"
+git add -A && git commit -qm "$KEY"
+en 0 aisdlc eval --ci --base "$EN_SETUP"
+has "Eval $KEY: PASS"
+# chỉ report.md: diff-by-step.md trích nguyên văn code của dịch vụ (comment tiếng Việt của fixture), không phải chữ CLI
+no_vi "eval/report.md sau eval --ci" "$(cat "$P/eval/report.md")"
+
+if [ "$WEB" = 1 ]; then
+  step "EN web: chọn EN trên bộ chọn EN/VI → UI tiếng Anh, users.locale = en, phiên mới cũng tiếng Anh; đặt lại VI"
+  pw_install
+  WEB_URL="$WEB_URL" WEB_TOKEN="$WEB_TOKEN" node "$PW_DIR/web-locale.mjs" >>"$LOG" 2>&1 \
+    || die "Playwright: web-locale thất bại (xem log)"
+fi
+cd "$E2E"
+fi # part en
 
 [ -z "$LAT_SUMMARY" ] || printf '%s' "$LAT_SUMMARY" | tee -a "$LOG"
 step "xong"

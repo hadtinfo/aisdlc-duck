@@ -123,7 +123,7 @@ func (s *Service) Import(ctx context.Context, p httpx.Principal, ip string, r Im
 		return out, err
 	}
 	if mode != ModeWeb {
-		return out, conflict(MsgNotWeb)
+		return out, errNotWeb()
 	}
 	if r.Gate == gate.REVIEW {
 		return out, conflict(MsgReviewImport)

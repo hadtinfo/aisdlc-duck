@@ -84,7 +84,7 @@ func TestWrongHashIs400AndLocalRepoIs409(t *testing.T) {
 		t.Fatal(r.Status, r.Body)
 	}
 	local := fx.w.PostBearer("/api/cli/submissions", cliSubmission("r/cli-loc", "K-1", "DESIGN", "", "[]"), fx.ingest)
-	if local.Status != 409 || fx.errOf(t, local) != "Repo không ở chế độ duyệt trên web" {
+	if local.Status != 409 || fx.errOf(t, local) != "Repo không ở chế độ duyệt trên web" || local.JSON(t)["code"] != "NOT_WEB_MODE" {
 		t.Fatal(local.Status, local.Body)
 	}
 	if n := fx.count(t, "SELECT count(*) FROM submissions WHERE repo_id IN ('r/cli-bad','r/cli-loc')"); n != 0 {

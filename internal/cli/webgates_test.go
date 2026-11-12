@@ -614,6 +614,16 @@ func TestApproveNotWebModeConflictExitsTwo(t *testing.T) {
 	g.override("POST /api/gates/approve", 409, `{"error":"Repo không ở chế độ duyệt trên web"}`)
 	eq(t, g.runC(typed("PAY-1"), "approve", "design"), 2)
 	contains(t, g.err, "Repo không ở chế độ duyệt trên web")
+	// server cũ trả câu tiếng Anh (Accept-Language: en): vẫn nhận ra
+	g.override("POST /api/gates/approve", 409, `{"error":"The repo is not in web approval mode"}`)
+	eq(t, g.runC(typed("PAY-1"), "approve", "design"), 2)
+	// server mới: so mã, câu là gì cũng được
+	g.override("POST /api/gates/approve", 409, `{"error":"anything","code":"NOT_WEB_MODE"}`)
+	eq(t, g.runC(typed("PAY-1"), "approve", "design"), 2)
+	contains(t, g.err, "anything")
+	// 409 khác (vi phạm luật duyệt) vẫn exit 1
+	g.override("POST /api/gates/approve", 409, `{"error":"anything","code":"OTHER"}`)
+	eq(t, g.runC(typed("PAY-1"), "approve", "design"), 1)
 }
 
 // ---- 401/403 của server bằng tiếng Việt ----

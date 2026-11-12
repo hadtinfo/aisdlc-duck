@@ -596,7 +596,7 @@ func (w *WebCache) Act(action string, f *Feature, g gate.Gate, comment *string, 
 	if r.Status == http.StatusConflict {
 		e := w.webError(r)
 		// thiếu điều kiện (repo không ở chế độ web) là exit 2; vi phạm luật duyệt là exit 1
-		if isNotWeb(e) {
+		if isNotWeb(r, e) {
 			return abort(2, e)
 		}
 		return abort(1, e)

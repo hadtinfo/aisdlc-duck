@@ -160,7 +160,7 @@ func TestImportChecksHashPreviousGatesAndArtifacts(t *testing.T) {
 	// repo local: không nhập được
 	fx.exec(t, "UPDATE repo_settings SET approvals = 'local' WHERE repo_id = 'r/im-2'")
 	local := fx.w.PostBearer("/api/cli/import", f.importBody("BRD"), fx.ingest)
-	if local.Status != 409 || fx.errOf(t, local) != "Repo không ở chế độ duyệt trên web" {
+	if local.Status != 409 || fx.errOf(t, local) != "Repo không ở chế độ duyệt trên web" || local.JSON(t)["code"] != "NOT_WEB_MODE" {
 		t.Fatal(local.Status, local.Body)
 	}
 	// thời điểm có múi giờ lệch: quy về UTC

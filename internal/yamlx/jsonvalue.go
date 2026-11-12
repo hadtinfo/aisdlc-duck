@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"gopkg.in/yaml.v3"
+
+	"aisdlc/internal/i18n"
 )
 
 // JSONValue chuyển node YAML thành giá trị marshal được ra JSON, giống cách Jackson
@@ -38,7 +40,7 @@ func JSONValue(n *yaml.Node) (any, error) {
 				k = k.Alias
 			}
 			if k.Kind != yaml.ScalarNode {
-				return nil, fmt.Errorf("dòng %d: khóa của mapping phải là giá trị đơn", k.Line)
+				return nil, fmt.Errorf(i18n.T("dòng %d: khóa của mapping phải là giá trị đơn"), k.Line)
 			}
 			v, err := JSONValue(n.Content[i+1])
 			if err != nil {
@@ -53,7 +55,7 @@ func JSONValue(n *yaml.Node) (any, error) {
 		}
 		var v any
 		if err := n.Decode(&v); err != nil {
-			return nil, fmt.Errorf("dòng %d: %v", n.Line, err)
+			return nil, fmt.Errorf(i18n.T("dòng %d: %v"), n.Line, err)
 		}
 		return v, nil
 	}

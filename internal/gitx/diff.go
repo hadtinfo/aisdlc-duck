@@ -5,6 +5,8 @@ import (
 	"context"
 	"strconv"
 	"strings"
+
+	"aisdlc/internal/i18n"
 )
 
 // Diff liệt kê thay đổi file giữa hai tree (numstat + name-status, -M, -z).
@@ -26,12 +28,12 @@ func (r *Repo) Diff(ctx context.Context, from, to string) ([]FileChange, error) 
 		}
 		f := strings.SplitN(rec, "\t", 3)
 		if len(f) < 3 {
-			return nil, &Error{Msg: "Đầu ra git diff --numstat không hợp lệ: " + rec}
+			return nil, &Error{Msg: i18n.Tf("Đầu ra git diff --numstat không hợp lệ: %s", rec)}
 		}
 		path := f[2]
 		if path == "" { // rename: old và new nằm ở hai phần tử tiếp theo
 			if i+2 >= len(num) {
-				return nil, &Error{Msg: "Đầu ra git diff --numstat không hợp lệ: " + rec}
+				return nil, &Error{Msg: i18n.Tf("Đầu ra git diff --numstat không hợp lệ: %s", rec)}
 			}
 			path = num[i+2]
 			i += 2
@@ -43,7 +45,7 @@ func (r *Repo) Diff(ctx context.Context, from, to string) ([]FileChange, error) 
 		a, err1 := strconv.Atoi(f[0])
 		d, err2 := strconv.Atoi(f[1])
 		if err1 != nil || err2 != nil {
-			return nil, &Error{Msg: "Đầu ra git diff --numstat không hợp lệ: " + rec}
+			return nil, &Error{Msg: i18n.Tf("Đầu ra git diff --numstat không hợp lệ: %s", rec)}
 		}
 		stats[path] = stat{added: a, deleted: d}
 	}
@@ -59,7 +61,7 @@ func (r *Repo) Diff(ctx context.Context, from, to string) ([]FileChange, error) 
 		if status == "" {
 			continue
 		}
-		bad := &Error{Msg: "Đầu ra git diff --name-status không hợp lệ: " + status}
+		bad := &Error{Msg: i18n.Tf("Đầu ra git diff --name-status không hợp lệ: %s", status)}
 		i++
 		if i >= len(ns) {
 			return nil, bad

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/spec"
 )
 
@@ -48,5 +49,22 @@ func TestGateStateSupersededAndOldPayload(t *testing.T) {
 	}
 	if _, err := FeatureGateStateFromJSON([]byte("{nope")); err == nil {
 		t.Error("phải lỗi")
+	}
+}
+
+func TestToJSONInExplicitLocale(t *testing.T) {
+	// ToJSONIn không phụ thuộc locale mặc định; nội dung JSON như ToJSON.
+	g := FeatureGateState{Repo: "r", Feature: "K-1"}
+	a, err := g.ToJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := g.ToJSONIn(i18n.EN)
+	if err != nil || string(a) != string(b) {
+		t.Fatalf("ToJSONIn(EN) = %s, %v; muốn %s", b, err, a)
+	}
+	c, err := FeatureControl{Repo: "r", Feature: "K-1"}.ToJSONIn(i18n.EN)
+	if err != nil || len(c) == 0 {
+		t.Fatalf("FeatureControl.ToJSONIn(EN) = %s, %v", c, err)
 	}
 }

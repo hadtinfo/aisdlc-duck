@@ -80,6 +80,14 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool, localeFlag
 	if !ok {
 		root = ctx.cwd
 	}
+	// init và mọi lệnh sau cần git; thư mục mới chưa có git thì tạo luôn (remote dev thêm sau).
+	newGit := false
+	if g := ctx.Git(root); !g.InWorkTree(ctx.std) {
+		if err := g.Init(ctx.std, "main"); err != nil {
+			return 0, err
+		}
+		newGit = true
+	}
 
 	cfg, err := template(loc, "config.yaml")
 	if err != nil {
@@ -130,6 +138,13 @@ func setup(ctx *Context, preset, approvals string, approvalsSet bool, localeFlag
 			ctx.Println(i18n.T("Chế độ duyệt: local (gates.json), vì máy này chưa `aisdlc web login`."))
 			ctx.Println(i18n.T("  Muốn duyệt trên web: thêm `approvals: web` vào aisdlc/config.yaml (docs/user-guide.md mục 6.3)."))
 		}
+	}
+
+	if newGit {
+		ctx.Println("")
+		ctx.Println(i18n.T("Đã tạo git repo (nhánh main, chưa commit, chưa có remote)."))
+		ctx.Println(i18n.T("  Khi có repo trên GitLab/GitHub: git remote add origin <url> && git push -u origin main" +
+			" (baseRef trong aisdlc/config.yaml mặc định là origin/main)."))
 	}
 
 	ctx.Println("")

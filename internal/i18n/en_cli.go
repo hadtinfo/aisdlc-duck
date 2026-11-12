@@ -557,6 +557,8 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	"URL web: ":      "Web URL: ",
 	"URL web [%s]: ": "Web URL [%s]: ",
 	"<url web>":      "<web url>",
+	"Đã tạo git repo (nhánh main, chưa commit, chưa có remote).":                                                                                           "Created a git repo (branch main, no commits, no remote yet).",
+	"  Khi có repo trên GitLab/GitHub: git remote add origin <url> && git push -u origin main (baseRef trong aisdlc/config.yaml mặc định là origin/main).": "  Once the repo exists on GitLab/GitHub: git remote add origin <url> && git push -u origin main (baseRef in aisdlc/config.yaml defaults to origin/main).",
 }
 
 func init() { register(enCLI) }

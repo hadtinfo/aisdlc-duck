@@ -73,6 +73,8 @@ All notable changes to this project are documented here. The format follows
   `RISK_LLM_OVERRIDE` when the subagent departs from the rule-based level.
 - CI check `RISK_LLM` (`eval --ci`): `llm.inputsHash` in `risk.yaml` must match the current documents and policy; no
   LLM is called. In web mode the CI token may read the live policy (`GET /api/cli/policy`).
+- `aisdlc setup` creates a git repository (`git init -b main`) when the directory is not inside one yet, so
+  `aisdlc init` works right away in a new project; the remote can be added later.
 
 ## [0.1.0] - 2026-11-06
 

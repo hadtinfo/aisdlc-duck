@@ -249,6 +249,18 @@ func absentOrFatal(err error) error {
 	return err
 }
 
+// InWorkTree: thư mục gốc nằm trong cây làm việc của một repo git (kể cả repo cha).
+func (r *Repo) InWorkTree(ctx context.Context) bool {
+	out, err := r.run(ctx, nil, "rev-parse", "--is-inside-work-tree")
+	return err == nil && strings.TrimSpace(out) == "true"
+}
+
+// Init tạo repo git mới ở thư mục gốc với nhánh mặc định branch (chưa commit, chưa remote).
+func (r *Repo) Init(ctx context.Context, branch string) error {
+	_, err := r.run(ctx, nil, "init", "-q", "-b", branch)
+	return err
+}
+
 func (r *Repo) hasHead(ctx context.Context) bool {
 	_, err := r.run(ctx, nil, "rev-parse", "--verify", "-q", "HEAD")
 	return err == nil

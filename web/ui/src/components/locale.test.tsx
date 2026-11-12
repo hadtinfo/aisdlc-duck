@@ -11,7 +11,13 @@ import { LocaleSwitch } from "./LocaleSwitch";
 import { RiskLLM } from "./RiskLLM";
 
 const VI_CHARS = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
-const text = (el: ReactElement) => renderToStaticMarkup(<MemoryRouter>{el}</MemoryRouter>).replace(/<[^>]+>/g, " ");
+// Bỏ thẻ HTML lặp tới khi không đổi; thay bằng khoảng trắng để chữ hai phần tử không dính nhau.
+const stripTags = (html: string) => {
+  let prev;
+  do { prev = html; html = html.replace(/<[^>]*>/g, " "); } while (html !== prev);
+  return html;
+};
+const text = (el: ReactElement) => stripTags(renderToStaticMarkup(<MemoryRouter>{el}</MemoryRouter>));
 
 afterEach(() => setLocale("vi"));
 

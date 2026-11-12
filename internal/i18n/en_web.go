@@ -46,7 +46,9 @@ var enWeb = map[string]string{
 	// board
 	"Cổng %s chờ bạn duyệt": "Gate %s is waiting for your approval",
 	"Cổng %s đã đổi sau khi duyệt (STALE): nộp lại, hoặc `aisdlc reopen %s` nếu muốn sửa lại từ đầu": "Gate %s changed after approval (STALE): resubmit, or `aisdlc reopen %s` to rework it from the start",
-	"Cổng %s có phát hiện cần sửa":                                                                              "Gate %s has findings to fix",
+
+	"Cổng %s có phát hiện cần sửa": "Gate %s has findings to fix",
+
 	"Câu hỏi mở: %s (trả lời câu hỏi rồi nộp lại)":                                                              "Open question: %s (answer it, then resubmit)",
 	"Bước %s chờ bạn accept":                                                                                    "Step %s is waiting for you to accept",
 	"Bước %s còn case chưa đạt: %s (mở lại bước để agent sửa, rồi `aisdlc step finish %s`)":                     "Step %s has cases not passing: %s (reopen the step for the agent to fix, then `aisdlc step finish %s`)",

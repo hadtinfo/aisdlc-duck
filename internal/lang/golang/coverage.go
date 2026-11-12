@@ -11,10 +11,13 @@ import (
 	"strconv"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 )
 
-const noCoverageData = "không có dữ liệu coverage (unit test và case đều không ghi)"
+func noCoverageData() string {
+	return i18n.T("không có dữ liệu coverage (unit test và case đều không ghi)")
+}
 
 // ParseProfile đọc coverprofile (text) thành dòng → đã chạy, theo repo path.
 // Import path bỏ tiền tố "<module>/"; file ngoài module bị bỏ.
@@ -31,22 +34,22 @@ func ParseProfile(r io.Reader, module string) (map[string]map[int]bool, error) {
 		// <file>:<l1>.<c1>,<l2>.<c2> <numStmt> <count>
 		colon := strings.LastIndex(line, ":")
 		if colon < 0 {
-			return nil, fmt.Errorf("dòng profile sai: %q", line)
+			return nil, fmt.Errorf(i18n.T("dòng profile sai: %q"), line)
 		}
 		file, rest := line[:colon], line[colon+1:]
 		f := strings.Fields(rest)
 		if len(f) != 3 {
-			return nil, fmt.Errorf("dòng profile sai: %q", line)
+			return nil, fmt.Errorf(i18n.T("dòng profile sai: %q"), line)
 		}
 		span := strings.SplitN(f[0], ",", 2)
 		if len(span) != 2 {
-			return nil, fmt.Errorf("dòng profile sai: %q", line)
+			return nil, fmt.Errorf(i18n.T("dòng profile sai: %q"), line)
 		}
 		start, err1 := strconv.Atoi(strings.SplitN(span[0], ".", 2)[0])
 		end, err2 := strconv.Atoi(strings.SplitN(span[1], ".", 2)[0])
 		count, err3 := strconv.ParseInt(f[2], 10, 64)
 		if err1 != nil || err2 != nil || err3 != nil {
-			return nil, fmt.Errorf("dòng profile sai: %q", line)
+			return nil, fmt.Errorf(i18n.T("dòng profile sai: %q"), line)
 		}
 		if !strings.HasPrefix(file, prefix) {
 			continue
@@ -102,7 +105,7 @@ func (Runtime) Coverage(ctx context.Context, repoRoot, outDir string, unitProfil
 		if _, serr := os.Stat(unitProfile); serr == nil {
 			m, err := parseFile(unitProfile, mod)
 			if err != nil {
-				return lang.Coverage{NA: "không đọc được coverprofile: " + err.Error()}, nil
+				return lang.Coverage{NA: i18n.Tf("không đọc được coverprofile: %s", err.Error())}, nil
 			}
 			parts = append(parts, m)
 		}
@@ -111,7 +114,7 @@ func (Runtime) Coverage(ctx context.Context, repoRoot, outDir string, unitProfil
 		if entries, _ := os.ReadDir(coverDir); len(entries) > 0 {
 			goBin, err := exec.LookPath("go")
 			if err != nil {
-				return lang.Coverage{}, fmt.Errorf("không tìm thấy go trên PATH: %w", err)
+				return lang.Coverage{}, fmt.Errorf(i18n.T("không tìm thấy go trên PATH: %w"), err)
 			}
 			if err := os.MkdirAll(outDir, 0o755); err != nil {
 				return lang.Coverage{}, err
@@ -123,17 +126,17 @@ func (Runtime) Coverage(ctx context.Context, repoRoot, outDir string, unitProfil
 				if msg == "" {
 					msg = err.Error()
 				}
-				return lang.Coverage{NA: "covdata lỗi: " + msg}, nil
+				return lang.Coverage{NA: i18n.Tf("covdata lỗi: %s", msg)}, nil
 			}
 			m, err := parseFile(cases, mod)
 			if err != nil {
-				return lang.Coverage{NA: "covdata lỗi: " + err.Error()}, nil
+				return lang.Coverage{NA: i18n.Tf("covdata lỗi: %s", err.Error())}, nil
 			}
 			parts = append(parts, m)
 		}
 	}
 	if len(parts) == 0 {
-		return lang.Coverage{NA: noCoverageData}, nil
+		return lang.Coverage{NA: noCoverageData()}, nil
 	}
 	return lang.Coverage{Lines: MergeLines(parts...)}, nil
 }

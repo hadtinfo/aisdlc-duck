@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 )
 
 // ResultFile là file kết quả máy đọc của binary aisdlc-harness trong thư mục out (CLI aisdlc đọc nó sau khi
@@ -16,8 +17,8 @@ const ResultFile = "harness-result.json"
 // HarnessLog là tên file log của harness trong thư mục out.
 const HarnessLog = "harness.log"
 
-// PanicPrefix mở đầu thông điệp khi harness hỏng giữa chừng (panic) trước khi ghi kết quả.
-const PanicPrefix = "harness lỗi: "
+// PanicPrefixText mở đầu thông điệp (theo locale) khi harness hỏng giữa chừng (panic) trước khi ghi kết quả.
+func PanicPrefixText() string { return i18n.T("harness lỗi: ") }
 
 // Mã thoát của aisdlc-harness. `run`: ExitCode của RunResult (0 mọi case PASSED, 1 có case không PASSED, 2 lỗi
 // harness, ExitTimeout quá thời gian hoặc bị hủy); `verify`: 0 khi đã ghi kết quả. Ngoài ra:
@@ -57,17 +58,17 @@ func ReadResult(out string) (Result, error) {
 		return r, err
 	}
 	if err := json.Unmarshal(b, &r); err != nil {
-		return r, fmt.Errorf("%s hỏng: %w", ResultFile, err)
+		return r, fmt.Errorf(i18n.T("%s hỏng: %w"), ResultFile, err)
 	}
 	if r.Run == nil && r.Verify == nil && r.Error == "" && r.Panic == "" {
-		return r, fmt.Errorf("%s rỗng", ResultFile)
+		return r, fmt.Errorf(i18n.T("%s rỗng"), ResultFile)
 	}
 	return r, nil
 }
 
 // PanicLog: stack của panic rồi dòng "harness lỗi: <giá trị>" ở cuối, để 20 dòng cuối log vẫn có lý do.
 func PanicLog(p any, stack []byte) string {
-	return fmt.Sprintf("stack:\n%s%s%v", stack, PanicPrefix, p)
+	return fmt.Sprintf("stack:\n%s%s%v", stack, PanicPrefixText(), p)
 }
 
 // AppendLog thêm một dòng vào out/harness.log; lỗi bị bỏ qua (log chỉ để dev xem).

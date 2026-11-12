@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 )
 
@@ -54,7 +55,7 @@ func ref(path, version string) string {
 func (Adapter) DependencyChanges(ctx context.Context, base, now lang.FileSource) lang.DependencyChanges {
 	nowSet, n, err := entries(ctx, now)
 	if err == nil && n == 0 {
-		return lang.DependencyChanges{NA: "Repo không có go.mod, bỏ qua kiểm tra dependency."}
+		return lang.DependencyChanges{NA: i18n.T("Repo không có go.mod, bỏ qua kiểm tra dependency.")}
 	}
 	var baseSet map[string]bool
 	if err == nil {
@@ -62,7 +63,7 @@ func (Adapter) DependencyChanges(ctx context.Context, base, now lang.FileSource)
 	}
 	if err != nil {
 		why := strings.SplitN(err.Error(), "\n", 2)[0]
-		return lang.DependencyChanges{NA: "Không đọc được go.mod hoặc base tree: " + why}
+		return lang.DependencyChanges{NA: i18n.Tf("Không đọc được go.mod hoặc base tree: %s", why)}
 	}
 	var added []string
 	for k := range nowSet {

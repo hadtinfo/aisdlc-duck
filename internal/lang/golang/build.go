@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 )
@@ -23,11 +24,11 @@ var _ lang.Runtime = Runtime{}
 func modulePath(repoRoot string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
 	if err != nil {
-		return "", fmt.Errorf("không có go.mod ở %s", repoRoot)
+		return "", fmt.Errorf(i18n.T("không có go.mod ở %s"), repoRoot)
 	}
 	m := modfile.ModulePath(data)
 	if m == "" {
-		return "", fmt.Errorf("go.mod ở %s không có dòng module", repoRoot)
+		return "", fmt.Errorf(i18n.T("go.mod ở %s không có dòng module"), repoRoot)
 	}
 	return m, nil
 }
@@ -40,7 +41,7 @@ func (Runtime) Build(ctx context.Context, repoRoot string, svc model.ServiceConf
 	}
 	goBin, err := exec.LookPath("go")
 	if err != nil {
-		return lang.BuildResult{}, fmt.Errorf("không tìm thấy go trên PATH: %w", err)
+		return lang.BuildResult{}, fmt.Errorf(i18n.T("không tìm thấy go trên PATH: %w"), err)
 	}
 	absOut, err := filepath.Abs(outDir)
 	if err != nil {

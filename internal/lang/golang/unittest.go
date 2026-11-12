@@ -6,12 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 )
@@ -31,7 +33,7 @@ func (Runtime) UnitTests(ctx context.Context, repoRoot string, ut model.UnitTest
 	}
 	goBin, err := exec.LookPath("go")
 	if err != nil {
-		return lang.UnitResult{}, errors.New("không tìm thấy go trên PATH: " + err.Error())
+		return lang.UnitResult{}, fmt.Errorf(i18n.T("không tìm thấy go trên PATH: %w"), err)
 	}
 	absOut, err := filepath.Abs(outDir)
 	if err != nil {

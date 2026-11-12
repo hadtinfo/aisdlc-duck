@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/spec"
 )
 
@@ -14,14 +15,18 @@ const (
 	ModeCases           = "cases"
 	ModeCasesWithDrafts = "cases-with-drafts"
 	ModeMigrationCheck  = "migration-check"
-
-	// NotRun là thông điệp của case không được chạy.
-	NotRun = "case không được chạy (ứng dụng không khởi động được hoặc suite bị dừng)"
-	// NoResults khi không có results.json (hoặc hỏng).
-	NoResults = "harness không ghi kết quả"
-	// NoRow khi results.json thiếu dòng của case được chọn.
-	NoRow = "không có kết quả từ harness"
 )
+
+// NotRunText là thông điệp (theo locale) của case không được chạy.
+func NotRunText() string {
+	return i18n.T("case không được chạy (ứng dụng không khởi động được hoặc suite bị dừng)")
+}
+
+// NoResultsText khi không có results.json (hoặc hỏng).
+func NoResultsText() string { return i18n.T("harness không ghi kết quả") }
+
+// NoRowText khi results.json thiếu dòng của case được chọn.
+func NoRowText() string { return i18n.T("không có kết quả từ harness") }
 
 // ParseMode chuẩn hóa mode: rỗng là cases, giá trị lạ là lỗi.
 func ParseMode(s string) (string, error) {
@@ -32,7 +37,7 @@ func ParseMode(s string) (string, error) {
 	case ModeCases, ModeMigrationCheck, ModeCasesWithDrafts:
 		return m, nil
 	}
-	return "", fmt.Errorf("mode không hợp lệ: %s (cases, migration-check hoặc cases-with-drafts)", m)
+	return "", fmt.Errorf(i18n.T("mode không hợp lệ: %s (cases, migration-check hoặc cases-with-drafts)"), m)
 }
 
 // WithDrafts cho biết mode có chạy thêm migration nháp không.

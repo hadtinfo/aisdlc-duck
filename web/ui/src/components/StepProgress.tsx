@@ -1,5 +1,6 @@
 import { budgetLevel } from "../format";
 import { StepEdit } from "../live";
+import { Key, useT } from "../i18n";
 
 export interface LiveStep {
   id: string; title: string; scope?: string[]; budget?: { files: number; lines: number };
@@ -8,11 +9,11 @@ export interface LiveStep {
   } } | null;
 }
 
-const STATUS: Record<string, [string, string]> = {
-  NOT_STARTED: ["Chưa bắt đầu", "muted"],
-  IN_PROGRESS: ["Đang làm", "info"],
-  AWAITING_DEV: ["Chờ dev accept", "warn"],
-  ACCEPTED: ["Đã accept", "ok"],
+const STATUS: Record<string, [Key, string]> = {
+  NOT_STARTED: ["stepStatus.notStarted", "muted"],
+  IN_PROGRESS: ["stepStatus.inProgress", "info"],
+  AWAITING_DEV: ["stepStatus.awaitingDev", "warn"],
+  ACCEPTED: ["stepStatus.accepted", "ok"],
 };
 
 function Bar({ label, actual, budget }: { label: string; actual: number | null; budget: number }) {
@@ -32,7 +33,9 @@ function Bar({ label, actual, budget }: { label: string; actual: number | null; 
 }
 
 export function StepProgress({ step, edits }: { step: LiveStep; edits: StepEdit[] }) {
-  const [text, tone] = STATUS[step.status] ?? [step.status, "muted"];
+  const { t } = useT();
+  const st = STATUS[step.status];
+  const [text, tone] = st ? [t(st[0]), st[1]] : [step.status, "muted"];
   const check = step.record?.check;
   const notPassed = check?.casesNotPassed ?? [];
   const total = check ? check.casesPassed + notPassed.length : 0;
@@ -47,18 +50,18 @@ export function StepProgress({ step, edits }: { step: LiveStep; edits: StepEdit[
       </header>
       <div className="bars">
         <Bar label="File" actual={check ? check.files : null} budget={step.budget?.files ?? 0} />
-        <Bar label="Dòng" actual={check ? check.lines : null} budget={step.budget?.lines ?? 0} />
+        <Bar label={t("progress.lines")} actual={check ? check.lines : null} budget={step.budget?.lines ?? 0} />
       </div>
       {check ? (
         <p className="case-line">
           <b className={notPassed.length ? "lv-far" : "lv-ok"}>{check.casesPassed}/{total} pass</b>
-          {notPassed.length > 0 && <span className="muted"> · chưa pass: {notPassed.map((c) => <code key={c}>{c}</code>)}</span>}
+          {notPassed.length > 0 && <span className="muted"> · {t("progress.notPassed")} {notPassed.map((c) => <code key={c}>{c}</code>)}</span>}
         </p>
       ) : (
-        <p className="case-line muted">Chưa có kết quả finish</p>
+        <p className="case-line muted">{t("progress.noFinish")}</p>
       )}
-      {outside.length > 0 && <p className="lv-far small">Ngoài phạm vi: {outside.map((p) => <code key={p}>{p}</code>)}</p>}
-      {lastEdit && <p className="muted small">{edits.length} file đã sửa, gần nhất <code>{lastEdit.path}</code></p>}
+      {outside.length > 0 && <p className="lv-far small">{t("progress.outside")} {outside.map((p) => <code key={p}>{p}</code>)}</p>}
+      {lastEdit && <p className="muted small">{t("progress.edited", { n: edits.length })} <code>{lastEdit.path}</code></p>}
     </article>
   );
 }

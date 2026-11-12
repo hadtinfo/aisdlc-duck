@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/snapshot"
 )
 
@@ -33,7 +34,7 @@ func ApplyPending(c snapshot.FeatureControl, steps *Service, extras *ScopeExtras
 
 func applyOne(a snapshot.Action, steps *Service, extras *ScopeExtras, now time.Time) PendingResult {
 	if a.ExpiresAt != nil && now.After(*a.ExpiresAt) {
-		return stale(a, "Lệnh đã hết hạn (7 ngày)")
+		return stale(a, i18n.T("Lệnh đã hết hạn (7 ngày)"))
 	}
 	switch a.Kind {
 	case "ACCEPT_STEP":
@@ -41,7 +42,7 @@ func applyOne(a snapshot.Action, steps *Service, extras *ScopeExtras, now time.T
 	case "ALLOW_SCOPE":
 		return allow(a, steps, extras)
 	}
-	return stale(a, "Loại lệnh không hỗ trợ: "+a.Kind)
+	return stale(a, i18n.Tf("Loại lệnh không hỗ trợ: %s", a.Kind))
 }
 
 func accept(a snapshot.Action, steps *Service) PendingResult {
@@ -51,17 +52,17 @@ func accept(a snapshot.Action, steps *Service) PendingResult {
 	}
 	r := find(recs, a.Step)
 	if r == nil {
-		return stale(a, "Bước "+a.Step+" chưa được làm")
+		return stale(a, i18n.Tf("Bước %s chưa được làm", a.Step))
 	}
 	sameTree := a.EndTree != "" && a.EndTree == r.EndTree
 	if r.Status == StepAccepted && sameTree {
 		return applied(a)
 	}
 	if r.Status != StepAwaitingDev {
-		return stale(a, "Bước "+a.Step+" đang ở trạng thái "+string(r.Status)+", cần AWAITING_DEV")
+		return stale(a, i18n.Tf("Bước %s đang ở trạng thái %s, cần AWAITING_DEV", a.Step, string(r.Status)))
 	}
 	if !sameTree {
-		return stale(a, "Bước "+a.Step+" đã đổi sau khi dev bấm (cây code khác)")
+		return stale(a, i18n.Tf("Bước %s đã đổi sau khi dev bấm (cây code khác)", a.Step))
 	}
 	if _, err := steps.Accept(a.Step, a.By+" (web)"); err != nil {
 		return stale(a, err.Error())
@@ -71,7 +72,7 @@ func accept(a snapshot.Action, steps *Service) PendingResult {
 
 func allow(a snapshot.Action, steps *Service, extras *ScopeExtras) PendingResult {
 	if !ValidScopePath(a.Path) {
-		return stale(a, "Đường dẫn không hợp lệ: "+a.Path)
+		return stale(a, i18n.Tf("Đường dẫn không hợp lệ: %s", a.Path))
 	}
 	if _, err := steps.AllowedGlobs(a.Step); err != nil { // lỗi nếu bước không có trong thiết kế
 		return stale(a, err.Error())

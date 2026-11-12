@@ -107,7 +107,7 @@ type rd struct{ err error }
 
 func (r *rd) bad(path string, v any) {
 	if r.err == nil {
-		r.err = fmt.Errorf("Giá trị %s không hợp lệ: %v", path, v)
+		r.err = fmt.Errorf(i18n.T("Giá trị %s không hợp lệ: %v"), path, v)
 	}
 }
 
@@ -270,7 +270,7 @@ func (r *rd) seconds(n any, path, k string, def int) int {
 
 func (r *rd) mustBePositive(path string, v any) {
 	if r.err == nil {
-		r.err = fmt.Errorf("Giá trị %s không hợp lệ: %v (phải lớn hơn 0)", path, v)
+		r.err = fmt.Errorf(i18n.T("Giá trị %s không hợp lệ: %v (phải lớn hơn 0)"), path, v)
 	}
 }
 

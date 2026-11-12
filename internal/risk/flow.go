@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/review"
 )
 
@@ -24,18 +25,23 @@ func FlowUnit(g gate.Gate) string {
 // Trả ("", false) khi được tự duyệt; (lý do, true) khi phải duyệt tay (true = có lý do, như Optional.isPresent của Java).
 // manual == true nghĩa là cổng cần người duyệt tay; reason là lý do.
 func AutoGate(p RiskPolicy, level string, g gate.Gate, hasHighFlag bool) (reason string, manual bool) {
+	return AutoGateIn(i18n.Default(), p, level, g, hasHighFlag)
+}
+
+// AutoGateIn như AutoGate, lý do theo loc.
+func AutoGateIn(loc i18n.Locale, p RiskPolicy, level string, g gate.Gate, hasHighFlag bool) (reason string, manual bool) {
 	unit := FlowUnit(g)
 	if unit == "" {
-		return "Review luôn duyệt tay", true
+		return loc.T("Review luôn duyệt tay"), true
 	}
 	if g == gate.BRD {
-		return "Cổng BRD luôn duyệt tay", true
+		return loc.T("Cổng BRD luôn duyệt tay"), true
 	}
 	if hasHighFlag {
-		return "Review card có cờ đỏ mức HIGH", true
+		return loc.T("Review card có cờ đỏ mức HIGH"), true
 	}
 	if p.FlowFor(level, unit) != "auto" {
-		return "Mức " + level + ": cổng " + unit + " đặt duyệt tay", true
+		return loc.Tf("Mức %s: cổng %s đặt duyệt tay", level, unit), true
 	}
 	return "", false
 }
@@ -89,13 +95,16 @@ func HasHighFlag(flags []review.ReviewFlag) bool {
 	return false
 }
 
-// GateName là tên cổng tiếng Việt trong thông điệp.
-func GateName(g gate.Gate) string {
+// GateName là tên cổng trong thông điệp, theo locale mặc định.
+func GateName(g gate.Gate) string { return GateNameIn(i18n.Default(), g) }
+
+// GateNameIn là tên cổng trong thông điệp, theo loc.
+func GateNameIn(loc i18n.Locale, g gate.Gate) string {
 	switch g {
 	case gate.BRD:
 		return "BRD"
 	case gate.DESIGN:
-		return "Thiết kế"
+		return loc.T("Thiết kế")
 	case gate.CASES:
 		return "Case"
 	}
@@ -105,13 +114,18 @@ func GateName(g gate.Gate) string {
 // SupersedeMessage: thông điệp khi bản tự duyệt của gates bị thay thế vì mức đổi sang to. "Mức tăng" chỉ khi hạng
 // mức thật sự tăng theo p so với from; ngược lại (flow của mức đổi, hoặc không biết mức trước) là "Flow của mức … đổi".
 func SupersedeMessage(p *RiskPolicy, from, to string, gates []gate.Gate) string {
+	return SupersedeMessageIn(i18n.Default(), p, from, to, gates)
+}
+
+// SupersedeMessageIn như SupersedeMessage, theo loc (web server truyền locale của request).
+func SupersedeMessageIn(loc i18n.Locale, p *RiskPolicy, from, to string, gates []gate.Gate) string {
 	names := make([]string, len(gates))
 	for i, g := range gates {
-		names[i] = GateName(g)
+		names[i] = GateNameIn(loc, g)
 	}
 	list := strings.Join(names, ", ")
 	if p != nil && from != "" && p.Rank(from) >= 0 && p.Rank(to) > p.Rank(from) {
-		return "Mức tăng " + from + " → " + to + ": cổng " + list + " cần dev duyệt lại."
+		return loc.Tf("Mức tăng %s → %s: cổng %s cần dev duyệt lại.", from, to, list)
 	}
-	return "Flow của mức " + to + " đổi: cổng " + list + " cần dev duyệt lại."
+	return loc.Tf("Flow của mức %s đổi: cổng %s cần dev duyệt lại.", to, list)
 }

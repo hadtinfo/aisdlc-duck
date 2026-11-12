@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"aisdlc/internal/web/httpx"
 )
 
 type stored struct {
@@ -50,7 +52,7 @@ func (s *Service) UpsertSnapshot(ctx context.Context, login string, tree any, ra
 		} else if st, err = lockRow(ctx, tx, repoID, key); err != nil { // thua cuộc đua chèn đầu tiên
 			return false, false, err
 		} else if st == nil {
-			return false, false, errors.New("ingest: hàng tính năng biến mất")
+			return false, false, errors.New(httpx.OpLocale().T("ingest: hàng tính năng biến mất"))
 		}
 	}
 	if !done {

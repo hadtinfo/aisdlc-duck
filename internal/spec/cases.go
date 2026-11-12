@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/yamlx"
 )
 
@@ -30,7 +31,7 @@ func (k *CaseKind) UnmarshalYAML(n *yaml.Node) error {
 		*k = v
 		return nil
 	}
-	return fmt.Errorf("dòng %d: kind không hợp lệ: %q (chỉ nhận happy, error, boundary)", n.Line, s)
+	return fmt.Errorf(i18n.T("dòng %d: kind không hợp lệ: %q (chỉ nhận happy, error, boundary)"), n.Line, s)
 }
 
 // Given là dữ liệu dựng trước case.
@@ -107,13 +108,13 @@ func jsonRows(n *yaml.Node) ([]map[string]any, error) {
 	}
 	list, ok := v.([]any)
 	if !ok {
-		return nil, fmt.Errorf("dòng %d: rows phải là danh sách", n.Line)
+		return nil, fmt.Errorf(i18n.T("dòng %d: rows phải là danh sách"), n.Line)
 	}
 	out := make([]map[string]any, 0, len(list))
 	for _, e := range list {
 		m, ok := e.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("dòng %d: mỗi phần tử của rows phải là mapping", n.Line)
+			return nil, fmt.Errorf(i18n.T("dòng %d: mỗi phần tử của rows phải là mapping"), n.Line)
 		}
 		out = append(out, m)
 	}
@@ -127,7 +128,7 @@ func jsonMap(n *yaml.Node) (map[string]any, error) {
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("dòng %d: giá trị phải là mapping", n.Line)
+		return nil, fmt.Errorf(i18n.T("dòng %d: giá trị phải là mapping"), n.Line)
 	}
 	return m, nil
 }

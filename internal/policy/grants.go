@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -61,15 +62,15 @@ func GrantFile(root, sessionID string) string {
 // IssueGrant ghi (thay) phiếu của session, atomic để người đọc không thấy file dở.
 func IssueGrant(root string, g Grant) error {
 	if g.SessionID == "" {
-		return errors.New("Không ghi được phiếu cho phép: thiếu sessionId")
+		return errors.New(i18n.T("Không ghi được phiếu cho phép: thiếu sessionId"))
 	}
 	b, err := json.Marshal(grantJSON{g.SessionID, nstr(g.Feature), nstr(g.Command), nstr(g.Hash),
 		g.ExpiresAt.UTC().Format(time.RFC3339Nano)})
 	if err != nil {
-		return fmt.Errorf("Không ghi được phiếu cho phép: %v", err)
+		return fmt.Errorf(i18n.T("Không ghi được phiếu cho phép: %v"), err)
 	}
 	if err := fsx.WriteAtomic(GrantFile(root, g.SessionID), b, 0o644); err != nil {
-		return fmt.Errorf("Không ghi được phiếu cho phép: %v", err)
+		return fmt.Errorf(i18n.T("Không ghi được phiếu cho phép: %v"), err)
 	}
 	return nil
 }

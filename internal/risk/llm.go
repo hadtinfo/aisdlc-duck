@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -68,7 +70,7 @@ func ParseLLMResult(raw string) (LLMResult, error) {
 	if strings.HasPrefix(s, "```") {
 		nl := strings.IndexByte(s, '\n')
 		if nl < 0 || !strings.HasSuffix(s, "```") {
-			return LLMResult{}, fmt.Errorf("risk-agent.json: hàng rào ``` không hợp lệ")
+			return LLMResult{}, errors.New(i18n.T("risk-agent.json: hàng rào ``` không hợp lệ"))
 		}
 		s = strings.TrimSpace(strings.TrimSuffix(s[nl+1:], "```"))
 	}
@@ -76,10 +78,10 @@ func ParseLLMResult(raw string) (LLMResult, error) {
 	dec.DisallowUnknownFields()
 	var r LLMResult
 	if err := dec.Decode(&r); err != nil {
-		return LLMResult{}, fmt.Errorf("risk-agent.json không phải JSON hợp lệ: %w", err)
+		return LLMResult{}, fmt.Errorf(i18n.T("risk-agent.json không phải JSON hợp lệ: %w"), err)
 	}
 	if _, err := dec.Token(); err != io.EOF {
-		return LLMResult{}, fmt.Errorf("risk-agent.json có nội dung thừa sau JSON")
+		return LLMResult{}, errors.New(i18n.T("risk-agent.json có nội dung thừa sau JSON"))
 	}
 	return r, nil
 }
@@ -104,14 +106,14 @@ func normText(s string) string {
 // ValidateLLMResult trả danh sách lỗi (rỗng nghĩa là hợp lệ).
 func ValidateLLMResult(p RiskPolicy, r LLMResult, hash string, files []InputFile) []string {
 	var errs []string
-	add := func(f string, a ...any) { errs = append(errs, fmt.Sprintf(f, a...)) }
+	add := func(msg string) { errs = append(errs, msg) }
 
 	if r.InputsHash != hash {
-		add("inputsHash không khớp đầu vào hiện tại (kết quả đã cũ, cần chạy lại)")
+		add(i18n.T("inputsHash không khớp đầu vào hiện tại (kết quả đã cũ, cần chạy lại)"))
 	}
 	levelOK := p.Rank(r.Level) >= 0
 	if !levelOK {
-		add("mức '%s' không có trong thang %v", r.Level, p.Levels)
+		add(i18n.Tf("mức '%s' không có trong thang %v", r.Level, p.Levels))
 	}
 
 	byID := map[string]RiskRule{}
@@ -121,11 +123,11 @@ func ValidateLLMResult(p RiskPolicy, r LLMResult, hash string, files []InputFile
 	seen := map[string]bool{}
 	see := func(id string) bool {
 		if _, ok := byID[id]; !ok {
-			add("luật '%s' không có trong chính sách", id)
+			add(i18n.Tf("luật '%s' không có trong chính sách", id))
 			return false
 		}
 		if seen[id] {
-			add("luật %s xuất hiện hai lần", id)
+			add(i18n.Tf("luật %s xuất hiện hai lần", id))
 			return false
 		}
 		seen[id] = true
@@ -142,12 +144,12 @@ func ValidateLLMResult(p RiskPolicy, r LLMResult, hash string, files []InputFile
 		}
 		text, ok := norm[m.File]
 		if !ok {
-			add("%s: file '%s' không thuộc đầu vào", m.Rule, m.File)
+			add(i18n.Tf("%s: file '%s' không thuộc đầu vào", m.Rule, m.File))
 			continue
 		}
 		ev := normText(m.Evidence)
 		if ev == "" || !strings.Contains(text, ev) {
-			add("%s: không thấy câu trích trong %s", m.Rule, m.File)
+			add(i18n.Tf("%s: không thấy câu trích trong %s", m.Rule, m.File))
 		}
 	}
 	for _, n := range r.NotMatched {
@@ -155,26 +157,26 @@ func ValidateLLMResult(p RiskPolicy, r LLMResult, hash string, files []InputFile
 	}
 	for _, rule := range p.Rules {
 		if rule.Enabled && !seen[rule.ID] {
-			add("thiếu luật %s: phải nằm trong matched hoặc notMatched", rule.ID)
+			add(i18n.Tf("thiếu luật %s: phải nằm trong matched hoặc notMatched", rule.ID))
 		}
 	}
 
 	if levelOK {
 		rl := RuleLevel(p, r)
 		if r.Level != rl && r.Override == nil {
-			add("mức %s khác mức tính từ luật (%s) nhưng thiếu override", r.Level, rl)
+			add(i18n.Tf("mức %s khác mức tính từ luật (%s) nhưng thiếu override", r.Level, rl))
 		}
 		if r.Override != nil {
 			if r.Override.From != rl {
-				add("override.from '%s' phải bằng mức tính từ luật (%s)", r.Override.From, rl)
+				add(i18n.Tf("override.from '%s' phải bằng mức tính từ luật (%s)", r.Override.From, rl))
 			}
 			if strings.TrimSpace(r.Override.Reason) == "" {
-				add("override.reason rỗng")
+				add(i18n.T("override.reason rỗng"))
 			}
 		}
 	}
 	if strings.TrimSpace(r.Summary) == "" {
-		add("summary rỗng")
+		add(i18n.T("summary rỗng"))
 	}
 	return errs
 }

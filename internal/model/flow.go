@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"aisdlc/internal/i18n"
 )
 
 // Flow là luồng của tính năng; YAML ghi chữ hoa như Jackson ghi enum.
@@ -21,7 +23,7 @@ func parseFlow(s string) (Flow, error) {
 	case FlowFull, FlowLite:
 		return v, nil
 	}
-	return "", fmt.Errorf("Flow không hợp lệ: %q (chỉ nhận FULL, LITE)", s)
+	return "", fmt.Errorf(i18n.T("Flow không hợp lệ: %q (chỉ nhận FULL, LITE)"), s)
 }
 
 // UnmarshalYAML nhận FULL/LITE không phân biệt hoa thường.
@@ -32,7 +34,7 @@ func (f *Flow) UnmarshalYAML(n *yaml.Node) error {
 	}
 	v, err := parseFlow(s)
 	if err != nil {
-		return fmt.Errorf("dòng %d: %v", n.Line, err)
+		return fmt.Errorf(i18n.T("dòng %d: %v"), n.Line, err)
 	}
 	*f = v
 	return nil

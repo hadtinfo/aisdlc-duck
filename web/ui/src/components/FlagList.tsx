@@ -1,13 +1,15 @@
 import { flagTitle, flagTone, sortFlags } from "../reviewModel";
 import type { ReviewFlag } from "../types";
+import { useT } from "../i18n";
 
 /** Cờ của review card, nặng nhất lên đầu; mỗi cờ có viền trái theo mức. */
 export function FlagList({ flags }: { flags: ReviewFlag[] }) {
+  const { t } = useT();
   const rows = sortFlags(flags);
   return (
     <section className="panel-sec">
-      <h3>Cờ đỏ <span className="src">tự động</span></h3>
-      {rows.length === 0 ? <p className="muted">Không có cờ</p> : (
+      <h3>{t("flags.title")} <span className="src">{t("flags.auto")}</span></h3>
+      {rows.length === 0 ? <p className="muted">{t("flags.none")}</p> : (
         <ul className="flags">
           {rows.map((f, i) => (
             <li key={`${f.code}-${f.level}-${i}`} className={`flag ${flagTone(f.level)}`}>

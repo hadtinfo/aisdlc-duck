@@ -364,7 +364,7 @@ func TestEvalCaseMissingFromResultsFailsCasesAllPass(t *testing.T) {
 	c := hardOf(t, r, "CASES_ALL_PASS")
 	eq(t, "cases", c.Passed, false)
 	wantContains(t, "detail", c.Detail, "1/2", "C2")
-	wantContains(t, "md", e.read("aisdlc/features/PAY-123/eval/report.md"), harnessapi.NoRow)
+	wantContains(t, "md", e.read("aisdlc/features/PAY-123/eval/report.md"), harnessapi.NoRowText())
 }
 
 func TestEvalEmptyResultsFailCasesAllPass(t *testing.T) {

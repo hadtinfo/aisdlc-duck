@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -59,7 +60,7 @@ func (s *ScopeExtras) load() ([]ScopeEntry, error) {
 	}
 	var all []ScopeEntry
 	if err := json.Unmarshal(b, &all); err != nil {
-		return nil, &corruptError{"scope-extra.json hỏng: " + s.file, err}
+		return nil, &corruptError{i18n.Tf("scope-extra.json hỏng: %s", s.file), err}
 	}
 	if all == nil {
 		all = []ScopeEntry{}

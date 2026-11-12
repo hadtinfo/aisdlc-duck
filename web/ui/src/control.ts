@@ -1,4 +1,5 @@
 /** Hàm thuần cho điều khiển (màn C) và lệnh bước/file (trang B). */
+import { t } from "./i18n";
 import type { ControlAction, FeatureEvent, StepData } from "./types";
 
 export type ActionStatus = "PENDING" | "APPLIED" | "STALE" | "EXPIRED";
@@ -6,10 +7,10 @@ export const INSTRUCTION_MAX = 2000;
 
 export function actionLabel(kind: "ACCEPT_STEP" | "ALLOW_SCOPE", status: ActionStatus, reason?: string | null): string {
   switch (status) {
-    case "PENDING": return kind === "ACCEPT_STEP" ? "Đã accept, chờ áp dụng" : "Đã cho phép, chờ áp dụng";
-    case "APPLIED": return "Đã áp dụng";
-    case "STALE": return reason ? `Hết hiệu lực: ${reason} — bấm lại` : "Hết hiệu lực — bấm lại";
-    case "EXPIRED": return "Hết hạn (7 ngày) — bấm lại";
+    case "PENDING": return kind === "ACCEPT_STEP" ? t("action.acceptPending") : t("action.allowPending");
+    case "APPLIED": return t("action.applied");
+    case "STALE": return reason ? t("action.staleReason", { reason }) : t("action.stale");
+    case "EXPIRED": return t("action.expired");
   }
 }
 
@@ -41,9 +42,9 @@ export function latestAction(actions: ControlAction[], kind: string, step: strin
 
 export function feedbackLabel(s: "RELATED_CHANGED" | "NO_CHANGE_SEEN" | "UNMATCHED"): string {
   switch (s) {
-    case "RELATED_CHANGED": return "có thay đổi liên quan";
-    case "NO_CHANGE_SEEN": return "chưa thấy thay đổi";
-    case "UNMATCHED": return "không rõ mục nào";
+    case "RELATED_CHANGED": return t("feedback.relatedChanged");
+    case "NO_CHANGE_SEEN": return t("feedback.noChange");
+    case "UNMATCHED": return t("feedback.unmatched");
   }
 }
 

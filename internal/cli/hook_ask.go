@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/policy"
 	"aisdlc/internal/review"
@@ -23,29 +24,31 @@ var (
 	valueOptions = map[string]bool{"--feature": true, "-f": true, "-m": true, "--message": true, "--reason": true}
 )
 
-const indirectDevMsg = "Lệnh chỉ dev (approve/reject/reopen/scope allow/step accept/risk set) phải được gọi thẳng: " +
-	"gọi thẳng `aisdlc <lệnh>` để hiện hộp xác nhận (một lệnh đơn, không qua biến, `bash -c`, " +
-	"`eval`, đường dẫn khác hay ghép với lệnh khác)."
+// indirectDevMsg: lệnh chỉ dev gọi gián tiếp (qua biến, bash -c, eval…).
+func indirectDevMsg() string {
+	return i18n.T("Lệnh chỉ dev (approve/reject/reopen/scope allow/step accept/risk set) phải được gọi thẳng: " +
+		"gọi thẳng `aisdlc <lệnh>` để hiện hộp xác nhận (một lệnh đơn, không qua biến, `bash -c`, " +
+		"`eval`, đường dẫn khác hay ghép với lệnh khác).")
+}
 
 // devOnly: chỉ nhận lệnh đơn `aisdlc <lệnh>` (dạng gián tiếp → deny); chế độ quyền không hỏi người → deny; còn lại
 // ghi phiếu một lần (hạn policy.GrantTTL) rồi trả ask để Claude Code hiện hộp Yes/No cho dev.
 func (h *hook) devOnly(root string, in *hookInput, command string) (preDecision, bool, error) {
 	c, ok := policy.ParseDevCommand(command)
 	if !ok {
-		return preDecision{"deny", indirectDevMsg}, true, nil
+		return preDecision{"deny", indirectDevMsg()}, true, nil
 	}
 	mode, hasMode := in.json["permission_mode"].(string)
 	if !hasMode || !askModes[mode] {
 		shown := mode
 		if !hasMode {
-			shown = "không rõ"
+			shown = i18n.T("không rõ")
 		}
-		return preDecision{"deny", "Claude Code đang ở chế độ quyền không hỏi người (permission_mode: " + shown +
-			"), nên không hiện được hộp xác nhận: dev duyệt ở terminal riêng hoặc web."}, true, nil
+		return preDecision{"deny", i18n.Tf("Claude Code đang ở chế độ quyền không hỏi người (permission_mode: %s), nên không hiện được hộp xác nhận: dev duyệt ở terminal riêng hoặc web.", shown)}, true, nil
 	}
 	session := h.ctx.SessionID()
 	if session == "" {
-		return preDecision{"deny", "Không có session_id trong input hook: dev duyệt ở terminal riêng hoặc web."},
+		return preDecision{"deny", i18n.T("Không có session_id trong input hook: dev duyệt ở terminal riêng hoặc web.")},
 			true, nil
 	}
 	key, explicit, err := explicitFeature(c.Args)
@@ -62,8 +65,7 @@ func (h *hook) devOnly(root string, in *hookInput, command string) (preDecision,
 		}
 	}
 	if key == "" {
-		return preDecision{"deny", "Không xác định được tính năng của lệnh này trong session; thêm " +
-			"`--feature <KEY>` vào lệnh."}, true, nil
+		return preDecision{"deny", i18n.T("Không xác định được tính năng của lệnh này trong session; thêm `--feature <KEY>` vào lệnh.")}, true, nil
 	}
 	f, err := h.ctx.FeatureAt(root, key)
 	if err != nil {
@@ -74,10 +76,10 @@ func (h *hook) devOnly(root string, in *hookInput, command string) (preDecision,
 	if gateVerbs[c.Verb] {
 		var ok bool
 		if g, ok = gateArg(c.Args); !ok {
-			return preDecision{"deny", "Không đọc được tên cổng trong lệnh `aisdlc " + c.Key() + "`."}, true, nil
+			return preDecision{"deny", i18n.Tf("Không đọc được tên cổng trong lệnh `aisdlc %s`.", c.Key())}, true, nil
 		}
 		if !slices.Contains(gate.Sequence(f.Flow()), g) {
-			return preDecision{"deny", "Cổng " + string(g) + " không thuộc luồng " + string(f.Flow()) + "."}, true, nil
+			return preDecision{"deny", i18n.Tf("Cổng %s không thuộc luồng %s.", string(g), string(f.Flow()))}, true, nil
 		}
 		if hash, err = f.Gates.CurrentHash(g); err != nil {
 			return preDecision{}, false, err
@@ -142,27 +144,27 @@ func (h *hook) askReason(f *Feature, c policy.DevCommand, g gate.Gate, hash stri
 	rest := positional(c.Args)
 	switch c.Verb {
 	case "approve":
-		return k + "Duyệt cổng " + string(g) + at + h.flagCounts(f, g) + ". Bấm Yes nếu chính bạn muốn duyệt."
+		return i18n.Tf("%sDuyệt cổng %s%s%s. Bấm Yes nếu chính bạn muốn duyệt.", k, string(g), at, h.flagCounts(f, g))
 	case "reject":
 		msg := ""
 		if m, ok := optionValue(c.Args, "-m", "--message"); ok {
-			msg = " — góp ý: " + m
+			msg = i18n.Tf(" — góp ý: %s", m)
 		}
-		return k + "Trả lại cổng " + string(g) + at + msg + ". Bấm Yes nếu chính bạn muốn trả lại."
+		return i18n.Tf("%sTrả lại cổng %s%s%s. Bấm Yes nếu chính bạn muốn trả lại.", k, string(g), at, msg)
 	case "reopen":
-		return k + "Mở lại cổng " + string(g) + at + ". Bấm Yes nếu chính bạn muốn mở lại."
+		return i18n.Tf("%sMở lại cổng %s%s. Bấm Yes nếu chính bạn muốn mở lại.", k, string(g), at)
 	case "step accept":
-		return k + "Chấp nhận bước " + rest + ". Bấm Yes nếu chính bạn muốn chấp nhận."
+		return i18n.Tf("%sChấp nhận bước %s. Bấm Yes nếu chính bạn muốn chấp nhận.", k, rest)
 	case "scope allow":
-		return k + "Cho phép sửa ngoài phạm vi: " + rest + ". Bấm Yes nếu chính bạn muốn cho phép."
+		return i18n.Tf("%sCho phép sửa ngoài phạm vi: %s. Bấm Yes nếu chính bạn muốn cho phép.", k, rest)
 	case "risk set":
 		why := ""
 		if m, ok := optionValue(c.Args, "--reason"); ok {
-			why = " (lý do: " + m + ")"
+			why = i18n.Tf(" (lý do: %s)", m)
 		}
-		return k + "Đặt mức rủi ro " + rest + why + ". Bấm Yes nếu chính bạn muốn đổi."
+		return i18n.Tf("%sĐặt mức rủi ro %s%s. Bấm Yes nếu chính bạn muốn đổi.", k, rest, why)
 	}
-	return k + "aisdlc " + c.Key() + ". Bấm Yes nếu chính bạn muốn chạy lệnh này."
+	return i18n.Tf("%saisdlc %s. Bấm Yes nếu chính bạn muốn chạy lệnh này.", k, c.Key())
 }
 
 // flagCounts: " — HIGH 1, WARN 2" theo review card; dựng thẻ lỗi (kể cả panic) thì rỗng, hộp xác nhận vẫn hiện.

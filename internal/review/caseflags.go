@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/spec"
 )
 
@@ -60,8 +61,8 @@ func ValuesNotInBrd(cases spec.CasesSpec, brdMarkdown string, valueFields []stri
 		parts = append(parts, id+": "+strings.Join(vs, ", "))
 	}
 	return []ReviewFlag{NewFlag("CASE_VALUE_NOT_IN_BRD", WARN,
-		"Giá trị trong case không thấy trong BRD ("+strings.Join(parts, "; ")+")",
-		"Kiểm tra số liệu của case có đúng với BRD không.", ids)}
+		i18n.Tf("Giá trị trong case không thấy trong BRD (%s)", strings.Join(parts, "; ")),
+		i18n.T("Kiểm tra số liệu của case có đúng với BRD không."), ids)}
 }
 
 // containsStandalone là (?<!\d)v(?!\d) của Java: v xuất hiện mà hai bên không có chữ số.
@@ -173,8 +174,8 @@ func RuleIDs(brd BrdDoc) []ReviewFlag {
 	}
 	sort.Strings(noID)
 	return []ReviewFlag{NewFlag("BRD_RULE_NO_ID", WARN,
-		strconv.Itoa(len(noID))+" quy tắc nghiệp vụ không có ID BR-n nên không đối chiếu được với case",
-		"Đánh ID dạng \"- BR-1: ...\" cho mỗi quy tắc.", noID)}
+		i18n.Tf("%d quy tắc nghiệp vụ không có ID BR-n nên không đối chiếu được với case", len(noID)),
+		i18n.T("Đánh ID dạng \"- BR-1: ...\" cho mỗi quy tắc."), noID)}
 }
 
 // RuleCoverage sinh CASES_RULE_UNCOVERED (quy tắc chưa có case) và CASES_RULE_UNKNOWN (case trỏ tới BR-n không có trong BRD).
@@ -210,13 +211,13 @@ func RuleCoverage(brd BrdDoc, cases spec.CasesSpec) []ReviewFlag {
 	natural(unknown)
 	if len(uncovered) > 0 {
 		out = append(out, NewFlag("CASES_RULE_UNCOVERED", WARN,
-			"Quy tắc chưa có case nào kiểm: "+strings.Join(uncovered, ", "),
-			"Thêm case có rules: [BR-n] hoặc bỏ quy tắc không cần kiểm.", uncovered))
+			i18n.Tf("Quy tắc chưa có case nào kiểm: %s", strings.Join(uncovered, ", ")),
+			i18n.T("Thêm case có rules: [BR-n] hoặc bỏ quy tắc không cần kiểm."), uncovered))
 	}
 	if len(unknown) > 0 && len(known) > 0 {
 		out = append(out, NewFlag("CASES_RULE_UNKNOWN", WARN,
-			"Case trỏ tới quy tắc không có trong BRD: "+strings.Join(unknown, ", "),
-			"Sửa ID trong rules: của case hoặc thêm quy tắc vào BRD.", unknown))
+			i18n.Tf("Case trỏ tới quy tắc không có trong BRD: %s", strings.Join(unknown, ", ")),
+			i18n.T("Sửa ID trong rules: của case hoặc thêm quy tắc vào BRD."), unknown))
 	}
 	return out
 }

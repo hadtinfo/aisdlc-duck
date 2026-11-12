@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/run"
 	"aisdlc/internal/spec"
@@ -21,7 +22,7 @@ const webSuffix = " (web)"
 func newStepCmd(ctx *Context) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "step",
-		Short: "Làm từng bước Sx: start, finish, accept (accept chỉ dev).",
+		Short: i18n.T("Làm từng bước Sx: start, finish, accept (accept chỉ dev)."),
 		Args:  cobra.NoArgs,
 		RunE: Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
 			fmt.Fprint(ctx.Err(), cmd.UsageString())
@@ -42,9 +43,9 @@ func newStepCmd(ctx *Context) *cobra.Command {
 		return sc
 	}
 	c.AddCommand(
-		sub("start", "Bắt đầu (hoặc làm tiếp) bước Sx.", stepStart),
-		sub("finish", "Chạy case của các bước <= Sx, kiểm phạm vi và ngân sách.", stepFinish),
-		sub("accept", "Chỉ dev: chấp nhận bước Sx đang chờ duyệt.", stepAccept),
+		sub("start", i18n.T("Bắt đầu (hoặc làm tiếp) bước Sx."), stepStart),
+		sub("finish", i18n.T("Chạy case của các bước <= Sx, kiểm phạm vi và ngân sách."), stepFinish),
+		sub("accept", i18n.T("Chỉ dev: chấp nhận bước Sx đang chờ duyệt."), stepAccept),
 	)
 	return c
 }
@@ -62,10 +63,10 @@ func stepStart(ctx *Context, f *Feature, id string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	ctx.Println("Bắt đầu bước " + id + " — " + s.Title)
-	ctx.Println("Phạm vi: " + strings.Join(globs, ", "))
-	ctx.Println("Ngân sách: " + budgetText(s.Budget))
-	ctx.Println("Case của bước:")
+	ctx.Println(i18n.Tf("Bắt đầu bước %s — %s", id, s.Title))
+	ctx.Println(i18n.Tf("Phạm vi: %s", strings.Join(globs, ", ")))
+	ctx.Println(i18n.Tf("Ngân sách: %s", budgetText(s.Budget)))
+	ctx.Println(i18n.T("Case của bước:"))
 	if cs, ok := f.Cases(); ok {
 		for _, c := range cs.Cases {
 			if c.Step == id {
@@ -73,7 +74,7 @@ func stepStart(ctx *Context, f *Feature, id string) (int, error) {
 			}
 		}
 	}
-	ctx.Println("Chỉ sửa file trong phạm vi. Xong thì chạy `aisdlc step finish " + id + "`.")
+	ctx.Println(i18n.Tf("Chỉ sửa file trong phạm vi. Xong thì chạy `aisdlc step finish %s`.", id))
 	ctx.AfterCommand(f, "step start "+id)
 	return ExitOK, nil
 }
@@ -91,7 +92,7 @@ func stepFinish(ctx *Context, f *Feature, id string) (int, error) {
 	if _, err := reconcile(ctx, f); err != nil {
 		return 0, err
 	}
-	ctx.Println("Đang chạy case của " + strings.Join(upTo, ", ") + " qua harness...")
+	ctx.Println(i18n.Tf("Đang chạy case của %s qua harness...", strings.Join(upTo, ", ")))
 	var res run.CaseRunResult
 	if err := ctx.interruptible(func() (err error) {
 		res, err = ctx.Runner(f.Root, f.Config).RunCases(f.Key, upTo, "cases")
@@ -111,7 +112,7 @@ func stepFinish(ctx *Context, f *Feature, id string) (int, error) {
 		}
 	}
 	if len(ch.OutOfScope) > 0 {
-		ctx.Println("File ngoài phạm vi: dev chấp nhận bằng `aisdlc scope allow <path>`, hoặc agent hoàn tác.")
+		ctx.Println(i18n.T("File ngoài phạm vi: dev chấp nhận bằng `aisdlc scope allow <path>`, hoặc agent hoàn tác."))
 	}
 	passed := len(ch.CasesNotPassed) == 0 && len(ch.OutOfScope) == 0
 	level := ""
@@ -124,10 +125,10 @@ func stepFinish(ctx *Context, f *Feature, id string) (int, error) {
 		if _, err := steps.Accept(id, gate.ApprovalAuto); err != nil {
 			return 0, err
 		}
-		ctx.Println("Đã chấp nhận bước " + id + ": tự duyệt (mức " + level + ").")
+		ctx.Println(i18n.Tf("Đã chấp nhận bước %s: tự duyệt (mức %s).", id, level))
 		nextStep(ctx, f, id)
 	} else {
-		ctx.Println("Dừng lại. Dev xem rồi chạy `aisdlc step accept " + id + "` ở terminal của mình.")
+		ctx.Println(i18n.Tf("Dừng lại. Dev xem rồi chạy `aisdlc step accept %s` ở terminal của mình.", id))
 	}
 	ctx.AfterCommand(f, "step finish "+id)
 	if passed {
@@ -158,9 +159,9 @@ func nextStep(ctx *Context, f *Feature, id string) {
 	specs := f.Specs()
 	i := slices.IndexFunc(specs, func(s spec.StepSpec) bool { return s.ID == id })
 	if i >= 0 && i+1 < len(specs) {
-		ctx.Println("Bước kế: `aisdlc step start " + specs[i+1].ID + "`.")
+		ctx.Println(i18n.Tf("Bước kế: `aisdlc step start %s`.", specs[i+1].ID))
 	} else {
-		ctx.Println("Đã xong mọi bước.")
+		ctx.Println(i18n.T("Đã xong mọi bước."))
 	}
 }
 
@@ -175,11 +176,11 @@ func stepAccept(ctx *Context, f *Feature, id string) (int, error) {
 			continue
 		}
 		if x.AcceptedBy == gate.ApprovalAuto {
-			ctx.Println("Bước " + id + " đã được tự duyệt theo mức rủi ro.")
+			ctx.Println(i18n.Tf("Bước %s đã được tự duyệt theo mức rủi ro.", id))
 			return ExitOK, nil
 		}
 		if by, ok := strings.CutSuffix(x.AcceptedBy, webSuffix); ok {
-			ctx.Println("Bước " + id + " đã được accept từ web (" + by + ").")
+			ctx.Println(i18n.Tf("Bước %s đã được accept từ web (%s).", id, by))
 			return ExitOK, nil
 		}
 		break
@@ -188,7 +189,7 @@ func stepAccept(ctx *Context, f *Feature, id string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	ctx.Println("Tính năng " + f.Key.String() + " — bước " + id)
+	ctx.Println(i18n.Tf("Tính năng %s — bước %s", f.Key.String(), id))
 	if rec.Check != nil {
 		ctx.Println(stepCheckSummary(*rec.Check))
 	}
@@ -202,7 +203,7 @@ func stepAccept(ctx *Context, f *Feature, id string) (int, error) {
 	if _, err := steps.Accept(id, approver); err != nil {
 		return 0, err
 	}
-	ctx.Println("Đã chấp nhận bước " + id + " (" + approver + ").")
+	ctx.Println(i18n.Tf("Đã chấp nhận bước %s (%s).", id, approver))
 	nextStep(ctx, f, id)
 	ctx.AfterCommand(f, "step accept "+id)
 	return ExitOK, nil
@@ -210,9 +211,9 @@ func stepAccept(ctx *Context, f *Feature, id string) (int, error) {
 
 func budgetText(b *spec.Budget) string {
 	if b == nil {
-		return "chưa khai báo"
+		return i18n.T("chưa khai báo")
 	}
-	return strconv.Itoa(b.Files) + " file / " + strconv.Itoa(b.Lines) + " dòng"
+	return i18n.Tf("%s file / %s dòng", strconv.Itoa(b.Files), strconv.Itoa(b.Lines))
 }
 
 func caseKind(c spec.CaseSpec) string {
@@ -228,7 +229,7 @@ func specOf(f *Feature, id string) (spec.StepSpec, error) {
 			return s, nil
 		}
 	}
-	return spec.StepSpec{}, abort(2, "Không có bước "+id+" trong thiết kế.")
+	return spec.StepSpec{}, abort(2, i18n.Tf("Không có bước %s trong thiết kế.", id))
 }
 
 // stepsUpTo là các bước từ đầu đến id (gồm id).
@@ -258,5 +259,5 @@ func requireStepStatus(steps *step.Service, id string, status step.StepStatus) (
 		}
 		cur = recs[i].Status
 	}
-	return step.StepRecord{}, abort(2, "Bước "+id+" đang ở trạng thái "+string(cur)+", cần "+string(status)+".")
+	return step.StepRecord{}, abort(2, i18n.Tf("Bước %s đang ở trạng thái %s, cần %s.", id, string(cur), string(status)))
 }

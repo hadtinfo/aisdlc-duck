@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"aisdlc/internal/web/httpx"
 )
 
 const maxSessionID = 100
@@ -37,7 +39,7 @@ func requireVersion(v any) error {
 		return nil
 	}
 	if i, ok := isInt(v); !ok || (i != 1 && i != 2) {
-		return badRequest("version phải là 1 hoặc 2")
+		return badRequest(httpx.T("version phải là 1 hoặc 2"))
 	}
 	return nil
 }
@@ -50,7 +52,7 @@ func sessionID(e any) (*string, error) {
 	if s, ok := n.(string); ok && utf16Len(s) <= maxSessionID {
 		return &s, nil
 	}
-	return nil, badRequest("sessionId phải là chuỗi tối đa " + strconv.Itoa(maxSessionID) + " ký tự")
+	return nil, badRequest(httpx.Tf("sessionId phải là chuỗi tối đa %d ký tự", maxSessionID))
 }
 
 // AppendEvents ghi một lô sự kiện (EventStore.append). Lô sai thì trả lỗi 400 và không ghi gì; trả số sự kiện đã ghi.
@@ -60,7 +62,7 @@ func (s *Service) AppendEvents(ctx context.Context, login string, batch any) (in
 	}
 	events, ok := path(batch, "events").([]any)
 	if !ok {
-		return 0, badRequest("Thiếu events")
+		return 0, badRequest(httpx.T("Thiếu events"))
 	}
 	if err := requireVersion(path(batch, "version")); err != nil {
 		return 0, err
@@ -74,7 +76,7 @@ func (s *Service) AppendEvents(ctx context.Context, login string, batch any) (in
 	for _, e := range events {
 		typ := asText(path(e, "type"))
 		if !eventTypes[typ] {
-			return 0, badRequest("type không hợp lệ: " + typ)
+			return 0, badRequest(httpx.Tf("type không hợp lệ: %s", typ))
 		}
 		if err := requireText(path(e, "at"), "events[].at"); err != nil {
 			return 0, err

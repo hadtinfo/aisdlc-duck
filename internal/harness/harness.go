@@ -2,11 +2,12 @@ package harness
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
-	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"aisdlc/internal/harness/stub"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/run"
@@ -24,15 +26,16 @@ import (
 )
 
 const (
-	exitHarness     = 2
-	cleanupTimeout  = 30 * time.Second
-	healthInterval  = 200 * time.Millisecond
-	serviceLogTail  = 50
-	buildFailed     = "build lỗi"
-	noDatabase      = "chưa cấu hình database (service.env.databaseUrl)"
-	harnessRowID    = "HARNESS"
-	checksLoadError = "không đọc được bất biến (design.yaml/cases.yaml/risk.yaml): "
+	exitHarness    = 2
+	cleanupTimeout = 30 * time.Second
+	healthInterval = 200 * time.Millisecond
+	serviceLogTail = 50
+	harnessRowID   = "HARNESS"
 )
+
+func buildFailed() string { return i18n.T("build lỗi") }
+
+func noDatabase() string { return i18n.T("chưa cấu hình database (service.env.databaseUrl)") }
 
 // Infra khởi động hạ tầng của một lần chạy; test tiêm lỗi qua đây. stop phải dọn được cả khi ctx của lần chạy đã hủy.
 type Infra interface {
@@ -99,7 +102,7 @@ func (h *Harness) Verify(ctx context.Context, key model.FeatureKey, out string) 
 		vr.Unit = u
 		s.raw(u.Output)
 		if uerr != nil && s.ctx.Err() == nil {
-			errs = append(errs, "không chạy được unit test: "+uerr.Error())
+			errs = append(errs, i18n.Tf("không chạy được unit test: %s", uerr.Error()))
 			s.logf("%s", errs[len(errs)-1])
 		}
 	}
@@ -119,10 +122,10 @@ func (h *Harness) Verify(ctx context.Context, key model.FeatureKey, out string) 
 	case vr.TimedOut:
 		vr.Coverage = lang.Coverage{NA: s.stopMessage()}
 	case !built:
-		vr.Coverage = lang.Coverage{NA: buildFailed}
+		vr.Coverage = lang.Coverage{NA: buildFailed()}
 	case r.started && !r.graceful:
 		// spec §3: không tắt êm thì coverage N/A, không trả số chỉ từ unit test
-		vr.Coverage = lang.Coverage{NA: r.killed + ": không có coverage lúc chạy case"}
+		vr.Coverage = lang.Coverage{NA: i18n.Tf("%s: không có coverage lúc chạy case", r.killed)}
 	default:
 		vr.Coverage = s.coverage(vr.Unit.Profile, s.coverDir())
 	}
@@ -169,7 +172,7 @@ func (h *Harness) open(ctx context.Context, out string) (*session, error) {
 // stopMessage: thông điệp khi s.ctx đã dừng — hủy (Ctrl-C, ctx của lệnh bị hủy) khác quá timeoutMinutes.
 func (s *session) stopMessage() string {
 	if errors.Is(s.ctx.Err(), context.Canceled) {
-		return CanceledMessage
+		return Canceled()
 	}
 	return TimeoutMessage(s.h.Config.TimeoutMinutes)
 }
@@ -205,7 +208,7 @@ func (s *session) coverDir() string { return filepath.Join(s.out, "cover") }
 func (s *session) coverage(unitProfile, coverDir string) lang.Coverage {
 	c, err := s.h.Runtime.Coverage(s.ctx, s.h.Root, s.out, unitProfile, coverDir)
 	if err != nil {
-		return lang.Coverage{NA: "không tính được coverage: " + err.Error()}
+		return lang.Coverage{NA: i18n.Tf("không tính được coverage: %s", err.Error())}
 	}
 	return c
 }
@@ -250,8 +253,8 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 	if merr != nil {
 		mode = o.Mode
 	}
-	runID := fmt.Sprintf("aisdlc-%s-%08x", s.now().Format("20060102t150405"), rand.Uint32())
-	s.logf("feature %s, mode %s, bước %v, run %s", o.Feature, mode, o.Steps, runID)
+	runID := fmt.Sprintf("aisdlc-%s-%08x", s.now().Format("20060102t150405"), randUint32())
+	s.logf(i18n.T("feature %s, mode %s, bước %v, run %s"), o.Feature, mode, o.Steps, runID)
 	paths := model.FeaturePaths{RepoRoot: h.Root, Key: o.Feature}
 	svc := h.Config.Service
 
@@ -321,10 +324,10 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 	if !check {
 		var err error
 		if cs, err = spec.ReadCases(paths.Cases()); err != nil {
-			return failRow("không đọc được cases.yaml: " + err.Error())
+			return failRow(i18n.Tf("không đọc được cases.yaml: %s", err.Error()))
 		}
 		selected = Select(cs.Cases, o.Steps)
-		s.logf("%d case được chọn", len(selected))
+		s.logf(i18n.T("%d case được chọn"), len(selected))
 	}
 
 	// 3. build
@@ -336,11 +339,11 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 			pb = &prebuilt{b, err}
 		}
 		if pb.err != nil {
-			return fail("không build được: " + pb.err.Error())
+			return fail(i18n.Tf("không build được: %s", pb.err.Error()))
 		}
 		if !pb.res.OK {
 			s.raw(pb.res.Output)
-			return fail(buildFailed)
+			return fail(buildFailed())
 		}
 		binary = pb.res.Binary
 	}
@@ -348,27 +351,27 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 	// 4. hạ tầng
 	var dbURL, brokers string
 	if svc.Env.DatabaseURL != "" || check {
-		s.logf("khởi động Postgres %s", svc.Postgres.Image)
+		s.logf(i18n.T("khởi động Postgres %s"), svc.Postgres.Image)
 		url, stop, err := s.infra().Postgres(s.ctx, svc.Postgres.Image, runID)
 		if err != nil {
-			return fail("không khởi động được Postgres: " + err.Error())
+			return fail(i18n.Tf("không khởi động được Postgres: %s", err.Error()))
 		}
 		cleanups = append(cleanups, func(ctx context.Context) {
 			if err := stop(ctx); err != nil {
-				s.logf("dừng Postgres: %v", err)
+				s.logf(i18n.T("dừng Postgres: %v"), err)
 			}
 		})
 		dbURL = url
 	}
 	if svc.Env.KafkaBrokers != "" && !check {
-		s.logf("khởi động Kafka %s", svc.Kafka.Image)
+		s.logf(i18n.T("khởi động Kafka %s"), svc.Kafka.Image)
 		b, stop, err := s.infra().Kafka(s.ctx, svc.Kafka.Image, svc.Kafka.Topics, runID)
 		if err != nil {
-			return fail("không khởi động được Kafka: " + err.Error())
+			return fail(i18n.Tf("không khởi động được Kafka: %s", err.Error()))
 		}
 		cleanups = append(cleanups, func(ctx context.Context) {
 			if err := stop(ctx); err != nil {
-				s.logf("dừng Kafka: %v", err)
+				s.logf(i18n.T("dừng Kafka: %v"), err)
 			}
 		})
 		brokers = b
@@ -398,21 +401,21 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 	if check {
 		snap, err := DumpSchema(s.ctx, dbURL)
 		if err != nil {
-			return fail("không dump được schema: " + err.Error())
+			return fail(i18n.Tf("không dump được schema: %s", err.Error()))
 		}
 		schema = &snap
-		return finish(NotRun)
+		return finish(NotRunText())
 	}
 
 	// 7. stub và env
 	st, err := stub.Start()
 	if err != nil {
-		return fail("không khởi động được stub server: " + err.Error())
+		return fail(i18n.Tf("không khởi động được stub server: %s", err.Error()))
 	}
 	cleanups = append(cleanups, func(context.Context) { st.Close() })
 	port, err := freePort()
 	if err != nil {
-		return fail("không lấy được cổng trống: " + err.Error())
+		return fail(i18n.Tf("không lấy được cổng trống: %s", err.Error()))
 	}
 	env := map[string]string{}
 	for k, v := range svc.ExtraEnv {
@@ -431,7 +434,7 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 
 	// 8. khởi động dịch vụ, chờ healthPath
 	serviceLog := filepath.Join(s.out, "service.log")
-	s.logf("khởi động dịch vụ ở cổng %d", port)
+	s.logf(i18n.T("khởi động dịch vụ ở cổng %d"), port)
 	proc, err := h.Runtime.Start(s.ctx, binary, env, s.coverDir(), serviceLog)
 	if err != nil {
 		s.tail(serviceLog)
@@ -448,7 +451,7 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		oc.graceful = proc.Stop(time.Duration(svc.ShutdownTimeoutSeconds) * time.Second)
 		untrack()
 		if !oc.graceful {
-			oc.killed = fmt.Sprintf("dịch vụ không tắt êm khi nhận SIGTERM sau %d giây (đã SIGKILL)", svc.ShutdownTimeoutSeconds)
+			oc.killed = i18n.Tf("dịch vụ không tắt êm khi nhận SIGTERM sau %d giây (đã SIGKILL)", svc.ShutdownTimeoutSeconds)
 			s.logf("%s", oc.killed)
 		}
 	}
@@ -459,14 +462,14 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		s.logf("%s", msg)
 		s.tail(serviceLog)
 		oc.harnessErr = msg
-		return finish(NotRun)
+		return finish(NotRunText())
 	}
-	s.logf("dịch vụ sẵn sàng")
+	s.logf("%s", i18n.T("dịch vụ sẵn sàng"))
 
 	// 9. chạy case
 	if invariants, order, err := Checks(paths); err != nil {
 		for i, c := range selected {
-			results[i] = errResult(c, checksLoadError+err.Error())
+			results[i] = errResult(c, i18n.Tf("không đọc được bất biến (design.yaml/cases.yaml/risk.yaml): %s", err.Error()))
 		}
 	} else {
 		var db DB = noDB{}
@@ -474,7 +477,7 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 			pg, err := OpenPgDB(s.ctx, dbURL)
 			if err != nil {
 				stopService()
-				return fail("không kết nối được Postgres: " + err.Error())
+				return fail(i18n.Tf("không kết nối được Postgres: %s", err.Error()))
 			}
 			defer pg.Close()
 			db = pg
@@ -501,31 +504,31 @@ func (s *session) run(o Options, pb *prebuilt) (runOutcome, error) {
 		if dbURL == "" {
 			schema = &run.SchemaSnapshot{}
 		} else if snap, err := DumpSchema(s.ctx, dbURL); err != nil {
-			s.logf("không dump được schema: %v", err)
+			s.logf(i18n.T("không dump được schema: %v"), err)
 		} else {
 			schema = &snap
 		}
 	}
 	stopService()
 	if oc.graceful && proc.ExitErr() != nil && s.ctx.Err() == nil {
-		s.logf("dịch vụ thoát lỗi: %v", proc.ExitErr())
+		s.logf(i18n.T("dịch vụ thoát lỗi: %v"), proc.ExitErr())
 		s.tail(serviceLog)
 	}
-	return finish(NotRun)
+	return finish(NotRunText())
 }
 
 // tail chép 50 dòng cuối log dịch vụ vào harness.log.
 func (s *session) tail(serviceLog string) {
 	b, err := os.ReadFile(serviceLog)
 	if err != nil {
-		s.logf("không đọc được log dịch vụ: %v", err)
+		s.logf(i18n.T("không đọc được log dịch vụ: %v"), err)
 		return
 	}
 	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 	if len(lines) > serviceLogTail {
 		lines = lines[len(lines)-serviceLogTail:]
 	}
-	s.logf("%d dòng cuối log dịch vụ:", serviceLogTail)
+	s.logf(i18n.T("%d dòng cuối log dịch vụ:"), serviceLogTail)
 	s.raw(strings.Join(lines, "\n"))
 }
 
@@ -539,7 +542,7 @@ func waitHealthy(ctx context.Context, proc lang.Process, url string, timeout tim
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			return "healthPath không hợp lệ: " + err.Error()
+			return i18n.Tf("healthPath không hợp lệ: %s", err.Error())
 		}
 		if resp, err := client.Do(req); err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
@@ -550,15 +553,15 @@ func waitHealthy(ctx context.Context, proc lang.Process, url string, timeout tim
 		}
 		select {
 		case <-proc.Done():
-			msg := "dịch vụ thoát trước khi sẵn sàng"
+			msg := i18n.T("dịch vụ thoát trước khi sẵn sàng")
 			if err := proc.ExitErr(); err != nil {
 				msg += ": " + err.Error()
 			}
 			return msg
 		case <-deadline.C:
-			return fmt.Sprintf("dịch vụ không sẵn sàng sau %d giây (%s)", int(timeout.Seconds()), url)
+			return i18n.Tf("dịch vụ không sẵn sàng sau %d giây (%s)", int(timeout.Seconds()), url)
 		case <-ctx.Done():
-			return "dịch vụ chưa sẵn sàng khi harness bị dừng"
+			return i18n.T("dịch vụ chưa sẵn sàng khi harness bị dừng")
 		case <-tick.C:
 		}
 	}
@@ -594,10 +597,17 @@ func messageTopics(cases []spec.CaseSpec) []string {
 // noDB dùng khi dịch vụ không khai service.env.databaseUrl: case cần DB thành ERROR.
 type noDB struct{}
 
-func (noDB) Exec(context.Context, string) error { return errors.New(noDatabase) }
+func (noDB) Exec(context.Context, string) error { return errors.New(noDatabase()) }
 func (noDB) Check(context.Context, spec.DbExpect) (string, error) {
-	return "", errors.New(noDatabase)
+	return "", errors.New(noDatabase())
 }
 func (noDB) Violations(context.Context, string, int) ([]map[string]any, error) {
-	return nil, errors.New(noDatabase)
+	return nil, errors.New(noDatabase())
+}
+
+// randUint32 là số ngẫu nhiên từ crypto/rand cho ID của lần chạy (không đoán trước được, không cần seed).
+func randUint32() uint32 {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return binary.BigEndian.Uint32(b[:])
 }

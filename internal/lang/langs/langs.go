@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/lang/golang"
 )
@@ -15,7 +16,7 @@ func For(language string) (lang.Adapter, error) {
 	case "go":
 		return golang.Adapter{}, nil
 	}
-	return nil, fmt.Errorf("Ngôn ngữ chưa hỗ trợ: %s (hiện có: go)", language)
+	return nil, fmt.Errorf(i18n.T("Ngôn ngữ chưa hỗ trợ: %s (hiện có: go)"), language)
 }
 
 // RuntimeFor trả runtime (build, test, tiến trình) theo tên ngôn ngữ.
@@ -24,5 +25,5 @@ func RuntimeFor(language string) (lang.Runtime, error) {
 	case "go":
 		return golang.Runtime{}, nil
 	}
-	return nil, fmt.Errorf("Ngôn ngữ chưa hỗ trợ: %s (hiện có: go)", language)
+	return nil, fmt.Errorf(i18n.T("Ngôn ngữ chưa hỗ trợ: %s (hiện có: go)"), language)
 }

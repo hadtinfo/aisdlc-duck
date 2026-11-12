@@ -3,7 +3,10 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+
+	"aisdlc/internal/web/httpx"
 )
 
 // AuditEntry là một dòng audit (AuditLog.write). Login rỗng → NULL (thao tác quản trị/tự động không có người đăng nhập).
@@ -47,7 +50,7 @@ func (s *Service) Audit(ctx context.Context, login, action, detail string) error
 	}
 	var m map[string]any
 	if err := json.Unmarshal([]byte(detail), &m); err != nil || m == nil {
-		return fmt.Errorf("audit detail phải là JSON object: %q", detail)
+		return errors.New(httpx.OpLocale().Tf("audit detail phải là JSON object: %q", detail))
 	}
 	return s.insertAudit(ctx, s.Pool, AuditEntry{Login: login, Channel: "web", Action: action}, detail)
 }

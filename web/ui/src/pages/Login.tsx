@@ -1,8 +1,11 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, login } from "../api";
+import { LocaleSwitch } from "../components/LocaleSwitch";
+import { useT } from "../i18n";
 
 export function Login() {
+  const { t } = useT();
   const nav = useNavigate();
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
@@ -14,9 +17,9 @@ export function Login() {
     setError("");
     try {
       if (await login(token.trim())) nav("/", { replace: true });
-      else setError("Token không đúng hoặc không phải token đăng nhập");
+      else setError(t("login.badToken"));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
+      setError(err instanceof ApiError ? err.message : t("common.noServer"));
     } finally {
       setBusy(false);
     }
@@ -25,14 +28,14 @@ export function Login() {
   return (
     <main className="login">
       <form className="login-box" onSubmit={submit}>
-        <h1>AISDLC</h1>
-        <p className="muted">Nhập token đăng nhập (admin cấp) để xem bảng tiến độ và duyệt.</p>
+        <div className="login-head"><h1>AISDLC</h1><LocaleSwitch /></div>
+        <p className="muted">{t("login.prompt")}</p>
         <input
           type="password" autoFocus autoComplete="current-password" placeholder="Token"
           value={token} onChange={(e) => setToken(e.target.value)} aria-label="Token"
         />
         {error && <p className="error" role="alert">{error}</p>}
-        <button type="submit" disabled={busy || !token.trim()}>Đăng nhập</button>
+        <button type="submit" disabled={busy || !token.trim()}>{t("login.submit")}</button>
       </form>
     </main>
   );

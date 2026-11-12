@@ -105,7 +105,7 @@ func TestRunnerHarnessPanicNeverUsesStaleResults(t *testing.T) {
 	res, err := r.RunCases("DEMO-1", nil, "cases")
 	must(t, err)
 	eq(t, res.ExitCode, 2)
-	allError(t, res.Cases, harnessapi.NoResults)
+	allError(t, res.Cases, harnessapi.NoResultsText())
 	if _, err := os.Stat(filepath.Join(out, "schema.json")); err == nil {
 		t.Error("schema.json cũ vẫn còn")
 	}
@@ -135,7 +135,7 @@ func TestRunnerHarnessDiesWithoutResult(t *testing.T) {
 	res, err := r.RunCases("DEMO-1", []string{"S1"}, "cases")
 	must(t, err)
 	eq(t, res.ExitCode, 2)
-	allError(t, res.Cases, harnessapi.NoResults)
+	allError(t, res.Cases, harnessapi.NoResultsText())
 	contains(t, r.OutputTail("DEMO-1", 20), "aisdlc-harness không ghi kết quả (exit status 7)", "fatal error: out of memory")
 
 	vr, err := harnessVerifier{root: r.root, find: r.find}.Verify(context.Background(), "DEMO-1", r.OutDir("DEMO-1"))
@@ -209,7 +209,7 @@ func TestRunnerCanceledBeforeStart(t *testing.T) {
 	res, err := r.RunCases("DEMO-1", nil, "cases")
 	must(t, err)
 	eq(t, res.ExitCode, harnessapi.ExitTimeout)
-	allError(t, res.Cases, harnessapi.CanceledMessage)
+	allError(t, res.Cases, harnessapi.Canceled())
 }
 
 // Bản thật mặc định của Context là binary aisdlc-harness theo language của config.
@@ -314,9 +314,9 @@ func TestRunnerSubprocessCancel(t *testing.T) {
 		t.Errorf("hủy mất %v", took)
 	}
 	eq(t, res.ExitCode, harnessapi.ExitTimeout)
-	allError(t, res.Cases, harnessapi.CanceledMessage)
+	allError(t, res.Cases, harnessapi.Canceled())
 	log := r.OutputTail("DEMO-1", 400)
-	contains(t, log, harnessapi.CanceledMessage)
+	contains(t, log, harnessapi.Canceled())
 	m := runIDRe.FindStringSubmatch(log)
 	if m == nil {
 		t.Fatalf("không thấy run id trong log:\n%s", log)

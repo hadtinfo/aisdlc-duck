@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/step"
 )
 
@@ -17,12 +18,12 @@ func autoLabel(a gate.Approval) string {
 	if lvl == "" {
 		lvl = "?"
 	}
-	return "tự duyệt (mức " + lvl + ")"
+	return i18n.Tf("tự duyệt (mức %s)", lvl)
 }
 
 // supersededNote là ghi chú cho bản tự duyệt đã bị thay thế: cổng hiện như đang chờ dev duyệt.
 func supersededNote(a gate.Approval) string {
-	return "chờ dev duyệt (bản " + autoLabel(a) + " đã bị thay thế khi nâng mức)"
+	return i18n.Tf("chờ dev duyệt (bản %s đã bị thay thế khi nâng mức)", autoLabel(a))
 }
 
 // approvalDisplay là dòng hiển thị bản duyệt: bản tự duyệt còn hiệu lực hoặc đã bị thay thế, bản duyệt tay trong
@@ -32,7 +33,7 @@ func approvalDisplay(a gate.Approval, ok bool) string {
 		return ""
 	}
 	if !a.IsAuto() && a.Channel == gate.ApprovalClaudeCode {
-		return "duyệt trong Claude Code (" + a.Approver + ")"
+		return i18n.Tf("duyệt trong Claude Code (%s)", a.Approver)
 	}
 	if !a.IsAuto() {
 		return ""
@@ -51,18 +52,18 @@ func stepCheckSummary(ch step.StepCheck) string {
 	if len(ch.CasesNotPassed) > 0 {
 		sb.WriteString(" (" + strings.Join(ch.CasesNotPassed, ", ") + " fail)")
 	}
-	sb.WriteString(" · " + strconv.Itoa(ch.Files) + " file / " + strconv.Itoa(ch.Lines) + " dòng (ngân sách ")
+	sb.WriteString(i18n.Tf(" · %s file / %s dòng (ngân sách ", strconv.Itoa(ch.Files), strconv.Itoa(ch.Lines)))
 	if ch.Budget.Files == 0 && ch.Budget.Lines == 0 {
 		sb.WriteString("?")
 	} else {
 		sb.WriteString(strconv.Itoa(ch.Budget.Files) + "/" + strconv.Itoa(ch.Budget.Lines))
 	}
 	if ch.OverBudget {
-		sb.WriteString(" → vượt")
+		sb.WriteString(i18n.T(" → vượt"))
 	}
-	sb.WriteString(") · Ngoài phạm vi: ")
+	sb.WriteString(i18n.T(") · Ngoài phạm vi: "))
 	if len(ch.OutOfScope) == 0 {
-		sb.WriteString("không có")
+		sb.WriteString(i18n.T("không có"))
 	} else {
 		sb.WriteString(strings.Join(ch.OutOfScope, ", "))
 	}

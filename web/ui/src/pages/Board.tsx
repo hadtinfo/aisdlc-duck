@@ -3,13 +3,16 @@ import { BoardData, UnauthorizedError, getBoard } from "../api";
 import { Card } from "../components/Card";
 import { Inbox } from "../components/Inbox";
 import { UserMenu } from "../components/UserMenu";
+import { Key, useT } from "../i18n";
 import { subscribe } from "../sse";
 
-const COLUMNS: [string, string][] = [
-  ["BRD", "BRD"], ["DESIGN", "Thiết kế"], ["CASES", "Case"], ["CODE", "Code"], ["REVIEW", "Review"], ["DONE", "Xong"],
+const COLUMNS: [string, Key][] = [
+  ["BRD", "column.brd"], ["DESIGN", "column.design"], ["CASES", "column.cases"], ["CODE", "column.code"],
+  ["REVIEW", "column.review"], ["DONE", "column.done"],
 ];
 
 export function Board() {
+  const { t } = useT();
   const [data, setData] = useState<BoardData | null>(null);
   const [error, setError] = useState("");
   const [repo, setRepo] = useState("");
@@ -20,7 +23,7 @@ export function Board() {
   const load = useCallback(() => {
     getBoard({ hideDoneOlderThanDays: hideOld ? 7 : 0 })
       .then((d) => { setData(d); setError(""); setNow(new Date()); })
-      .catch((e) => { if (!(e instanceof UnauthorizedError)) setError("Không tải được bảng"); });
+      .catch((e) => { if (!(e instanceof UnauthorizedError)) setError(t("board.loadFailed")); });
   }, [hideOld]);
 
   useEffect(() => {
@@ -42,19 +45,19 @@ export function Board() {
         <div className="filters">
           <label>Repo
             <select value={repo} onChange={(e) => setRepo(e.target.value)}>
-              <option value="">Tất cả</option>
+              <option value="">{t("common.all")}</option>
               {repos.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           </label>
-          <label>Chủ tính năng
+          <label>{t("board.owner")}
             <select value={owner} onChange={(e) => setOwner(e.target.value)}>
-              <option value="">Tất cả</option>
+              <option value="">{t("common.all")}</option>
               {owners.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
           </label>
           <label className="check">
             <input type="checkbox" checked={hideOld} onChange={(e) => setHideOld(e.target.checked)} />
-            Ẩn đã xong quá 7 ngày
+            {t("board.hideOld")}
           </label>
         </div>
         <UserMenu />
@@ -64,7 +67,8 @@ export function Board() {
       <Inbox items={data?.inbox ?? []} />
 
       <div className="board">
-        {COLUMNS.map(([code, title]) => {
+        {COLUMNS.map(([code, titleKey]) => {
+          const title = t(titleKey);
           const col = cards.filter((c) => c.column === code);
           return (
             <section key={code} className="column" aria-label={title}>

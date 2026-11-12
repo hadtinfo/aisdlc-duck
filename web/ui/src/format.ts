@@ -1,12 +1,14 @@
-/** Thời gian tương đối bằng tiếng Việt. */
+import { t } from "./i18n";
+
+/** Thời gian tương đối theo locale đang dùng. */
 export function ago(iso: string, now: Date = new Date()): string {
   const sec = Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / 1000));
-  if (sec < 60) return "vừa xong";
+  if (sec < 60) return t("ago.justNow");
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} phút trước`;
+  if (min < 60) return t("ago.minutes", { n: min });
   const hour = Math.floor(min / 60);
-  if (hour < 24) return `${hour} giờ trước`;
-  return `${Math.floor(hour / 24)} ngày trước`;
+  if (hour < 24) return t("ago.hours", { n: hour });
+  return t("ago.days", { n: Math.floor(hour / 24) });
 }
 
 export type BudgetLevel = "ok" | "over" | "far";
@@ -17,19 +19,19 @@ export function budgetLevel(actual: number, budget: number): BudgetLevel {
   return actual <= budget * 1.5 ? "over" : "far";
 }
 
-/** Dịch mã nhãn của backend sang tiếng Việt. */
+/** Dịch mã nhãn của backend theo locale đang dùng. */
 export function labelText(code: string): string {
   const i = code.indexOf(":");
   const kind = i < 0 ? code : code.slice(0, i);
   const arg = i < 0 ? "" : code.slice(i + 1);
   switch (kind) {
-    case "AWAITING_APPROVAL": return `Chờ duyệt ${arg}`;
-    case "REJECTED": return `Bị trả lại ${arg}`;
-    case "STALE": return `Đã đổi sau duyệt (STALE) ${arg}`;
-    case "FINDINGS": return `Có phát hiện ${arg}`;
-    case "CODING": return `Đang code ${arg}`;
-    case "AWAITING_ACCEPT": return `Chờ accept ${arg}`;
-    case "EVAL_FAIL": return "Eval không đạt";
+    case "AWAITING_APPROVAL": return t("label.awaitingApproval", { arg });
+    case "REJECTED": return t("label.rejected", { arg });
+    case "STALE": return t("label.stale", { arg });
+    case "FINDINGS": return t("label.findings", { arg });
+    case "CODING": return t("label.coding", { arg });
+    case "AWAITING_ACCEPT": return t("label.awaitingAccept", { arg });
+    case "EVAL_FAIL": return t("label.evalFail");
     default: return code;
   }
 }

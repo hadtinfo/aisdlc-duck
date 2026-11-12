@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/run"
 	"aisdlc/internal/spec"
 )
 
-// NotConfigured là lý do mặc định của NoMessageProbe.
-const NotConfigured = "chưa cấu hình Kafka"
+// NotConfigured là bản vi của lý do mặc định của NoMessageProbe (để so trong test); lúc chạy, reason lấy bản theo
+// locale.
+var NotConfigured = i18n.VI.T("chưa cấu hình Kafka")
 
 const maxViolationRows = 5
 
@@ -45,7 +47,7 @@ type NoMessageProbe struct{ Reason string }
 
 func (n NoMessageProbe) reason() string {
 	if n.Reason == "" {
-		return NotConfigured
+		return i18n.T("chưa cấu hình Kafka")
 	}
 	return n.Reason
 }
@@ -78,7 +80,7 @@ type Executor struct {
 
 // Execute chạy một case, không panic.
 func (e *Executor) Execute(ctx context.Context, c spec.CaseSpec) (res run.CaseResult) {
-	phase := "chuẩn bị"
+	phase := i18n.T("chuẩn bị")
 	defer func() {
 		if r := recover(); r != nil {
 			res = errResult(c, fmt.Sprintf("%s: %v", phase, r))
@@ -119,7 +121,7 @@ func (e *Executor) Execute(ctx context.Context, c spec.CaseSpec) (res run.CaseRe
 			return fail(err)
 		}
 	}
-	phase = "gọi HTTP"
+	phase = i18n.T("gọi HTTP")
 	var failure string
 	var err error
 	if c.When.Parallel > 1 {
@@ -129,7 +131,7 @@ func (e *Executor) Execute(ctx context.Context, c spec.CaseSpec) (res run.CaseRe
 				return fail(err)
 			}
 		}
-		phase = "kiểm tra"
+		phase = i18n.T("kiểm tra")
 		if b.unfinished != "" {
 			failure = b.unfinished
 		} else if failure, err = e.compareParallel(ctx, *c.Then, b.statuses); err != nil {
@@ -142,13 +144,13 @@ func (e *Executor) Execute(ctx context.Context, c spec.CaseSpec) (res run.CaseRe
 				return fail(err)
 			}
 		}
-		phase = "kiểm tra"
+		phase = i18n.T("kiểm tra")
 		if failure, err = e.compare(ctx, *c.Then, r); err != nil {
 			return fail(err)
 		}
 	}
 	if failure == "" {
-		phase = "bất biến"
+		phase = i18n.T("bất biến")
 		failure = e.checkInvariants(ctx, c.Step)
 	}
 	if failure != "" {
@@ -229,7 +231,7 @@ wait:
 	if overdue {
 		after = limit
 	}
-	return batch{statuses, fmt.Sprintf("parallel: %d/%d request chưa xong sau %ds", unfinished, n, int64(after.Seconds()))}, nil
+	return batch{statuses, i18n.Tf("parallel: %d/%d request chưa xong sau %ds", unfinished, n, int64(after.Seconds()))}, nil
 }
 
 func isTimeout(err error) bool {
@@ -245,12 +247,12 @@ func (e *Executor) compareParallel(ctx context.Context, then spec.Then, statuses
 			got[s]++
 		}
 		if !equalCounts(then.StatusCounts, got) {
-			return "statusCounts: mong đợi " + fmtCounts(then.StatusCounts) + ", nhận " + fmtCounts(got), nil
+			return i18n.Tf("statusCounts: mong đợi %s, nhận %s", fmtCounts(then.StatusCounts), fmtCounts(got)), nil
 		}
 	} else {
 		for _, s := range statuses {
 			if s != then.Status {
-				return fmt.Sprintf("status: mong đợi %d, nhận %s", then.Status, fmtInts(statuses)), nil
+				return i18n.Tf("status: mong đợi %d, nhận %s", then.Status, fmtInts(statuses)), nil
 			}
 		}
 	}
@@ -293,7 +295,7 @@ func fmtInts(v []int) string {
 
 func (e *Executor) compare(ctx context.Context, then spec.Then, r Response) (string, error) {
 	if then.Status != r.Status {
-		return fmt.Sprintf("status: mong đợi %d, nhận %d", then.Status, r.Status), nil
+		return i18n.Tf("status: mong đợi %d, nhận %d", then.Status, r.Status), nil
 	}
 	if then.Body != nil {
 		if m := CompareJSON(then.Body, r.Body); m != "" {
@@ -334,10 +336,10 @@ func (e *Executor) checkInvariants(ctx context.Context, caseStep string) string 
 		}
 		rows, err := e.DB.Violations(ctx, inv.SQL, maxViolationRows)
 		if err != nil {
-			return "Bất biến '" + inv.Name + "' lỗi: " + err.Error()
+			return i18n.Tf("Bất biến '%s' lỗi: %s", inv.Name, err.Error())
 		}
 		if len(rows) > 0 {
-			return "Bất biến '" + inv.Name + "' vi phạm: " + fmtRows(rows)
+			return i18n.Tf("Bất biến '%s' vi phạm: %s", inv.Name, fmtRows(rows))
 		}
 	}
 	return ""
@@ -385,7 +387,7 @@ func incomplete(c spec.CaseSpec) string {
 	if len(missing) == 0 {
 		return ""
 	}
-	return "case thiếu " + strings.Join(missing, ", ")
+	return i18n.Tf("case thiếu %s", strings.Join(missing, ", "))
 }
 
 func errResult(c spec.CaseSpec, msg string) run.CaseResult {

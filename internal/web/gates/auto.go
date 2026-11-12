@@ -3,12 +3,12 @@ package gates
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/review"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/web/auth"
@@ -40,7 +40,8 @@ func latestPolicy(ctx context.Context, d db, repo string) (*livePolicy, error) {
 	if err != nil {
 		return nil, err
 	}
-	p, err := risk.ParsePolicy(body)
+	// body lưu trong DB; lỗi bị nuốt nên locale không lộ ra ngoài, dùng vi cố định.
+	p, err := risk.ParsePolicyIn(i18n.VI, body)
 	if err != nil {
 		return nil, nil
 	}
@@ -90,7 +91,8 @@ func (s *Service) AutoApprove(ctx context.Context, tx pgx.Tx, sub Submitted) err
 			return true, nil
 		}
 		return false, auditAuto(ctx, s, tx, "gate.auto-skip", sub.Repo, sub.Feature, string(sub.Gate), map[string]any{
-			"message": "auto: mức " + level + " không có trong chính sách v" + strconv.Itoa(pol.version), "submissionId": sub.SubmissionID})
+			"message":      i18n.VI.Tf("auto: mức %s không có trong chính sách v%d", level, pol.version), // audit lưu tiếng Việt
+			"submissionId": sub.SubmissionID})
 	}
 	requested := ""
 	if sub.RiskLevel != nil {
@@ -113,7 +115,7 @@ func (s *Service) AutoApprove(ctx context.Context, tx pgx.Tx, sub Submitted) err
 		}
 		level = risk.Stricter(pol.p, level, *serverLevel)
 	}
-	if _, manual := risk.AutoGate(pol.p, level, sub.Gate, hasHighFlag(card)); manual {
+	if _, manual := risk.AutoGateIn(i18n.VI, pol.p, level, sub.Gate, hasHighFlag(card)); manual {
 		return nil
 	}
 	active, err := activeApproval(ctx, tx, sub.Repo, sub.Feature, sub.Gate)
@@ -250,7 +252,8 @@ func (s *Service) OnRiskChanged(ctx context.Context, tx pgx.Tx, repo, feature, f
 		p = &pol.p
 	}
 	names := gateNames(manual)
-	d := map[string]any{"message": risk.SupersedeMessage(p, before, to, manual), "from": nil, "to": to, "gates": names}
+	// message được lưu vào audit_log.detail: luôn tiếng Việt (vi), dịch khi hiển thị.
+	d := map[string]any{"message": risk.SupersedeMessageIn(i18n.VI, p, before, to, manual), "from": nil, "to": to, "gates": names}
 	if known {
 		d["from"] = before
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 )
 
@@ -48,7 +49,7 @@ func RefreshAgentReview(p model.FeaturePaths) error {
 		return nil
 	}
 	if err != nil {
-		return errors.New("Không ghi được " + mdPath + ": " + err.Error())
+		return errors.New(i18n.Tf("Không ghi được %s: %v", mdPath, err))
 	}
 	return fsx.WriteAtomic(mdPath, []byte(WithSoftRow(string(b), row)), 0o644)
 }
@@ -57,13 +58,13 @@ func RefreshAgentReview(p model.FeaturePaths) error {
 func AgentReviewCheck(path string) SoftCheck {
 	const id = "AGENT_REVIEW"
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		return SoftCheck{id, SoftNA, "chưa có review-agent.json"}
+		return SoftCheck{id, SoftNA, i18n.T("chưa có review-agent.json")}
 	}
 	r, err := ReadAgentReview(path)
 	if err != nil {
 		return SoftCheck{id, SoftWarn, err.Error()}
 	}
-	parts := []string{strconv.Itoa(r.PassedCount()) + "/" + strconv.Itoa(len(r.Criteria)) + " ĐẠT"}
+	parts := []string{i18n.Tf("%d/%d ĐẠT", r.PassedCount(), len(r.Criteria))}
 	serious := false
 	for _, label := range []string{"CAN_SUA", "NGHIEM_TRONG"} {
 		var ids []string
@@ -73,9 +74,9 @@ func AgentReviewCheck(path string) SoftCheck {
 			}
 		}
 		if len(ids) > 0 {
-			shown := "CẦN_SỬA"
+			shown := i18n.T("CẦN_SỬA")
 			if label == "NGHIEM_TRONG" {
-				shown = "NGHIÊM_TRỌNG"
+				shown = i18n.T("NGHIÊM_TRỌNG")
 				serious = true
 			}
 			parts = append(parts, strconv.Itoa(len(ids))+" "+shown+" ("+strings.Join(ids, ", ")+")")

@@ -18,7 +18,7 @@ import (
 )
 
 // badRequest là BadRequestException: 400 {"error": msg}.
-func badRequest(msg string) *httpx.ApiError { return httpx.NewError(400, msg) }
+func badRequest(msg httpx.Text) *httpx.Error { return httpx.Err(400, msg) }
 
 // node là một giá trị JSON đã giải (UseNumber): nil (null), bool, json.Number, string, []any, map[string]any.
 // missing đại diện MissingNode của Jackson (path() trên trường không có).
@@ -48,16 +48,16 @@ func parseTree(data []byte) (any, []byte, error) {
 		if errors.Is(err, io.EOF) {
 			return missing, nil, nil
 		}
-		return nil, nil, badRequest("JSON không hợp lệ")
+		return nil, nil, badRequest(httpx.T("JSON không hợp lệ"))
 	}
 	if !utf8.Valid(raw) {
-		return nil, nil, badRequest("JSON không hợp lệ")
+		return nil, nil, badRequest(httpx.T("JSON không hợp lệ"))
 	}
 	d2 := json.NewDecoder(bytes.NewReader(raw))
 	d2.UseNumber()
 	var tree any
 	if err := d2.Decode(&tree); err != nil {
-		return nil, nil, badRequest("JSON không hợp lệ")
+		return nil, nil, badRequest(httpx.T("JSON không hợp lệ"))
 	}
 	return tree, raw, nil
 }
@@ -71,12 +71,12 @@ func rejectNul(root any) error {
 		switch v := n.(type) {
 		case string:
 			if strings.IndexByte(v, 0) >= 0 {
-				return badRequest("Chuỗi chứa ký tự NUL (U+0000)")
+				return badRequest(httpx.T("Chuỗi chứa ký tự NUL (U+0000)"))
 			}
 		case map[string]any:
 			for k, c := range v {
 				if strings.IndexByte(k, 0) >= 0 {
-					return badRequest("Tên trường chứa ký tự NUL (U+0000)")
+					return badRequest(httpx.T("Tên trường chứa ký tự NUL (U+0000)"))
 				}
 				stack = append(stack, c)
 			}
@@ -103,7 +103,7 @@ func isInt(n any) (int64, bool) {
 // requireText: phải là chuỗi không rỗng/không chỉ khoảng trắng, nếu không 400 "Thiếu <name>".
 func requireText(n any, name string) error {
 	if s, ok := n.(string); !ok || isBlank(s) {
-		return badRequest("Thiếu " + name)
+		return badRequest(httpx.Tf("Thiếu %s", name))
 	}
 	return nil
 }
@@ -147,10 +147,10 @@ func asBoolean(n any) bool {
 // validateSnapshot như SnapshotValidator.validateSnapshot; trả capturedAt.
 func validateSnapshot(s any) (time.Time, error) {
 	if _, ok := s.(map[string]any); !ok {
-		return time.Time{}, badRequest("Snapshot phải là JSON object")
+		return time.Time{}, badRequest(httpx.T("Snapshot phải là JSON object"))
 	}
 	if v, ok := isInt(path(s, "schemaVersion")); !ok || v != 1 {
-		return time.Time{}, badRequest("schemaVersion phải bằng 1")
+		return time.Time{}, badRequest(httpx.T("schemaVersion phải bằng 1"))
 	}
 	if err := requireText(path(path(s, "repo"), "id"), "repo.id"); err != nil {
 		return time.Time{}, err
@@ -177,7 +177,7 @@ var instantRE = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2})(
 
 // parseInstant như SnapshotValidator.parseInstant; sai thì 400 "Thời điểm không hợp lệ: <text>".
 func parseInstant(s string) (time.Time, error) {
-	bad := badRequest("Thời điểm không hợp lệ: " + s)
+	bad := badRequest(httpx.Tf("Thời điểm không hợp lệ: %s", s))
 	m := instantRE.FindStringSubmatch(s)
 	if m == nil {
 		return time.Time{}, bad

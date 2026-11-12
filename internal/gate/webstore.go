@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"os"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/snapshot"
 )
 
-const readOnlyMsg = "Ở chế độ duyệt trên web, trạng thái cổng do web quản lý; không ghi được cục bộ."
+// readOnlyMsg là lỗi khi ghi trạng thái cổng cục bộ ở chế độ duyệt trên web.
+func readOnlyMsg() string {
+	return i18n.T("Ở chế độ duyệt trên web, trạng thái cổng do web quản lý; không ghi được cục bộ.")
+}
 
 // WebGateStore là trạng thái cổng ở chế độ duyệt trên web: chỉ đọc từ phong bì đã ký trong cache. Phong bì không
 // hợp lệ, của repo/tính năng khác, hoặc chưa có khóa ghim thì coi như chưa có submission/approval nào.
@@ -90,9 +94,9 @@ func (s *WebGateStore) Approval(g Gate) (Approval, bool, error) {
 	return Approval{}, false, nil
 }
 
-func (s *WebGateStore) SaveSubmission(Submission) error { return errf(readOnlyMsg) }
-func (s *WebGateStore) SaveApproval(Approval) error     { return errf(readOnlyMsg) }
-func (s *WebGateStore) Clear(Gate) error                { return errf(readOnlyMsg) }
+func (s *WebGateStore) SaveSubmission(Submission) error { return errf(readOnlyMsg()) }
+func (s *WebGateStore) SaveApproval(Approval) error     { return errf(readOnlyMsg()) }
+func (s *WebGateStore) Clear(Gate) error                { return errf(readOnlyMsg()) }
 
 // ReadWebGateState đọc và xác minh phong bì trong cacheFile; false khi không có, hỏng, sai chữ ký, sai
 // repo/tính năng hoặc chưa có khóa ghim. Không bao giờ trả lỗi.

@@ -22,11 +22,11 @@ func newInitCmd(ctx *Context) *cobra.Command {
 	var title string
 	c := &cobra.Command{
 		Use:   "init KEY",
-		Short: "Tạo tính năng mới theo Jira key và đặt làm tính năng đang làm.",
+		Short: i18n.T("Tạo tính năng mới theo Jira key và đặt làm tính năng đang làm."),
 		Args:  cobra.ExactArgs(1),
 	}
-	c.Flags().BoolVar(&lite, "lite", false, "Luồng nhẹ: bỏ BRD và thiết kế, chỉ có cases.yaml")
-	c.Flags().StringVar(&title, "title", "", "Tiêu đề (mặc định lấy từ Jira)")
+	c.Flags().BoolVar(&lite, "lite", false, i18n.T("Luồng nhẹ: bỏ BRD và thiết kế, chỉ có cases.yaml"))
+	c.Flags().StringVar(&title, "title", "", i18n.T("Tiêu đề (mặc định lấy từ Jira)"))
 	c.RunE = Wrap(ctx, func(cmd *cobra.Command, args []string) (int, error) {
 		var t *string
 		if cmd.Flags().Changed("title") {
@@ -50,8 +50,7 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 	}
 	paths := model.FeaturePaths{RepoRoot: root, Key: k}
 	if exists(paths.Dir()) {
-		return 0, abort(2, "Tính năng "+k.String()+" đã tồn tại ("+paths.Rel(paths.Dir())+"). Dùng `aisdlc use "+
-			k.String()+"`.")
+		return 0, abort(2, i18n.Tf("Tính năng %s đã tồn tại (%s). Dùng `aisdlc use %s`.", k.String(), paths.Rel(paths.Dir()), k.String()))
 	}
 	summary, err := jiraSummary(ctx, k)
 	if err != nil {
@@ -81,11 +80,11 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 		files = []templateFile{{paths.Cases(), "cases.lite.yaml"}}
 	}
 	if err := os.MkdirAll(paths.Dir(), 0o755); err != nil {
-		return 0, fmt.Errorf("Không tạo được %s: %v", paths.Dir(), err)
+		return 0, fmt.Errorf(i18n.T("Không tạo được %s: %v"), paths.Dir(), err)
 	}
 	if flow == model.FlowFull {
 		if err := os.MkdirAll(paths.DbDrafts(), 0o755); err != nil {
-			return 0, fmt.Errorf("Không tạo được %s: %v", paths.DbDrafts(), err)
+			return 0, fmt.Errorf(i18n.T("Không tạo được %s: %v"), paths.DbDrafts(), err)
 		}
 	}
 	for _, f := range files {
@@ -107,7 +106,7 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 		return 0, err
 	}
 
-	ctx.Println("Đã tạo tính năng " + k.String() + " (luồng " + string(flow) + "): " + t)
+	ctx.Println(i18n.Tf("Đã tạo tính năng %s (luồng %s): %s", k.String(), string(flow), t))
 	ctx.AfterCommandKey(root, k, "init")
 	for _, f := range files {
 		ctx.Println("  " + paths.Rel(f.path))
@@ -117,9 +116,9 @@ func initFeature(ctx *Context, rawKey string, lite bool, title *string) (int, er
 	}
 	if flow == model.FlowFull {
 		ctx.Println("  " + paths.Rel(paths.DbDrafts()) + "/")
-		ctx.Println("Tiếp theo: soạn brd.md rồi chạy `aisdlc submit brd`.")
+		ctx.Println(i18n.T("Tiếp theo: soạn brd.md rồi chạy `aisdlc submit brd`."))
 	} else {
-		ctx.Println("Tiếp theo: soạn cases.yaml (kèm scope, budget) rồi chạy `aisdlc submit cases`.")
+		ctx.Println(i18n.T("Tiếp theo: soạn cases.yaml (kèm scope, budget) rồi chạy `aisdlc submit cases`."))
 	}
 	return ExitOK, nil
 }
@@ -139,11 +138,11 @@ func jiraSummary(ctx *Context, k model.FeatureKey) (string, error) {
 	url, okU := ctx.Env("JIRA_URL")
 	token, okT := ctx.Env("JIRA_TOKEN")
 	if !okU || !okT {
-		ctx.Eprintln("Cảnh báo: chưa đặt JIRA_URL và JIRA_TOKEN, bỏ qua kiểm tra ticket Jira.")
+		ctx.Eprintln(i18n.T("Cảnh báo: chưa đặt JIRA_URL và JIRA_TOKEN, bỏ qua kiểm tra ticket Jira."))
 		return "", nil
 	}
 	warn := func(err error) (string, error) {
-		ctx.Eprintln("Cảnh báo: không gọi được Jira (" + err.Error() + "), bỏ qua kiểm tra ticket Jira.")
+		ctx.Eprintln(i18n.Tf("Cảnh báo: không gọi được Jira (%s), bỏ qua kiểm tra ticket Jira.", err.Error()))
 		return "", nil
 	}
 	base := strings.TrimRight(url, "/")
@@ -166,10 +165,10 @@ func jiraSummary(ctx *Context, k model.FeatureKey) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return "", abort(2, "Không tìm thấy ticket "+k.String()+" trên Jira.")
+		return "", abort(2, i18n.Tf("Không tìm thấy ticket %s trên Jira.", k.String()))
 	}
 	if resp.StatusCode != http.StatusOK {
-		ctx.Eprintln(fmt.Sprintf("Cảnh báo: Jira trả HTTP %d cho %s, bỏ qua kiểm tra ticket Jira.",
+		ctx.Eprintln(fmt.Sprintf(i18n.T("Cảnh báo: Jira trả HTTP %d cho %s, bỏ qua kiểm tra ticket Jira."),
 			resp.StatusCode, k))
 		return "", nil
 	}
@@ -181,7 +180,7 @@ func jiraSummary(ctx *Context, k model.FeatureKey) (string, error) {
 	if err := json.Unmarshal(body, &issue); err != nil {
 		return warn(err)
 	}
-	ctx.Println("Jira: " + k.String() + " tồn tại.")
+	ctx.Println(i18n.Tf("Jira: %s tồn tại.", k.String()))
 	fields, _ := issue.(map[string]any)
 	f, _ := fields["fields"].(map[string]any)
 	if s, ok := f["summary"].(string); ok && strings.TrimSpace(s) != "" {

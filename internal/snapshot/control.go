@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"aisdlc/internal/i18n"
 )
 
 // FeatureControl là trạng thái điều khiển của một tính năng do server web ký (nằm trong SignedEnvelope).
@@ -42,8 +44,11 @@ type Action struct {
 	ExpiresAt *time.Time `json:"expiresAt"`
 }
 
-// ToJSON serialize; danh sách nil thành [].
-func (c FeatureControl) ToJSON() ([]byte, error) {
+// ToJSON serialize; danh sách nil thành []. Lỗi theo locale mặc định của tiến trình (CLI); web dùng ToJSONIn.
+func (c FeatureControl) ToJSON() ([]byte, error) { return c.ToJSONIn(i18n.Default()) }
+
+// ToJSONIn như ToJSON, lỗi theo locale loc (web không dùng locale toàn cục).
+func (c FeatureControl) ToJSONIn(loc i18n.Locale) ([]byte, error) {
 	if c.Instructions == nil {
 		c.Instructions = []Instruction{}
 	}
@@ -52,7 +57,7 @@ func (c FeatureControl) ToJSON() ([]byte, error) {
 	}
 	b, err := json.Marshal(c)
 	if err != nil {
-		return nil, fmt.Errorf("Không serialize được trạng thái điều khiển: %v", err)
+		return nil, fmt.Errorf(loc.T("Không serialize được trạng thái điều khiển: %v"), err)
 	}
 	return b, nil
 }
@@ -61,10 +66,10 @@ func (c FeatureControl) ToJSON() ([]byte, error) {
 func FeatureControlFromJSON(b []byte) (FeatureControl, error) {
 	var c *FeatureControl
 	if err := json.Unmarshal(b, &c); err != nil {
-		return FeatureControl{}, fmt.Errorf("Trạng thái điều khiển hỏng: %v", err)
+		return FeatureControl{}, fmt.Errorf(i18n.T("Trạng thái điều khiển hỏng: %v"), err)
 	}
 	if c == nil {
-		return FeatureControl{}, fmt.Errorf("Trạng thái điều khiển rỗng")
+		return FeatureControl{}, fmt.Errorf("%s", i18n.T("Trạng thái điều khiển rỗng"))
 	}
 	return *c, nil
 }

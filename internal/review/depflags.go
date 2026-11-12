@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 )
 
@@ -19,6 +20,6 @@ func DependencyFlags(ctx context.Context, adapter lang.Adapter, git *gitx.Repo, 
 		return nil
 	}
 	return []ReviewFlag{NewFlag("DEPENDENCY_ADDED", WARN,
-		"Thêm dependency mới: "+strings.Join(ch.Added, ", "),
-		"Xác nhận thư viện được phép dùng và đã có trong thiết kế.", ch.Added)}
+		i18n.Tf("Thêm dependency mới: %s", strings.Join(ch.Added, ", ")),
+		i18n.T("Xác nhận thư viện được phép dùng và đã có trong thiết kế."), ch.Added)}
 }

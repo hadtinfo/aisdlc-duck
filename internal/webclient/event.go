@@ -3,8 +3,11 @@ package webclient
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+
+	"aisdlc/internal/i18n"
 )
 
 // Event là một bản tin gửi lên web (Event.java); Type ∈ COMMAND, FILE_EDIT, SESSION_START, SESSION_STOP,
@@ -59,7 +62,7 @@ func EventJSON(e Event) []byte {
 // batchJSON bọc một event đã ghi trong outbox thành lô v2 (event có sessionId tùy chọn). Event hỏng → lỗi.
 func batchJSON(repoID, clientID string, eventJSON []byte) ([]byte, error) {
 	if !json.Valid(eventJSON) {
-		return nil, fmt.Errorf("event không phải JSON hợp lệ")
+		return nil, errors.New(i18n.T("event không phải JSON hợp lệ"))
 	}
 	var ev json.RawMessage = bytes.TrimSpace(eventJSON)
 	return marshalNoEscape(struct {

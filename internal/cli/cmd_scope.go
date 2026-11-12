@@ -6,12 +6,14 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"aisdlc/internal/i18n"
 )
 
 func newScopeCmd(ctx *Context) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "scope",
-		Short: "Chỉ dev: cho phép thêm path ngoài phạm vi bước.",
+		Short: i18n.T("Chỉ dev: cho phép thêm path ngoài phạm vi bước."),
 		Args:  cobra.NoArgs,
 		RunE: Wrap(ctx, func(cmd *cobra.Command, _ []string) (int, error) {
 			fmt.Fprint(ctx.Err(), cmd.UsageString())
@@ -21,7 +23,7 @@ func newScopeCmd(ctx *Context) *cobra.Command {
 	var fo FeatureOption
 	allow := &cobra.Command{
 		Use:   "allow <path>",
-		Short: "Chỉ dev: cho phép sửa <path> (ghi vào scope-extra.json).",
+		Short: i18n.T("Chỉ dev: cho phép sửa <path> (ghi vào scope-extra.json)."),
 		Args:  cobra.ExactArgs(1),
 	}
 	fo.AddTo(allow)
@@ -32,7 +34,7 @@ func newScopeCmd(ctx *Context) *cobra.Command {
 		}
 		path := args[0]
 		if strings.ContainsRune(path, 0) {
-			return 0, abort(2, "Path không hợp lệ: "+path)
+			return 0, abort(2, i18n.Tf("Path không hợp lệ: %s", path))
 		}
 		p := path
 		if !filepath.IsAbs(p) {
@@ -40,9 +42,9 @@ func newScopeCmd(ctx *Context) *cobra.Command {
 		}
 		rel := f.Paths.Rel(p)
 		if rel == "." || rel == "" || rel == ".." || strings.HasPrefix(rel, "../") || filepath.IsAbs(rel) {
-			return 0, abort(2, "Path nằm ngoài repo: "+path)
+			return 0, abort(2, i18n.Tf("Path nằm ngoài repo: %s", path))
 		}
-		ctx.Println("Tính năng " + f.Key.String() + " — cho phép sửa ngoài phạm vi: " + rel)
+		ctx.Println(i18n.Tf("Tính năng %s — cho phép sửa ngoài phạm vi: %s", f.Key.String(), rel))
 		if _, err := ctx.ConfirmDev(f.Key, invocation(ctx, "scope allow"), ""); err != nil {
 			return 0, err
 		}
@@ -53,7 +55,7 @@ func newScopeCmd(ctx *Context) *cobra.Command {
 		if err := f.ScopeExtras().Add(rel, approver, ctx.Now()); err != nil {
 			return 0, err
 		}
-		ctx.Println("Đã cho phép " + rel + ".")
+		ctx.Println(i18n.Tf("Đã cho phép %s.", rel))
 		ctx.AfterCommand(f, "scope allow")
 		return ExitOK, nil
 	})

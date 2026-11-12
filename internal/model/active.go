@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 )
 
 const maxSessionName = 100
@@ -19,7 +20,7 @@ func readKeyFile(f string) (FeatureKey, bool, error) {
 		return "", false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("Không đọc được %s: %v", f, err)
+		return "", false, fmt.Errorf(i18n.T("Không đọc được %s: %v"), f, err)
 	}
 	s := strings.TrimSpace(string(b))
 	if s == "" {
@@ -90,7 +91,7 @@ func AllSessions(repoRoot string) (map[string]FeatureKey, error) {
 		return out, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Không đọc được %s: %v", d, err)
+		return nil, fmt.Errorf(i18n.T("Không đọc được %s: %v"), d, err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {

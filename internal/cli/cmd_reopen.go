@@ -6,13 +6,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 )
 
 func newReopenCmd(ctx *Context) *cobra.Command {
 	var fo FeatureOption
 	c := &cobra.Command{
 		Use:   "reopen <gate>",
-		Short: "Chỉ dev: mở lại một cổng để sửa artifact (xóa bản nộp và bản duyệt).",
+		Short: i18n.T("Chỉ dev: mở lại một cổng để sửa artifact (xóa bản nộp và bản duyệt)."),
 		Args:  cobra.ExactArgs(1),
 	}
 	fo.AddTo(c)
@@ -55,8 +56,7 @@ func newReopenCmd(ctx *Context) *cobra.Command {
 				return 0, err
 			}
 		}
-		ctx.Println("Đã mở lại cổng " + string(g) + "; sửa artifact rồi `aisdlc submit " +
-			strings.ToLower(string(g)) + "`.")
+		ctx.Println(i18n.Tf("Đã mở lại cổng %s; sửa artifact rồi `aisdlc submit %s`.", string(g), strings.ToLower(string(g))))
 		ctx.AfterCommand(f, "reopen "+strings.ToLower(string(g)))
 		return ExitOK, nil
 	})

@@ -1,7 +1,9 @@
 import { type ReactNode, useEffect } from "react";
+import { useT } from "../i18n";
 
 /** Hộp thoại của trang chính sách rủi ro: bấm nền hoặc Esc để đóng. */
 export function RiskDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const { t } = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -12,7 +14,7 @@ export function RiskDialog({ title, onClose, children }: { title: string; onClos
       <div className="rk-dialog" role="dialog" aria-modal="true" aria-label={title}>
         <div className="rk-head">
           <h2>{title}</h2>
-          <button type="button" className="ghost" onClick={onClose}>Đóng</button>
+          <button type="button" className="ghost" onClick={onClose}>{t("common.close")}</button>
         </div>
         {children}
       </div>

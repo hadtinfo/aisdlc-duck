@@ -3,16 +3,19 @@ import { Link } from "react-router-dom";
 import { ApiError, TokenInfo, UnauthorizedError, createToken, listTokens, revokeToken } from "../api";
 import { CopyCommand } from "../components/CopyCommand";
 import { UserMenu } from "../components/UserMenu";
+import { Key, intlTag, t as tNow, useT } from "../i18n";
 
-const KIND_TEXT: Record<string, string> = {
-  login: "đăng nhập", ingest: "ingest", approve: "approve", ci: "CI",
+const KIND_TEXT: Record<string, Key> = {
+  login: "token.kind.login", ingest: "token.kind.ingest", approve: "token.kind.approve", ci: "token.kind.ci",
 };
 const SELF_SERVICE = new Set(["ingest", "approve"]);
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("vi-VN") : "—");
-const errText = (e: unknown) => (e instanceof ApiError ? e.message : "Không kết nối được máy chủ");
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(intlTag()) : "—");
+const errText = (e: unknown) => (e instanceof ApiError ? e.message : tNow("common.noServer"));
 
 /** Trang /me: token cá nhân — liệt kê, tạo ingest/approve (hiện một lần), thu hồi có xác nhận. */
 export function Me() {
+  const { t } = useT();
+  const tr = t;
   const [tokens, setTokens] = useState<TokenInfo[] | null>(null);
   const [error, setError] = useState("");
   const [kind, setKind] = useState<"ingest" | "approve">("ingest");
@@ -24,7 +27,7 @@ export function Me() {
   const load = useCallback(() => {
     listTokens()
       .then((t) => { setTokens(t); setError(""); })
-      .catch((e) => { if (!(e instanceof UnauthorizedError)) setError("Không tải được danh sách token"); });
+      .catch((e) => { if (!(e instanceof UnauthorizedError)) setError(t("token.loadFailed")); });
   }, []);
   useEffect(load, [load]);
 
@@ -61,65 +64,65 @@ export function Me() {
   return (
     <div className="page narrow">
       <header className="topbar">
-        <Link to="/">← Bảng</Link>
-        <h1>Token của tôi</h1>
+        <Link to="/">← {t("nav.board")}</Link>
+        <h1>{t("token.title")}</h1>
         <span className="spacer" />
         <UserMenu />
       </header>
       {error && <p className="error banner" role="alert">{error}</p>}
 
       <section className="box">
-        <h2>Tạo token</h2>
+        <h2>{t("token.create")}</h2>
         <form className="token-form" onSubmit={create}>
-          <label>Loại
+          <label>{t("token.kind")}
             <select value={kind} onChange={(e) => setKind(e.target.value as "ingest" | "approve")}>
-              <option value="ingest">ingest — CLI gửi snapshot, nộp cổng</option>
-              <option value="approve">approve — duyệt từ terminal</option>
+              <option value="ingest">{t("token.opt.ingest")}</option>
+              <option value="approve">{t("token.opt.approve")}</option>
             </select>
           </label>
-          <label>Nhãn
-            <input type="text" required maxLength={100} placeholder="vd. laptop công ty" value={label}
+          <label>{t("token.label")}
+            <input type="text" required maxLength={100} placeholder={t("token.labelPlaceholder")} value={label}
               onChange={(e) => setLabel(e.target.value)} />
           </label>
-          <button type="submit" disabled={busy || !label.trim()}>Tạo token</button>
+          <button type="submit" disabled={busy || !label.trim()}>{t("token.create")}</button>
         </form>
         {created && (
           <div className="new-token" role="status">
-            <p><b>Token {created.kind} “{created.label}”</b> — Lưu ngay, token không hiện lại.</p>
+            <p><b>Token {created.kind} “{created.label}”</b> — {t("token.saveNow")}</p>
             <CopyCommand command={created.token} />
-            <button type="button" className="ghost" onClick={() => setCreated(null)}>Đã lưu, ẩn đi</button>
+            <button type="button" className="ghost" onClick={() => setCreated(null)}>{t("token.savedHide")}</button>
           </div>
         )}
         <ul className="howto muted">
-          <li><code>aisdlc web login</code> rồi dán token <b>ingest</b>.</li>
-          <li><code>aisdlc web approve-token</code> rồi dán token <b>approve</b>.</li>
+          <li><code>aisdlc web login</code> {t("token.howtoPaste")} <b>ingest</b>.</li>
+          <li><code>aisdlc web approve-token</code> {t("token.howtoPaste")} <b>approve</b>.</li>
         </ul>
       </section>
 
       <section className="box">
-        <h2>Danh sách token</h2>
-        {!tokens ? <p className="muted">Đang tải…</p> : tokens.length === 0 ? <p className="muted">Chưa có token.</p> : (
+        <h2>{t("token.list")}</h2>
+        {!tokens ? <p className="muted">{t("common.loading")}</p> : tokens.length === 0 ? <p className="muted">{t("token.none")}</p> : (
           <table className="grid tokens">
             <thead>
-              <tr><th>Loại</th><th>Nhãn</th><th>Tạo lúc</th><th>Dùng lần cuối</th><th>Thu hồi</th><th /></tr>
+              <tr><th>{t("token.kind")}</th><th>{t("token.label")}</th><th>{t("token.createdAt")}</th><th>{t("token.lastUsed")}</th><th>{t("token.revoked")}</th><th /></tr>
             </thead>
             <tbody>
               {tokens.map((t) => (
                 <tr key={t.id} className={t.revokedAt ? "revoked" : ""}>
-                  <td><span className="tag">{KIND_TEXT[t.kind] ?? t.kind}</span></td>
+                  <td><span className="tag">{KIND_TEXT[t.kind] ? tr(KIND_TEXT[t.kind]) : t.kind}</span></td>
                   <td>{t.label ?? <span className="muted">—</span>}</td>
                   <td>{when(t.createdAt)}</td>
                   <td>{when(t.lastUsedAt)}</td>
-                  <td>{t.revokedAt ? when(t.revokedAt) : <span className="muted">còn hiệu lực</span>}</td>
+                  <td>{t.revokedAt ? when(t.revokedAt) : <span className="muted">{tr("token.active")}</span>}</td>
                   <td className="act">
                     {!t.revokedAt && SELF_SERVICE.has(t.kind) && (confirmRevoke === t.id ? (
                       <span className="confirm-inline">
-                        Thu hồi token này?
-                        <button type="button" className="danger" disabled={busy} onClick={() => revoke(t.id)}>Thu hồi</button>
-                        <button type="button" className="ghost" disabled={busy} onClick={() => setConfirmRevoke(null)}>Hủy</button>
+                        {tr("token.revokeConfirm")}
+                        <button type="button" className="danger" disabled={busy} onClick={() => revoke(t.id)}>{tr("token.revoke")}</button>
+                        <button type="button" className="ghost" disabled={busy} onClick={() => setConfirmRevoke(null)}>{tr("common.cancel")}</button>
                       </span>
                     ) : (
-                      <button type="button" className="ghost" onClick={() => setConfirmRevoke(t.id)}>Thu hồi</button>
+                      <button type="button" className="ghost" onClick={() => setConfirmRevoke(t.id)}>{tr("token.revoke")}</button>
                     ))}
                   </td>
                 </tr>

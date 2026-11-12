@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/snapshot"
 )
 
@@ -29,6 +30,7 @@ var T = time.Date(2026, 11, 2, 2, 0, 0, 0, time.UTC)
 type Req struct {
 	Method, Path, Query, Auth string
 	Body                      string
+	AcceptLanguage            string // header Accept-Language của request
 }
 
 // JSON giải mã body vào v.
@@ -195,7 +197,8 @@ func (s *Server) Close() {
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
-	req := Req{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Auth: r.Header.Get("Authorization"), Body: string(body)}
+	req := Req{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Auth: r.Header.Get("Authorization"), Body: string(body),
+		AcceptLanguage: r.Header.Get("Accept-Language")}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
 	drop, hang := s.Drop, s.Hang
@@ -235,6 +238,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.Status)
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter -- máy chủ web giả chỉ dùng trong test, trả JSON đã soạn sẵn
 	_, _ = w.Write(resp.Body)
 }
 
@@ -265,7 +269,7 @@ func (s *Server) route(r Req) Resp {
 		return Resp{Status: 200, Body: s.envelopeLocked(p)}
 	case "GET /api/cli/policy":
 		if s.PolicyYAML == "" {
-			return errJSON(404, "chưa có chính sách")
+			return errJSON(404, i18n.T("chưa có chính sách"))
 		}
 		b, _ := json.Marshal(map[string]any{"repoId": s.State.Repo, "version": s.PolicyVersion, "yaml": s.PolicyYAML})
 		return Resp{Status: 200, Body: s.envelopeLocked(b)}
@@ -289,7 +293,7 @@ func (s *Server) route(r Req) Resp {
 					found = found || a.Gate == g
 				}
 				if !found {
-					return errJSON(409, "Cổng trước chưa được duyệt")
+					return errJSON(409, i18n.T("Cổng trước chưa được duyệt"))
 				}
 			}
 		}
@@ -324,5 +328,5 @@ func (s *Server) route(r Req) Resp {
 	if strings.HasPrefix(r.Path, "/api/ingest/") {
 		return Resp{Status: 200}
 	}
-	return errJSON(404, "không có "+key)
+	return errJSON(404, i18n.Tf("không có %s", key))
 }

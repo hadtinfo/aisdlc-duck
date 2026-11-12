@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 )
 
@@ -15,7 +16,7 @@ import (
 // (hoặc tên, với file không có version) đã nằm trong mainDir. ok=false khi không còn bản nháp nào.
 func PrepareDrafts(draftsDir, mainDir, outDir string, a lang.Adapter) (bool, error) {
 	fail := func(err error) (bool, error) {
-		return false, fmt.Errorf("Không chuẩn bị được migration nháp: %w", err)
+		return false, fmt.Errorf(i18n.T("Không chuẩn bị được migration nháp: %w"), err)
 	}
 	main := map[string]bool{}
 	mainFiles, err := walkFiles(mainDir, ".sql", ".go")

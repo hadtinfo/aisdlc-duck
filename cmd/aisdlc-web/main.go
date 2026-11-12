@@ -12,6 +12,7 @@ import (
 
 	"aisdlc/internal/web"
 	"aisdlc/internal/web/auth"
+	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/store"
 )
 
@@ -27,7 +28,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runUser(ctx, args[1:], stdout, stderr)
 	}
 	if len(args) > 0 {
-		fmt.Fprintf(stderr, "lệnh %q chưa được hỗ trợ\n", args[0])
+		fmt.Fprintln(stderr, httpx.OpLocale().Tf("lệnh %q chưa được hỗ trợ", args[0]))
 		return 2
 	}
 	if err := web.Run(ctx, web.ConfigFromEnv()); err != nil {

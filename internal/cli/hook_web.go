@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/policy"
 	"aisdlc/internal/snapshot"
@@ -30,8 +31,10 @@ const (
 )
 
 // controlBusyMsg: PreToolUse của tool ghi khi không lấy được control.lock (lệnh chờ chưa xét được).
-const controlBusyMsg = "aisdlc: không khóa được sổ điều khiển web (.aisdlc/web/control/control.lock) trong 1 giây" +
-	" — một tiến trình aisdlc khác đang giữ (treo hoặc bị dừng?). Thử lại sau giây lát."
+func controlBusyMsg() string {
+	return i18n.T("aisdlc: không khóa được sổ điều khiển web (.aisdlc/web/control/control.lock) trong 1 giây" +
+		" — một tiến trình aisdlc khác đang giữ (treo hoặc bị dừng?). Thử lại sau giây lát.")
+}
 
 // emit ghi event vào outbox rồi mở tiến trình gửi nền (Publisher.Emit). Lỗi chỉ ra stderr.
 func (h *hook) emit(root string, e webclient.Event) {

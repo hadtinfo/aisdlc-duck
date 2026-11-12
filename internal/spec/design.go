@@ -3,6 +3,7 @@ package spec
 import (
 	"strings"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/yamlx"
 )
@@ -85,7 +86,7 @@ func ReadDesign(path string) (DesignSpec, error) {
 // EffectiveSteps: LITE là một bước S1 lấy scope/budget từ cases; FULL là các bước của design.
 func EffectiveSteps(flow model.Flow, design *DesignSpec, cases CasesSpec) []StepSpec {
 	if flow == model.FlowLite {
-		return []StepSpec{{ID: "S1", Title: "Thay đổi", Scope: cases.Scope, Budget: cases.Budget}}
+		return []StepSpec{{ID: "S1", Title: i18n.T("Thay đổi"), Scope: cases.Scope, Budget: cases.Budget}}
 	}
 	if design == nil {
 		return nil

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/step"
 )
@@ -20,17 +21,20 @@ var (
 )
 
 const (
-	stateMsg = "File trạng thái do CLI quản lý, agent không được sửa trực tiếp: "
-
 	riskPolicyFile = "aisdlc/risk-policy.yaml"
 	configFile     = "aisdlc/config.yaml"
-	lockedMsg      = " chỉ dev sửa, ngoài Claude Code."
-	riskPolicyMsg  = "Chính sách rủi ro do dev sửa (web hoặc MR), agent không được sửa: " + riskPolicyFile
-
-	webConfigMsg = "File cấu hình web của dev, agent không được đọc/ghi"
-	envMsg       = "Lệnh này đọc biến môi trường, nơi có thể có token web của dev (AISDLC_WEB_TOKEN);" +
-		" agent không được đọc. Cần biến nào thì nêu đúng tên biến (vd. `printenv JAVA_HOME`)."
 )
+
+// webConfigMsg là lý do chặn đọc/ghi cấu hình web của dev.
+func webConfigMsg() string {
+	return i18n.T("File cấu hình web của dev, agent không được đọc/ghi")
+}
+
+// envMsg là lý do chặn lệnh đọc biến môi trường.
+func envMsg() string {
+	return i18n.T("Lệnh này đọc biến môi trường, nơi có thể có token web của dev (AISDLC_WEB_TOKEN);" +
+		" agent không được đọc. Cần biến nào thì nêu đúng tên biến (vd. `printenv JAVA_HOME`).")
+}
 
 // Go không có lookahead: các "(?!...)" và "(?=...)" của bản Java được đổi thành nhóm bắt ký tự theo sau
 // (hoặc hết chuỗi); chỗ cần biết vị trí kết thúc thật dùng chỉ số của nhóm đó.
@@ -75,19 +79,19 @@ func WebConfigDecision(paths []string, command, configDir, cwd string) (d Decisi
 	}()
 	for _, v := range paths {
 		if touchesWebConfig(v, configDir, cwd) {
-			return Deny(webConfigMsg)
+			return Deny(webConfigMsg())
 		}
 	}
 	for _, v := range paths {
 		if readsProcEnviron(v) {
-			return Deny(envMsg)
+			return Deny(envMsg())
 		}
 	}
 	if command != "" && bashTouchesWebConfig(command, configDir) {
-		return Deny(webConfigMsg)
+		return Deny(webConfigMsg())
 	}
 	if command != "" && readsEnvironment(command) {
-		return Deny(envMsg)
+		return Deny(envMsg())
 	}
 	return Ok()
 }
@@ -614,7 +618,7 @@ func lookupApproved(list []approvedArtifact, rel string) (gate.Gate, bool) {
 }
 
 func errDeny(err error) Decision {
-	return Deny("aisdlc lỗi: " + strings.Join(strings.Fields(err.Error()), " "))
+	return Deny(i18n.Tf("aisdlc lỗi: %s", strings.Join(strings.Fields(err.Error()), " ")))
 }
 
 // PreToolUse quyết định cho một lần gọi tool trước khi chạy. Lỗi đọc trạng thái (gates.json, steps.json...)
@@ -627,8 +631,7 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 	}
 
 	if s.Control != nil && s.Control.Pause != nil { // 0: dev tạm dừng tại web
-		return DenyCode("PAUSED", "Dev đã tạm dừng tại web: "+s.Control.Pause.By+
-			". Dừng lại và chờ. Khi dev báo tiếp tục thì thử lại.")
+		return DenyCode("PAUSED", i18n.Tf("Dev đã tạm dừng tại web: %s. Dừng lại và chờ. Khi dev báo tiếp tục thì thử lại.", s.Control.Pause.By))
 	}
 
 	if bash {
@@ -654,11 +657,11 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 	}
 
 	if javaBlank(call.FilePath) {
-		return Deny("Không xác định được đường dẫn file của lệnh ghi; từ chối để an toàn.")
+		return Deny(i18n.T("Không xác định được đường dẫn file của lệnh ghi; từ chối để an toàn."))
 	}
 	rel, inside, err := relative(s, call.FilePath)
 	if err != nil {
-		return Deny("Đường dẫn file không hợp lệ: " + call.FilePath + "; từ chối để an toàn.")
+		return Deny(i18n.Tf("Đường dẫn file không hợp lệ: %s; từ chối để an toàn.", call.FilePath))
 	}
 	if !inside {
 		return Ok() // 3
@@ -666,14 +669,14 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 
 	// file cấu hình chỉ dev sửa: chặn bất kể cổng và bước. risk-policy.yaml giữ nguyên văn câu của bản Java.
 	if rel == riskPolicyFile {
-		return DenyCode("CONFIG_LOCKED", riskPolicyMsg)
+		return DenyCode("CONFIG_LOCKED", i18n.Tf("Chính sách rủi ro do dev sửa (web hoặc MR), agent không được sửa: %s", riskPolicyFile))
 	}
 	if rel == configFile {
-		return DenyCode("CONFIG_LOCKED", configFile+lockedMsg)
+		return DenyCode("CONFIG_LOCKED", i18n.Tf("%s chỉ dev sửa, ngoài Claude Code.", configFile))
 	}
 
 	if rel == ".aisdlc" || strings.HasPrefix(rel, ".aisdlc/") || featureState.MatchString(rel) || contains(stateFiles(s), rel) {
-		return Deny(stateMsg + rel + ". Dùng lệnh `aisdlc` tương ứng.") // 4
+		return Deny(i18n.Tf("File trạng thái do CLI quản lý, agent không được sửa trực tiếp: %s. Dùng lệnh `aisdlc` tương ứng.", rel)) // 4
 	}
 
 	approved, err := approvedArtifacts(s)
@@ -681,8 +684,7 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 		return errDeny(err)
 	}
 	if g, ok := lookupApproved(approved, rel); ok { // 5
-		return Deny(rel + " đã được duyệt ở cổng " + string(g) + "; nếu cần sửa, dev chạy `aisdlc reopen " +
-			strings.ToLower(string(g)) + "`")
+		return Deny(i18n.Tf("%s đã được duyệt ở cổng %s; nếu cần sửa, dev chạy `aisdlc reopen %s`", rel, string(g), strings.ToLower(string(g))))
 	}
 
 	if s.Active != "" && strings.HasPrefix(rel, "aisdlc/features/"+string(s.Active)+"/") {
@@ -696,16 +698,13 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 		for i, k := range s.Ambiguous {
 			keys[i] = string(k)
 		}
-		return DenyCode("AMBIGUOUS_FEATURE", "Có nhiều tính năng đang mở ("+strings.Join(keys, ", ")+
-			"). Chạy `aisdlc use <KEY>` (hỏi dev nếu chưa biết); nếu vẫn bị chặn (session thiếu "+
-			"AISDLC_SESSION), thêm `--feature <KEY>` vào lệnh aisdlc hoặc khởi động lại session.")
+		return DenyCode("AMBIGUOUS_FEATURE", i18n.Tf("Có nhiều tính năng đang mở (%s). Chạy `aisdlc use <KEY>` (hỏi dev nếu chưa biết); nếu vẫn bị chặn (session thiếu AISDLC_SESSION), thêm `--feature <KEY>` vào lệnh aisdlc hoặc khởi động lại session.", strings.Join(keys, ", ")))
 	}
 	if s.Active == "" {
-		return Deny("Chưa có tính năng đang làm (trên nhánh này). Chạy `aisdlc use <KEY>` nếu tính " +
-			"năng đã có, hoặc /aisdlc:init <JIRA-KEY>") // 8
+		return Deny(i18n.T("Chưa có tính năng đang làm (trên nhánh này). Chạy `aisdlc use <KEY>` nếu tính năng đã có, hoặc /aisdlc:init <JIRA-KEY>")) // 8
 	}
 	if s.Gates == nil || s.Steps == nil {
-		return Deny("Thiếu trạng thái cổng/bước của tính năng " + string(s.Active) + "; từ chối để an toàn.")
+		return Deny(i18n.Tf("Thiếu trạng thái cổng/bước của tính năng %s; từ chối để an toàn.", string(s.Active)))
 	}
 	ready, err := s.Gates.CodeReady()
 	if err != nil {
@@ -720,7 +719,7 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 		if ok {
 			first = string(g)
 		}
-		return Deny("Chưa được viết code: cổng " + first + " chưa được duyệt (dev cần duyệt cổng này trước).")
+		return Deny(i18n.Tf("Chưa được viết code: cổng %s chưa được duyệt (dev cần duyệt cổng này trước).", first))
 	}
 	cur, has, err := s.Steps.Current()
 	if err != nil {
@@ -728,14 +727,13 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 	}
 	if !has || cur.Status != step.StepInProgress { // 10
 		if has {
-			return Deny("Bước " + cur.ID + " đang chờ dev duyệt: dev chạy `aisdlc step accept " + cur.ID +
-				"`, hoặc chạy `aisdlc step start " + cur.ID + "` để sửa tiếp.")
+			return Deny(i18n.Tf("Bước %s đang chờ dev duyệt: dev chạy `aisdlc step accept %s`, hoặc chạy `aisdlc step start %s` để sửa tiếp.", cur.ID, cur.ID, cur.ID))
 		}
 		next, err := nextStepID(s)
 		if err != nil {
 			return errDeny(err)
 		}
-		return Deny("Chưa có bước nào đang chạy. Chạy `aisdlc step start " + next + "`.")
+		return Deny(i18n.Tf("Chưa có bước nào đang chạy. Chạy `aisdlc step start %s`.", next))
 	}
 	id := cur.ID
 	globs, err := s.Steps.AllowedGlobs(id)
@@ -743,8 +741,7 @@ func PreToolUse(call ToolCall, s PolicyState) Decision {
 		return errDeny(err)
 	}
 	if !step.ScopeMatches(globs, rel) { // 11
-		return DenyCode("OUT_OF_SCOPE", "Ngoài phạm vi "+id+" ("+strings.Join(globs, ", ")+
-			"). Dev có thể chạy `aisdlc scope allow "+rel+"`")
+		return DenyCode("OUT_OF_SCOPE", i18n.Tf("Ngoài phạm vi %s (%s). Dev có thể chạy `aisdlc scope allow %s`", id, strings.Join(globs, ", "), rel))
 	}
 	return Ok() // 12
 }
@@ -772,8 +769,7 @@ func Stop(stopHookActive bool, s PolicyState) Decision {
 		return Ok()
 	}
 	if has && cur.Status == step.StepInProgress {
-		return Deny("Bước " + cur.ID + " chưa kết thúc. Chạy `aisdlc step finish " + cur.ID +
-			"` và báo kết quả cho dev trước khi dừng.")
+		return Deny(i18n.Tf("Bước %s chưa kết thúc. Chạy `aisdlc step finish %s` và báo kết quả cho dev trước khi dừng.", cur.ID, cur.ID))
 	}
 	return Ok()
 }
@@ -785,7 +781,7 @@ func InstructionContext(items []snapshot.Instruction, zone *time.Location) strin
 	}
 	blocks := make([]string, 0, len(items))
 	for _, i := range items {
-		blocks = append(blocks, "Chỉ dẫn của dev ("+i.At.In(zone).Format("15:04")+"): "+i.Text)
+		blocks = append(blocks, i18n.Tf("Chỉ dẫn của dev (%s): %s", i.At.In(zone).Format("15:04"), i.Text))
 	}
 	return strings.Join(blocks, "\n\n")
 }
@@ -793,27 +789,18 @@ func InstructionContext(items []snapshot.Instruction, zone *time.Location) strin
 // SessionContext là quy tắc AISDLC và trạng thái hiện tại, đưa vào ngữ cảnh đầu session.
 func SessionContext(s PolicyState) string {
 	var sb strings.Builder
-	sb.WriteString("Quy tắc AISDLC:\n" +
-		"- Quy trình: BRD -> Thiết kế -> Case -> Code từng bước -> Review; mỗi cổng do dev duyệt.\n" +
-		"- Chưa qua cổng thiết kế/case thì không viết code sản phẩm (hook sẽ chặn).\n" +
-		"- Không sửa artifact đã duyệt; cần sửa thì dev chạy `aisdlc reopen <gate>`.\n" +
-		"- Không sửa file trạng thái (gates.json, steps.json, .aisdlc/**), kể cả qua Bash.\n" +
-		"- Chỉ dev chạy: approve, reject, reopen, scope allow, step accept.\n" +
-		"- Bắt đầu bước bằng `aisdlc step start Sx`; chỉ sửa file trong phạm vi bước.\n" +
-		"- Xong bước chạy `aisdlc step finish Sx`, báo kết quả cho dev rồi dừng chờ `step accept`.\n" +
-		"- Cần mở rộng phạm vi: nhờ dev chạy `aisdlc scope allow <path>`.")
+	sb.WriteString(i18n.T("Quy tắc AISDLC:\n- Quy trình: BRD -> Thiết kế -> Case -> Code từng bước -> Review; mỗi cổng do dev duyệt.\n- Chưa qua cổng thiết kế/case thì không viết code sản phẩm (hook sẽ chặn).\n- Không sửa artifact đã duyệt; cần sửa thì dev chạy `aisdlc reopen <gate>`.\n- Không sửa file trạng thái (gates.json, steps.json, .aisdlc/**), kể cả qua Bash.\n- Chỉ dev chạy: approve, reject, reopen, scope allow, step accept.\n- Bắt đầu bước bằng `aisdlc step start Sx`; chỉ sửa file trong phạm vi bước.\n- Xong bước chạy `aisdlc step finish Sx`, báo kết quả cho dev rồi dừng chờ `step accept`.\n- Cần mở rộng phạm vi: nhờ dev chạy `aisdlc scope allow <path>`."))
 	if s.Active == "" {
 		if len(s.Ambiguous) > 0 {
 			keys := make([]string, len(s.Ambiguous))
 			for i, k := range s.Ambiguous {
 				keys[i] = string(k)
 			}
-			sb.WriteString("\nCó nhiều tính năng đang mở (" + strings.Join(keys, ", ") +
-				"); session này chưa gắn tính năng nào: chạy `aisdlc use <KEY>` (hỏi dev nếu chưa biết).")
+			sb.WriteString(i18n.Tf("\nCó nhiều tính năng đang mở (%s); session này chưa gắn tính năng nào: chạy `aisdlc use <KEY>` (hỏi dev nếu chưa biết).", strings.Join(keys, ", ")))
 		}
 		return sb.String()
 	}
-	sb.WriteString("\nTrạng thái: tính năng " + string(s.Active))
+	sb.WriteString(i18n.Tf("\nTrạng thái: tính năng %s", string(s.Active)))
 	var gs []string
 	if s.Gates != nil {
 		for _, g := range gate.Sequence(s.Gates.Flow()) {
@@ -825,8 +812,8 @@ func SessionContext(s PolicyState) string {
 			gs = append(gs, string(g)+"="+state)
 		}
 	}
-	sb.WriteString("; cổng: " + strings.Join(gs, ", "))
-	cur := "chưa có bước đang chạy"
+	sb.WriteString(i18n.Tf("; cổng: %s", strings.Join(gs, ", ")))
+	cur := i18n.T("chưa có bước đang chạy")
 	if s.Steps != nil {
 		r, ok, err := s.Steps.Current()
 		if err != nil {
@@ -835,7 +822,7 @@ func SessionContext(s PolicyState) string {
 			cur = r.ID + " " + string(r.Status)
 		}
 	}
-	sb.WriteString("; bước: " + cur)
+	sb.WriteString(i18n.Tf("; bước: %s", cur))
 	return sb.String()
 }
 

@@ -13,7 +13,7 @@ const { WEB_URL, WEB_TOKEN, REPO_ID, KEY, RULE, DESCRIBE, LEVEL, GATE, LLM_GATE,
 
 const browser = await chromium.launch();
 try {
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1400 } });
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1400 }, locale: "vi-VN" });
   const res = await ctx.request.post(`${WEB_URL}/api/login`, { data: { token: WEB_TOKEN } });
   if (!res.ok()) throw new Error(`đăng nhập thất bại: HTTP ${res.status()}`);
   const page = await ctx.newPage();

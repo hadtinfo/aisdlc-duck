@@ -77,13 +77,12 @@ func TestEnglishCLIFlow(t *testing.T) {
 	contains(t, r.out, "BRD_EMPTY_SECTION", "Fix them, then run `aisdlc submit brd` again.")
 
 	// BRD hợp lệ: nộp được; duyệt không có console (agent) bị từ chối
-	r.write("aisdlc/features/PAY-1/brd.md", validBRD)
+	r.write("aisdlc/features/PAY-1/brd.md", validBRDEn)
 	step(0, "submit", "brd")
 	contains(t, r.out, "Submitted the BRD gate, no findings.")
-	// stdout là review card (internal/review, đợt 3): chỉ xét stderr của CLI
+	// stdout gồm tóm tắt cổng và review card (internal/review): cả hai theo locale của repo
 	eq(t, r.run("approve", "brd"), 3)
-	noVietnamese(t, "approve brd (stderr)", r.err)
-	noVietnamese(t, "approve brd (summary)", strings.SplitN(r.out, "Review card", 2)[0])
+	noVietnamese(t, "approve brd", r.out+r.err)
 	contains(t, r.err, "Only the dev may run this command, in a real terminal")
 
 	// chưa qua cổng thiết kế: step start bị từ chối
@@ -153,3 +152,25 @@ func TestEnglishOutOfScopeAndStop(t *testing.T) {
 	eq(t, str(stop, "decision"), "block")
 	contains(t, str(stop, "reason"), "Step S1 is not finished. Run `aisdlc step finish S1`")
 }
+
+// validBRDEn là validBRD viết bằng tiếng Anh (repo locale en): nội dung tài liệu cũng không có tiếng Việt.
+const validBRDEn = `# BRD
+
+## Goal
+Daily transfer limit.
+
+## In scope
+- Limit check API.
+
+## Out of scope
+- UI.
+
+## Business rules
+- Limit 50,000,000 VND per day.
+
+## Acceptance criteria
+- Over the limit returns 422.
+
+## Open questions
+- [x] Do cancelled transactions count? → no
+`

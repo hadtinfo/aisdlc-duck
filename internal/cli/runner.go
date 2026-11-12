@@ -21,7 +21,7 @@ import (
 const HarnessLog = harnessapi.HarnessLog
 
 // harnessPanic mở đầu thông điệp khi harness hỏng giữa chừng (panic) trước khi ghi kết quả.
-const harnessPanic = harnessapi.PanicPrefix
+func harnessPanic() string { return harnessapi.PanicPrefixText() }
 
 // CaseRunner chạy bộ case của một tính năng (MavenRunner của Java). mode: "cases", "cases-with-drafts",
 // "migration-check". Lỗi hạ tầng hay dịch vụ trả thành case ERROR; error chỉ khi mode sai (*Abort) hoặc không
@@ -77,7 +77,7 @@ func (r *harnessCaseRunner) RunCases(key model.FeatureKey, steps []string, mode 
 		return run.CaseRunResult{ExitCode: 2, Cases: errorCases(r.selected(key, steps, m), err.Error())}, nil
 	}
 	canceled := run.CaseRunResult{ExitCode: harnessapi.ExitTimeout,
-		Cases: errorCases(r.selected(key, steps, m), harnessapi.CanceledMessage)}
+		Cases: errorCases(r.selected(key, steps, m), harnessapi.Canceled())}
 	if r.std.Err() != nil {
 		return canceled, nil // đã hủy trước khi chạy: như harness gặp ctx đã hủy
 	}
@@ -90,7 +90,7 @@ func (r *harnessCaseRunner) RunCases(key model.FeatureKey, steps []string, mode 
 	case err != nil && r.std.Err() != nil:
 		return canceled, nil
 	case err != nil:
-		appendLog(out, harnessPanic+err.Error())
+		appendLog(out, harnessPanic()+err.Error())
 		return r.crashed(key, steps, m, out), nil
 	case res.Error != "":
 		return run.CaseRunResult{}, errors.New(res.Error)
@@ -173,15 +173,15 @@ func (v harnessVerifier) Verify(ctx context.Context, key model.FeatureKey, out s
 	case err != nil && ctx.Err() != nil:
 		return canceledVerify(), nil
 	case err != nil:
-		appendLog(out, harnessPanic+err.Error())
-		return failedVerify(err.Error(), harnessPanic+err.Error()), nil
+		appendLog(out, harnessPanic()+err.Error())
+		return failedVerify(err.Error(), harnessPanic()+err.Error()), nil
 	case res.Error != "":
 		return harnessapi.VerifyResult{}, errors.New(res.Error)
 	case res.Panic != "":
-		return failedVerify(res.Panic, harnessPanic+res.Panic), nil
+		return failedVerify(res.Panic, harnessPanic()+res.Panic), nil
 	case res.Verify == nil:
 		appendLog(out, harnessNoVerify())
-		return failedVerify(harnessNoVerify(), harnessPanic+harnessNoVerify()), nil
+		return failedVerify(harnessNoVerify(), harnessPanic()+harnessNoVerify()), nil
 	}
 	return *res.Verify, nil
 }
@@ -195,7 +195,7 @@ func failedVerify(harnessErr, na string) harnessapi.VerifyResult {
 // canceledVerify: bị hủy trước khi harness ghi kết quả.
 func canceledVerify() harnessapi.VerifyResult {
 	return harnessapi.VerifyResult{Build: lang.BuildResult{OK: true}, Run: harnessapi.RunResult{ExitCode: harnessapi.ExitTimeout},
-		Coverage: lang.Coverage{NA: harnessapi.CanceledMessage}, TimedOut: true}
+		Coverage: lang.Coverage{NA: harnessapi.Canceled()}, TimedOut: true}
 }
 
 // clearResults xóa results.json, schema.json và harness-result.json cũ trong out trước khi harness chạy (harness cũng

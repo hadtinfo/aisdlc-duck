@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/spec"
 )
 
@@ -143,7 +144,7 @@ func (d *PgDB) Check(ctx context.Context, e spec.DbExpect) (string, error) {
 		return "", err
 	}
 	if len(actual) != len(e.Rows) {
-		return fmt.Sprintf("số dòng: mong đợi %d, nhận %d", len(e.Rows), len(actual)), nil
+		return i18n.Tf("số dòng: mong đợi %d, nhận %d", len(e.Rows), len(actual)), nil
 	}
 	for i, row := range actual {
 		keys := make([]string, 0, len(e.Rows[i]))
@@ -154,11 +155,11 @@ func (d *PgDB) Check(ctx context.Context, e spec.DbExpect) (string, error) {
 		for _, k := range keys {
 			got, ok := row[strings.ToLower(k)]
 			if !ok {
-				return fmt.Sprintf("dòng %d: không có cột %s", i, k), nil
+				return i18n.Tf("dòng %d: không có cột %s", i, k), nil
 			}
 			want := e.Rows[i][k]
 			if !matches(want, got) {
-				return fmt.Sprintf("dòng %d cột %s: mong đợi %s, nhận %s", i, k, fmtExpected(want), got.text), nil
+				return i18n.Tf("dòng %d cột %s: mong đợi %s, nhận %s", i, k, fmtExpected(want), got.text), nil
 			}
 		}
 	}

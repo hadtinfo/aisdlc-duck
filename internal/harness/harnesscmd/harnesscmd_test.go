@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"aisdlc/internal/harness"
 	"aisdlc/internal/harness/harnessapi"
 	"aisdlc/internal/harness/harnesstest"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/lang/golang"
 	"aisdlc/internal/model"
@@ -142,7 +144,7 @@ func TestRunCanceledContextMarksCasesError(t *testing.T) {
 	if r.Run == nil || r.Run.ExitCode != harnessapi.ExitTimeout {
 		t.Fatalf("r = %+v", r)
 	}
-	allError(t, r.Run.Cases, harnessapi.CanceledMessage)
+	allError(t, r.Run.Cases, harnessapi.Canceled())
 }
 
 // Harness panic: Result.Panic, stack và "harness lỗi: boom" ở cuối harness.log, không có results.json.
@@ -225,4 +227,29 @@ func TestTrapFirstCancelsSecondKills(t *testing.T) {
 		t.Errorf("exit %d", c)
 	}
 	stop()
+}
+
+// viChars là chữ cái có dấu tiếng Việt (cùng bảng với test catalog của internal/i18n).
+var viChars = regexp.MustCompile(`(?i)[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]`)
+
+// Tiến trình con nhận locale qua AISDLC_LOCALE (aisdlc truyền xuống): en thì stderr và Result.Error tiếng Anh.
+func TestMainEnglishLocaleFromEnv(t *testing.T) {
+	t.Setenv("AISDLC_LOCALE", "en")
+	t.Cleanup(func() { i18n.SetDefault(i18n.VI) })
+	var e strings.Builder
+	if c := Main(nil, &e, nil); c != harnessapi.ExitError || !strings.Contains(e.String(), "usage: aisdlc-harness") {
+		t.Errorf("code %d, %q", c, e.String())
+	}
+	root := harnesstest.CopySample(t)
+	out := filepath.Join(t.TempDir(), "out")
+	if c := Main([]string{"run", "--root", root, "--feature", "DEMO-1", "--out", out, "--mode", "bogus"}, &e, nil); c != harnessapi.ExitError {
+		t.Errorf("code %d", c)
+	}
+	r, err := harnessapi.ReadResult(out)
+	if err != nil || !strings.Contains(r.Error, "invalid mode: bogus") {
+		t.Errorf("r = %+v, %v", r, err)
+	}
+	if viChars.MatchString(e.String()) || viChars.MatchString(r.Error) {
+		t.Errorf("còn chữ tiếng Việt: %q / %q", e.String(), r.Error)
+	}
 }

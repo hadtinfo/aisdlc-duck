@@ -12,6 +12,7 @@ import (
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
 	"aisdlc/internal/harness/harnessapi"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/risk"
@@ -179,14 +180,14 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 	if _, statErr := os.Stat(s.Paths.Risk()); statErr == nil {
 		f, ok, err := risk.ReadRiskFile(s.Paths.Risk())
 		if err != nil {
-			hard = append(hard, HardCheck{"RISK_FILE", false, "Không đọc được risk.yaml: " + err.Error()})
+			hard = append(hard, HardCheck{"RISK_FILE", false, i18n.Tf("Không đọc được risk.yaml: %s", err.Error())})
 		} else if ok {
 			rf = &f
 		}
 	} else if risk.RequiredFor(s.Meta, s.Paths.DesignYaml()) {
 		// có dấu riskSchema (mọi luồng) hoặc design.yaml có impact: không phải tính năng cũ, thiếu risk.yaml không
 		// được miễn yêu cầu
-		hard = append(hard, HardCheck{"RISK_FILE", false, "thiếu risk.yaml; chạy aisdlc submit cases"})
+		hard = append(hard, HardCheck{"RISK_FILE", false, i18n.T("thiếu risk.yaml; chạy aisdlc submit cases")})
 	}
 	if ci && rf != nil && s.Meta.RiskSchema >= 2 {
 		hard = append(hard, s.riskLLM(ctx, *rf, webMode))
@@ -241,39 +242,37 @@ func (s *Service) Run(ctx context.Context, ci bool, baseRef string, web CIApprov
 func (s *Service) riskLLM(ctx context.Context, rf risk.RiskFile, webMode bool) HardCheck {
 	const id = "RISK_LLM"
 	if rf.LLM == nil {
-		return HardCheck{id, false, "thiếu kết quả xếp loại LLM"}
+		return HardCheck{id, false, i18n.T("thiếu kết quả xếp loại LLM")}
 	}
 	policy := s.Policy
 	if webMode {
 		// chế độ web có hiệu lực: chỉ dùng chính sách từ web, không rơi về file/mẫu trong repo
-		const pre = "không lấy được chính sách từ web: "
 		if s.WebPolicy == nil {
-			return HardCheck{id, false, pre + "thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN"}
+			return HardCheck{id, false, i18n.T("không lấy được chính sách từ web: thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN")}
 		}
 		p, err := s.WebPolicy(ctx)
 		if err != nil {
-			return HardCheck{id, false, pre + err.Error()}
+			return HardCheck{id, false, i18n.Tf("không lấy được chính sách từ web: %s", err.Error())}
 		}
 		policy = p
 	} else if policy == nil {
 		if s.PolicyErr != "" {
 			return HardCheck{id, false, s.PolicyErr}
 		}
-		return HardCheck{id, false, "không có chính sách rủi ro để kiểm inputsHash"}
+		return HardCheck{id, false, i18n.T("không có chính sách rủi ro để kiểm inputsHash")}
 	}
 	files, err := risk.InputFiles(s.Paths.RepoRoot, s.Paths, s.Meta.Flow)
 	if err != nil {
-		return HardCheck{id, false, "Không đọc được tài liệu đầu vào: " + err.Error()}
+		return HardCheck{id, false, i18n.Tf("Không đọc được tài liệu đầu vào: %s", err.Error())}
 	}
 	if rf.LLM.InputsHash != risk.InputsHash(*policy, files) {
-		return HardCheck{id, false, "inputsHash không khớp tài liệu hiện tại"}
+		return HardCheck{id, false, i18n.T("inputsHash không khớp tài liệu hiện tại")}
 	}
 	// mức trong risk.yaml phải là mức của subagent nâng lên mức mặc định (như risk.FromLLM), trừ khi dev đổi tay
 	if want := risk.Stricter(*policy, policy.DefaultLevel, rf.LLM.Level); rf.Override == nil && rf.Level != want {
-		return HardCheck{id, false, "mức " + rf.Level + " trong risk.yaml khác mức từ kết quả xếp loại LLM (" + want +
-			") mà không có đổi tay (override)"}
+		return HardCheck{id, false, i18n.Tf("mức %s trong risk.yaml khác mức từ kết quả xếp loại LLM (%s) mà không có đổi tay (override)", rf.Level, want)}
 	}
-	return HardCheck{id, true, "kết quả xếp loại LLM khớp tài liệu và chính sách hiện tại"}
+	return HardCheck{id, true, i18n.T("kết quả xếp loại LLM khớp tài liệu và chính sách hiện tại")}
 }
 
 // webApprovals: web trả lời sai/không trả lời không bao giờ được bỏ qua ở chế độ web. Không có nguồn web mà config
@@ -285,12 +284,12 @@ func (s *Service) webApprovals(ctx context.Context, web CIApprovalSource, evalua
 			return false, nil, nil
 		}
 		return true, []HardCheck{{"GATE:WEB", false,
-			"Thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN để hỏi web (chế độ web)"}}, nil
+			i18n.T("Thiếu biến AISDLC_WEB_URL hoặc AISDLC_CI_TOKEN để hỏi web (chế độ web)")}}, nil
 	}
 	got, err := askWeb(ctx, web, s.Meta.Key, evaluatedTree)
 	if err != nil {
 		// có nguồn thì không có chế độ bỏ qua: config.yaml của đầu MR không được tắt kiểm tra
-		return true, []HardCheck{{"GATE:WEB", false, "Không hỏi được web (" + err.Error() + "), chạy lại job"}}, nil
+		return true, []HardCheck{{"GATE:WEB", false, i18n.Tf("Không hỏi được web (%s), chạy lại job", err.Error())}}, nil
 	}
 	// server đã ghim chế độ (lead quyết) → theo server; chưa ghim → theo config.yaml (web thì fail closed)
 	webMode := configWeb
@@ -306,7 +305,7 @@ func (s *Service) webApprovals(ctx context.Context, web CIApprovalSource, evalua
 		id := "GATE:" + string(g)
 		a, ok := got.Approvals[g]
 		if !ok {
-			out = append(out, HardCheck{id, false, "chưa duyệt " + string(g) + " trên web"})
+			out = append(out, HardCheck{id, false, i18n.Tf("chưa duyệt %s trên web", string(g))})
 			continue
 		}
 		h, err := s.Gates.CurrentHash(g)
@@ -315,11 +314,11 @@ func (s *Service) webApprovals(ctx context.Context, web CIApprovalSource, evalua
 		}
 		switch {
 		case a.Hash != h:
-			out = append(out, HardCheck{id, false, string(g) + " đã đổi sau khi duyệt"})
+			out = append(out, HardCheck{id, false, i18n.Tf("%s đã đổi sau khi duyệt", string(g))})
 		case g == gate.REVIEW && evaluatedTree != got.EvaluatedTree[g]:
-			out = append(out, HardCheck{id, false, "REVIEW đã đổi sau duyệt, chạy lại aisdlc eval rồi duyệt lại"})
+			out = append(out, HardCheck{id, false, i18n.T("REVIEW đã đổi sau duyệt, chạy lại aisdlc eval rồi duyệt lại")})
 		default:
-			out = append(out, HardCheck{id, true, "đã duyệt trên web, khớp nội dung"})
+			out = append(out, HardCheck{id, true, i18n.T("đã duyệt trên web, khớp nội dung")})
 		}
 	}
 	// bản tự duyệt của server (channel auto) cũng phải được flow chụp trong risk.yaml cho phép
@@ -343,7 +342,7 @@ func (s *Service) approvals() ([]SoftCheck, error) {
 			return nil, err
 		}
 		if !ok {
-			out = append(out, SoftCheck{id, SoftWarn, "chưa duyệt " + string(g)})
+			out = append(out, SoftCheck{id, SoftWarn, i18n.Tf("chưa duyệt %s", string(g))})
 			continue
 		}
 		match, err := s.Gates.ApprovalMatches(g)
@@ -351,7 +350,7 @@ func (s *Service) approvals() ([]SoftCheck, error) {
 			return nil, err
 		}
 		if !match {
-			out = append(out, SoftCheck{id, SoftWarn, string(g) + " đã đổi sau khi duyệt"})
+			out = append(out, SoftCheck{id, SoftWarn, i18n.Tf("%s đã đổi sau khi duyệt", string(g))})
 		}
 	}
 	return out, nil
@@ -377,9 +376,9 @@ func AutoApprovals(seq []gate.Gate, approval func(gate.Gate) (gate.Approval, boo
 		}
 		id := "GATE_AUTO:" + string(g)
 		if risk.AutoFromRiskFile(rf, g) {
-			out = append(out, HardCheck{id, true, "tự duyệt (mức " + rf.Level + "), khớp flow trong risk.yaml"})
+			out = append(out, HardCheck{id, true, i18n.Tf("tự duyệt (mức %s), khớp flow trong risk.yaml", rf.Level)})
 		} else {
-			out = append(out, HardCheck{id, false, "Bản tự duyệt " + string(g) + " không khớp flow trong risk.yaml"})
+			out = append(out, HardCheck{id, false, i18n.Tf("Bản tự duyệt %s không khớp flow trong risk.yaml", string(g))})
 		}
 	}
 	return out
@@ -404,7 +403,7 @@ func (s *Service) write(report EvalReport, results []run.CaseResult) error {
 		}
 	}
 	if err := fsx.WriteAtomic(filepath.Join(dir, "report.md"), []byte(RenderReport(report, notPassed)), 0o644); err != nil {
-		return errors.New("Không ghi được " + dir + ": " + err.Error())
+		return errors.New(i18n.Tf("Không ghi được %s: %v", dir, err))
 	}
 	recs, err := s.Steps.All()
 	if err != nil {
@@ -415,7 +414,7 @@ func (s *Service) write(report EvalReport, results []run.CaseResult) error {
 		return err
 	}
 	if err := fsx.WriteAtomic(filepath.Join(dir, "diff-by-step.md"), []byte(diff), 0o644); err != nil {
-		return errors.New("Không ghi được " + dir + ": " + err.Error())
+		return errors.New(i18n.Tf("Không ghi được %s: %v", dir, err))
 	}
 	return nil
 }
@@ -424,7 +423,7 @@ func (s *Service) write(report EvalReport, results []run.CaseResult) error {
 func askWeb(ctx context.Context, web CIApprovalSource, key model.FeatureKey, tree string) (got CIApprovals, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("lỗi nội bộ: %v", r)
+			err = fmt.Errorf(i18n.T("lỗi nội bộ: %v"), r)
 		}
 	}()
 	return web.Approvals(ctx, key, tree)

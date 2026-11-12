@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -86,7 +87,7 @@ func literalKey(e ast.Expr) (string, bool) {
 // scanFile quét một file đã parse: các lời gọi T/Tf có khóa literal (Args[0]) và chuỗi tiếng Việt trần. Chỉ literal
 // nằm trong Args[0] của lời gọi T/Tf mà Args[0] là khóa literal (literal chuỗi hoặc chuỗi phép +) và literal trong
 // struct tag mới được miễn; literal ở đối số khác, hay trong Args[0] không phải khóa literal, được xét như mọi
-// literal khác. skipBare: bỏ phần chuỗi trần (en.go).
+// literal khác. skipBare: bỏ phần chuỗi trần (file catalog en.go, en_*.go).
 func scanFile(fset *token.FileSet, f *ast.File, rel string, skipBare bool) scan {
 	var out scan
 	exempt := map[*ast.BasicLit]bool{}
@@ -168,7 +169,7 @@ func scanModule(t *testing.T) scan {
 	t.Helper()
 	var out scan
 	walkGo(t, func(rel string, fset *token.FileSet, f *ast.File) {
-		r := scanFile(fset, f, rel, rel == "internal/i18n/en.go")
+		r := scanFile(fset, f, rel, isCatalogFile(rel))
 		out.calls = append(out.calls, r.calls...)
 		out.bare = append(out.bare, r.bare...)
 	})
@@ -410,4 +411,11 @@ func f(l loc.Locale) { _ = loc.Tf("x"); _ = l.T("y"); loc.SetDefault(l); _ = loc
 	if len(got) != 3 {
 		t.Errorf("muốn 3 lần dùng bị cấm (Tf, SetDefault, Default), được %v", got)
 	}
+}
+
+// isCatalogFile: en.go và các catalog phụ en_<khu>.go (không tính file test) — khóa là chuỗi tiếng Việt nguyên văn.
+func isCatalogFile(rel string) bool {
+	dir, name := path.Split(rel)
+	return dir == "internal/i18n/" && !strings.HasSuffix(name, "_test.go") &&
+		(name == "en.go" || strings.HasPrefix(name, "en_") && strings.HasSuffix(name, ".go"))
 }

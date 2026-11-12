@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 )
 
 var (
-	feedbackHeader = regexp.MustCompile(`^## (\w+) — (trả lại|mở lại) bởi (.+) lúc (\S+)\s*$`)
+	// tiêu đề mục do gate.Service ghi theo locale của repo: nhận cả hai ngôn ngữ (repo có thể đổi locale giữa chừng)
+	feedbackHeader = regexp.MustCompile(`^## (\w+) — (trả lại|mở lại|rejected|reopened) (?:bởi|by) (.+) (?:lúc|at) (\S+)\s*$`)
 	// FeedbackMarker là dòng đánh dấu id feedback từ web (<!-- aisdlc-fb:<id> -->), không thuộc nội dung góp ý.
 	FeedbackMarker = regexp.MustCompile(`^<!-- aisdlc-fb:(\d+) -->\s*$`)
 	lineBreak      = regexp.MustCompile(`\r\n|[\n\x0B\f\r\x{85}\x{2028}\x{2029}]`)
@@ -37,7 +39,7 @@ func LastFeedback(feedbackMd string, g gate.Gate) (Feedback, bool, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return Feedback{}, false, nil
 		}
-		return Feedback{}, false, fmt.Errorf("Không đọc được %s: %v", feedbackMd, err)
+		return Feedback{}, false, fmt.Errorf(i18n.T("Không đọc được %s: %v"), feedbackMd, err)
 	}
 	var found *Feedback
 	var kind, by string
@@ -64,7 +66,7 @@ func LastFeedback(feedbackMd string, g gate.Gate) (Feedback, bool, error) {
 			}
 			at, by = t.UTC(), m[3]
 			kind = "REOPENED"
-			if m[2] == "trả lại" {
+			if m[2] == "trả lại" || m[2] == "rejected" {
 				kind = "REJECTED"
 			}
 		}

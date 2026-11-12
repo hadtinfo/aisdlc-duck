@@ -1,11 +1,12 @@
 package review
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"aisdlc/internal/i18n"
 )
 
 const maxCardLines = 10
@@ -34,12 +35,12 @@ func (t *cardText) card(key string, c ReviewCard, approval string) {
 	if key != "" {
 		prefix = key + " · "
 	}
-	t.add("Review card — " + prefix + "cổng " + c.Gate)
+	t.add(i18n.Tf("Review card — %scổng %s", prefix, c.Gate))
 	if approval != "" {
-		t.add("Duyệt: " + approval)
+		t.add(i18n.Tf("Duyệt: %s", approval))
 	}
 	if c.Risk != nil {
-		t.add("Rủi ro: " + c.Risk.Level)
+		t.add(i18n.Tf("Rủi ro: %s", c.Risk.Level))
 		if a := c.Risk.Agent; a != nil {
 			reason := ""
 			if strings.TrimSpace(a.Reason) != "" {
@@ -47,7 +48,7 @@ func (t *cardText) card(key string, c ReviewCard, approval string) {
 			}
 			labels := ""
 			if len(a.Labels) > 0 {
-				labels = ", nhãn: " + strings.Join(a.Labels, ", ")
+				labels = i18n.Tf(", nhãn: %s", strings.Join(a.Labels, ", "))
 			}
 			t.add("Agent: " + a.Level + reason + labels)
 		}
@@ -70,9 +71,9 @@ func (t *cardText) card(key string, c ReviewCard, approval string) {
 
 func (t *cardText) flags(flags []ReviewFlag) {
 	t.add("")
-	t.add("Cờ đỏ (" + strconv.Itoa(len(flags)) + ")")
+	t.add(i18n.Tf("Cờ đỏ (%d)", len(flags)))
 	if len(flags) == 0 {
-		t.add("  Không có cờ nào")
+		t.add(i18n.T("  Không có cờ nào"))
 	}
 	shown := 0
 	for _, lv := range textOrder {
@@ -116,12 +117,12 @@ func (t *cardText) assumptions(c ReviewCard) {
 	}
 	as := c.Assumptions
 	t.add("")
-	t.add("Giả định (" + strconv.Itoa(len(as)) + ")")
+	t.add(i18n.Tf("Giả định (%d)", len(as)))
 	if len(as) == 0 {
 		if c.AssumptionsSection != nil && *c.AssumptionsSection {
-			t.add("  Agent không ghi giả định nào")
+			t.add(i18n.T("  Agent không ghi giả định nào"))
 		} else {
-			t.add("  Agent không ghi giả định nào (không có mục Giả định)")
+			t.add(i18n.T("  Agent không ghi giả định nào (không có mục Giả định)"))
 		}
 		return
 	}
@@ -139,37 +140,37 @@ func (t *cardText) assumptions(c ReviewCard) {
 func (t *cardText) brd(b BrdPart) {
 	t.add("")
 	t.add("BRD")
-	t.add(fmt.Sprintf("  Quy tắc: %d (%d có ID) · Tiêu chí chấp nhận: %d", b.Rules, b.RulesWithID, b.AcceptanceCriteria))
-	t.list("  Ngoài phạm vi:", b.OutOfScope)
-	t.list("  Câu hỏi đã trả lời:", b.AnsweredQuestions)
+	t.add(i18n.Tf("  Quy tắc: %d (%d có ID) · Tiêu chí chấp nhận: %d", b.Rules, b.RulesWithID, b.AcceptanceCriteria))
+	t.list(i18n.T("  Ngoài phạm vi:"), b.OutOfScope)
+	t.list(i18n.T("  Câu hỏi đã trả lời:"), b.AnsweredQuestions)
 }
 
 func (t *cardText) design(d DesignPart) {
 	t.add("")
-	t.add("Thiết kế")
-	t.add("  Bước:")
+	t.add(i18n.T("Thiết kế"))
+	t.add(i18n.T("  Bước:"))
 	n := min(len(d.Steps), maxCardLines)
 	for _, s := range d.Steps[:n] {
 		budget := ""
 		if s.Budget != nil {
-			budget = fmt.Sprintf(" · tối đa %d file/%d dòng", s.Budget.Files, s.Budget.Lines)
+			budget = i18n.Tf(" · tối đa %d file/%d dòng", s.Budget.Files, s.Budget.Lines)
 		}
 		t.add("    " + s.ID + " " + s.Title + " · scope " + strings.Join(s.Scope, ", ") + budget +
-			" · khớp " + strconv.Itoa(s.MatchedCount) + " file")
+			i18n.Tf(" · khớp %d file", s.MatchedCount))
 		if len(s.PlannedFiles) > 0 {
-			t.add("        sẽ tạo (migration nháp): " + strings.Join(s.PlannedFiles, ", "))
+			t.add(i18n.Tf("        sẽ tạo (migration nháp): %s", strings.Join(s.PlannedFiles, ", ")))
 		}
 		if len(s.EmptyGlobs) > 0 {
-			t.add("        glob chưa khớp file nào: " + strings.Join(s.EmptyGlobs, ", "))
+			t.add(i18n.Tf("        glob chưa khớp file nào: %s", strings.Join(s.EmptyGlobs, ", ")))
 		}
 	}
 	t.more(len(d.Steps), n)
 	t.list("  API:", d.APILines)
 	if len(d.StatusCodes) > 0 {
-		t.add("  Mã trạng thái: " + strings.Join(d.StatusCodes, ", "))
+		t.add(i18n.Tf("  Mã trạng thái: %s", strings.Join(d.StatusCodes, ", ")))
 	}
 	if len(d.Tables) > 0 {
-		t.add("  Bảng DB:")
+		t.add(i18n.T("  Bảng DB:"))
 		k := min(len(d.Tables), maxCardLines)
 		for _, tp := range d.Tables[:k] {
 			names := make([]string, 0, len(tp.Columns))
@@ -188,7 +189,7 @@ func (t *cardText) design(d DesignPart) {
 	for _, s := range d.TouchesExisting {
 		touch = append(touch, s.Kind+" "+s.Table+": "+strings.Join(strings.Fields(s.Text), " "))
 	}
-	t.list("  Động vào bảng có sẵn:", touch)
+	t.list(i18n.T("  Động vào bảng có sẵn:"), touch)
 }
 
 func (t *cardText) cases(c CasesPart) {
@@ -204,7 +205,7 @@ func (t *cardText) cases(c CasesPart) {
 	}
 	t.more(len(c.Rows), n)
 	if len(c.Coverage) > 0 {
-		t.add("  Độ phủ (số case theo loại):")
+		t.add(i18n.T("  Độ phủ (số case theo loại):"))
 		cov := make([]string, 0, len(c.Coverage))
 		for _, e := range c.Coverage {
 			kinds := sortedKeys(e.Counts)
@@ -221,7 +222,7 @@ func (t *cardText) cases(c CasesPart) {
 		t.more(len(cov), k)
 	}
 	if len(c.RuleMatrix) > 0 {
-		t.add("  Quy tắc → case:")
+		t.add(i18n.T("  Quy tắc → case:"))
 		m := make([]string, 0, len(c.RuleMatrix))
 		for _, e := range c.RuleMatrix {
 			// ruleMatrix có đủ mọi loại (danh sách rỗng): chỉ in loại có case
@@ -233,7 +234,7 @@ func (t *cardText) cases(c CasesPart) {
 			}
 			byKind := strings.Join(parts, ", ")
 			if byKind == "" {
-				byKind = "chưa có case"
+				byKind = i18n.T("chưa có case")
 			}
 			m = append(m, e.Rule+": "+byKind)
 		}
@@ -268,7 +269,7 @@ func (t *cardText) list(title string, items []string) {
 
 func (t *cardText) more(total, shown int) {
 	if shown < total {
-		t.add("  … và " + strconv.Itoa(total-shown) + " nữa")
+		t.add(i18n.Tf("  … và %d nữa", total-shown))
 	}
 }
 
@@ -284,17 +285,17 @@ func (t *cardText) cut(s string) string {
 }
 
 func (t *cardText) riskLLM(b RiskLLMBlock) {
-	t.add("Xếp loại LLM: " + b.Level)
+	t.add(i18n.Tf("Xếp loại LLM: %s", b.Level))
 	if strings.TrimSpace(b.Summary) != "" {
 		t.add("  " + b.Summary)
 	}
 	if b.Override != nil {
-		t.add("  Lệch mức rule (" + b.Override.From + "): " + b.Override.Reason)
+		t.add(i18n.Tf("  Lệch mức rule (%s): %s", b.Override.From, b.Override.Reason))
 	}
 	for _, m := range b.Matched {
 		t.add("  " + m.Rule + " (" + m.Level + "): " + m.On)
 	}
 	for _, n := range b.NotMatched {
-		t.add("  Không khớp: " + n.Rule + " — " + n.Reason)
+		t.add(i18n.Tf("  Không khớp: %s — %s", n.Rule, n.Reason))
 	}
 }

@@ -1,0 +1,9 @@
+steps:
+  - id: S1
+    title: Validate the request
+    scope: ["internal/**/limit/web/**"]
+    budget: { files: 1, lines: 40 }
+  - id: S2
+    title: Compute the limit from daily_limit
+    scope: ["internal/**/limit/**", "db/migrations/**"]
+    budget: { files: 30, lines: 900 }

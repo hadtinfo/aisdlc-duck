@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
+
+	"aisdlc/internal/i18n"
 )
 
 // SkipEnv là biến môi trường để bỏ qua test cần Docker.
@@ -58,7 +60,7 @@ func RequireDocker(t *testing.T) {
 	}
 	TuneTestcontainers()
 	if err := Ping(); err != nil {
-		t.Fatalf("cần Docker cho test harness: %v; đặt AISDLC_SKIP_DOCKER=1 để bỏ qua", err)
+		t.Fatal(i18n.Tf("cần Docker cho test harness: %v; đặt AISDLC_SKIP_DOCKER=1 để bỏ qua", err))
 	}
 }
 
@@ -115,7 +117,7 @@ func CopyDir(t *testing.T, src string) string {
 		return os.WriteFile(target, b, 0o644)
 	})
 	if err != nil {
-		t.Fatalf("chép dịch vụ mẫu: %v", err)
+		t.Fatal(i18n.Tf("chép dịch vụ mẫu: %v", err))
 	}
 	git := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -140,6 +142,6 @@ func RequireNoContainers(t *testing.T, runID string) {
 		t.Fatalf("docker ps: %v\n%s", err, out)
 	}
 	if s := strings.TrimSpace(string(out)); s != "" {
-		t.Errorf("còn container aisdlc.run=%s: %s", runID, s)
+		t.Error(i18n.Tf("còn container aisdlc.run=%s: %s", runID, s))
 	}
 }

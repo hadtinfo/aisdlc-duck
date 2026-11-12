@@ -113,7 +113,7 @@ func evalNoFeature(ctx *Context, git *gitx.Repo, mergeBase, ref string, changes 
 	if slices.ContainsFunc(changes, func(c gitx.FileChange) bool {
 		return slices.Contains(changePaths(c), evalConfigPath)
 	}) {
-		ctx.Println(i18n.Tf("Eval KHÔNG ĐẠT: %s%s.", evalConfigPath, eval.ConfigChanged))
+		ctx.Println(i18n.Tf("Eval KHÔNG ĐẠT: %s%s.", evalConfigPath, eval.ConfigChangedText()))
 		return ExitFindings, nil
 	}
 	text, _, err := git.FileAt(ctx.Std(), mergeBase, evalConfigPath)

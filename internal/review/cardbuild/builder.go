@@ -17,6 +17,7 @@ import (
 
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/lang"
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
@@ -50,10 +51,11 @@ func BuildCard(in ReviewInput, g gate.Gate) (card review.ReviewCard, err error) 
 	flags := &flagList{}
 	defer func() {
 		if r := recover(); r != nil {
-			flags.add(na("CARD_FAILED", "Không dựng được thẻ "+string(g)+": "+why(panicErr(r))))
+			flags.add(na("CARD_FAILED", i18n.Tf("Không dựng được thẻ %s: %s", string(g), why(panicErr(r)))))
 			card = review.ReviewCard{Gate: string(g), Flags: review.SortFlags(flags.items)}
 			err = nil
 		}
+		card.Locale = cardLocale()
 	}()
 	switch g {
 	case gate.BRD:
@@ -66,6 +68,15 @@ func BuildCard(in ReviewInput, g gate.Gate) (card review.ReviewCard, err error) 
 		card = reviewCard(in, flags)
 	}
 	return card, nil
+}
+
+// cardLocale là trường locale của thẻ: locale của repo (locale mặc định của tiến trình), rỗng khi là vi để JSON thẻ
+// vi giữ nguyên như trước khi có song ngữ.
+func cardLocale() string {
+	if l := i18n.Default(); l != i18n.VI {
+		return string(l)
+	}
+	return ""
 }
 
 func panicErr(r any) error {
@@ -129,7 +140,7 @@ func brdCard(in ReviewInput, flags *flagList) review.ReviewCard {
 			assumptionsFlag(a, flags)
 			part, assumptions, section = &p, a, d.AssumptionsSection
 		}); err != nil {
-			flags.add(na("DOC_UNREADABLE", "không đọc được brd.md: "+why(err)))
+			flags.add(na("DOC_UNREADABLE", i18n.Tf("không đọc được brd.md: %s", why(err))))
 		}
 	}
 	return review.ReviewCard{Gate: "BRD", Flags: review.SortFlags(flags.items), Assumptions: assumptions,
@@ -147,7 +158,7 @@ func designCard(in ReviewInput, flags *flagList) review.ReviewCard {
 			assumptionsFlag(d.Assumptions, flags)
 			doc = &d
 		}); err != nil {
-			flags.add(na("DOC_UNREADABLE", "không đọc được design.md: "+why(err)))
+			flags.add(na("DOC_UNREADABLE", i18n.Tf("không đọc được design.md: %s", why(err))))
 		}
 	}
 	calc := designCalc(in, files, flags)
@@ -187,7 +198,7 @@ func designCalc(in ReviewInput, allFiles []string, flags *flagList) designResult
 		flags.add(review.ScopeFlags(steps, files, rs, in.Adapter.SampleFileName())...)
 		res.stepParts = stepParts(steps, files, res.db.planned)
 	}); err != nil {
-		flags.add(na("SCOPE_FAILED", "Không tính được scope: "+why(err)))
+		flags.add(na("SCOPE_FAILED", i18n.Tf("Không tính được scope: %s", why(err))))
 	}
 	if err := try(func() {
 		names := make([]string, 0, len(res.db.existing))
@@ -197,7 +208,7 @@ func designCalc(in ReviewInput, allFiles []string, flags *flagList) designResult
 		sort.Strings(names)
 		flags.add(review.SqlFlags(res.db.drafts, names)...)
 	}); err != nil {
-		flags.add(na("DB_FAILED", "Không tính được cờ SQL: "+why(err)))
+		flags.add(na("DB_FAILED", i18n.Tf("Không tính được cờ SQL: %s", why(err))))
 	}
 	return res
 }
@@ -238,12 +249,12 @@ func withoutOwnDraftCopies(in ReviewInput, files []string, rs model.ReviewSettin
 
 func designSteps(in ReviewInput, flags *flagList) []spec.StepSpec {
 	if _, err := os.Stat(in.Paths.DesignYaml()); err != nil {
-		flags.add(na("DOC_UNREADABLE", "không đọc được design.yaml: file không tồn tại"))
+		flags.add(na("DOC_UNREADABLE", i18n.T("không đọc được design.yaml: file không tồn tại")))
 		return nil
 	}
 	d, err := spec.ReadDesign(in.Paths.DesignYaml())
 	if err != nil {
-		flags.add(na("DOC_UNREADABLE", "không đọc được design.yaml: "+why(err)))
+		flags.add(na("DOC_UNREADABLE", i18n.Tf("không đọc được design.yaml: %s", why(err))))
 		return nil
 	}
 	return spec.EffectiveSteps(model.FlowFull, &d, spec.CasesSpec{})
@@ -329,11 +340,11 @@ func readDB(in ReviewInput, files []string, rs model.ReviewSettings, flags *flag
 		for _, n := range names {
 			b, err := os.ReadFile(filepath.Join(dir, n))
 			if err != nil {
-				flags.add(na("DOC_UNREADABLE", "không đọc được "+n+": "+why(err)))
+				flags.add(na("DOC_UNREADABLE", i18n.Tf("không đọc được %s: %s", n, why(err))))
 				continue
 			}
 			if err := try(func() { drafts = append(drafts, review.ParseSQL(string(b))...) }); err != nil {
-				flags.add(na("DOC_UNREADABLE", "không đọc được "+n+": "+why(err)))
+				flags.add(na("DOC_UNREADABLE", i18n.Tf("không đọc được %s: %s", n, why(err))))
 				continue
 			}
 			planned = append(planned, target+n)
@@ -343,7 +354,7 @@ func readDB(in ReviewInput, files []string, rs model.ReviewSettings, flags *flag
 		d.touches = touches(drafts, d.existing)
 	})
 	if err != nil {
-		flags.add(na("DB_FAILED", "Không đọc được SQL nháp: "+why(err)))
+		flags.add(na("DB_FAILED", i18n.Tf("Không đọc được SQL nháp: %s", why(err))))
 	}
 	return d
 }
@@ -508,7 +519,7 @@ func casesCard(in ReviewInput, flags *flagList) review.ReviewCard {
 				d := review.ParseBRD(brdMd)
 				brd = &d
 			}); err != nil {
-				flags.add(na("DOC_UNREADABLE", "không đọc được brd.md: "+why(err)))
+				flags.add(na("DOC_UNREADABLE", i18n.Tf("không đọc được brd.md: %s", why(err))))
 			}
 		}
 	}
@@ -525,7 +536,7 @@ func casesCard(in ReviewInput, flags *flagList) review.ReviewCard {
 			}
 		}
 	}); err != nil {
-		flags.add(na("CASES_FLAGS_FAILED", "Không tính được cờ của case: "+why(err)))
+		flags.add(na("CASES_FLAGS_FAILED", i18n.Tf("Không tính được cờ của case: %s", why(err))))
 	}
 	var part *review.CasesPart
 	if err := try(func() {
@@ -536,7 +547,7 @@ func casesCard(in ReviewInput, flags *flagList) review.ReviewCard {
 		p := casesPart(cases, brd, lite, steps)
 		part = &p
 	}); err != nil {
-		flags.add(na("CASES_FAILED", "Không dựng được bảng case: "+why(err)))
+		flags.add(na("CASES_FAILED", i18n.Tf("Không dựng được bảng case: %s", why(err))))
 	}
 	rf := readRisk(in)
 	llm := riskLLMBlock(in, rf)
@@ -559,13 +570,13 @@ func casesCard(in ReviewInput, flags *flagList) review.ReviewCard {
 			}
 		}); err != nil {
 			reqs = nil
-			flags.add(na("RISK_FAILED", "Không kiểm được yêu cầu rủi ro: "+why(err)))
+			flags.add(na("RISK_FAILED", i18n.Tf("Không kiểm được yêu cầu rủi ro: %s", why(err))))
 		}
 	} else if !lite {
 		if _, err := os.Stat(in.Paths.Risk()); errors.Is(err, os.ErrNotExist) {
 			if risk.RequiredFor(in.Meta, in.Paths.DesignYaml()) {
 				// có dấu riskSchema hoặc design.yaml có impact: không phải tính năng cũ, không được lặng lẽ miễn yêu cầu
-				flags.add(review.NewFlag("RISK_FILE", review.HIGH, "thiếu risk.yaml; chạy aisdlc submit cases", "", nil))
+				flags.add(review.NewFlag("RISK_FILE", review.HIGH, i18n.T("thiếu risk.yaml; chạy aisdlc submit cases"), "", nil))
 			}
 		}
 	}
@@ -636,7 +647,7 @@ func addRiskLLMFlag(b *review.RiskLLMBlock, flags *flagList) {
 		return
 	}
 	flags.add(review.NewFlag("RISK_LLM_OVERRIDE", review.WARN,
-		"Subagent xếp loại lệch mức tính từ rule ("+b.Override.From+" → "+b.Level+"): "+b.Override.Reason, "", nil))
+		i18n.Tf("Subagent xếp loại lệch mức tính từ rule (%s → %s): %s", b.Override.From, b.Level, b.Override.Reason), "", nil))
 }
 
 func designSpec(in ReviewInput) *spec.DesignSpec {
@@ -664,12 +675,12 @@ func designDoc(in ReviewInput) *review.DesignDoc {
 
 func readCases(in ReviewInput, flags *flagList) (spec.CasesSpec, bool) {
 	if _, err := os.Stat(in.Paths.Cases()); err != nil {
-		flags.add(na("DOC_UNREADABLE", "không đọc được cases.yaml: file không tồn tại"))
+		flags.add(na("DOC_UNREADABLE", i18n.T("không đọc được cases.yaml: file không tồn tại")))
 		return spec.CasesSpec{}, false
 	}
 	c, err := spec.ReadCases(in.Paths.Cases())
 	if err != nil {
-		flags.add(na("DOC_UNREADABLE", "không đọc được cases.yaml: "+why(err)))
+		flags.add(na("DOC_UNREADABLE", i18n.Tf("không đọc được cases.yaml: %s", why(err))))
 		return spec.CasesSpec{}, false
 	}
 	return c, true
@@ -827,12 +838,12 @@ func reviewCard(in ReviewInput, flags *flagList) review.ReviewCard {
 	files := files(in, flags)
 	if err := try(func() {
 		if in.Meta.BaseTree == "" {
-			flags.add(na("DEPENDENCY_ADDED", "Không có base tree nên không so được dependency"))
+			flags.add(na("DEPENDENCY_ADDED", i18n.T("Không có base tree nên không so được dependency")))
 		} else {
 			flags.add(review.DependencyFlags(ctx(), in.Adapter, in.Git, in.Meta.BaseTree, in.Paths.RepoRoot, files)...)
 		}
 	}); err != nil {
-		flags.add(na("DEPENDENCY_ADDED", "Không tính được dependency: "+why(err)))
+		flags.add(na("DEPENDENCY_ADDED", i18n.Tf("Không tính được dependency: %s", why(err))))
 	}
 	if in.Flow == model.FlowFull {
 		// chỉ lấy cờ scope/SQL của DESIGN; bỏ cờ giả định và cờ thiếu file của cổng DESIGN
@@ -859,7 +870,7 @@ func files(in ReviewInput, flags *flagList) []string {
 		out = fs
 	})
 	if err != nil {
-		flags.add(na("FILES_FAILED", "Không đọc được danh sách file từ git: "+why(err)))
+		flags.add(na("FILES_FAILED", i18n.Tf("Không đọc được danh sách file từ git: %s", why(err))))
 		return []string{}
 	}
 	return out
@@ -868,7 +879,7 @@ func files(in ReviewInput, flags *flagList) []string {
 func read(path, name string, flags *flagList) (string, bool) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		flags.add(na("DOC_UNREADABLE", "không đọc được "+name))
+		flags.add(na("DOC_UNREADABLE", i18n.Tf("không đọc được %s", name)))
 		return "", false
 	}
 	return string(b), true
@@ -876,6 +887,6 @@ func read(path, name string, flags *flagList) (string, bool) {
 
 func assumptionsFlag(a []review.Assumption, flags *flagList) {
 	if len(a) == 0 {
-		flags.add(review.NewFlag("ASSUMPTIONS_EMPTY", review.INFO, "Agent không ghi giả định nào", "", nil))
+		flags.add(review.NewFlag("ASSUMPTIONS_EMPTY", review.INFO, i18n.T("Agent không ghi giả định nào"), "", nil))
 	}
 }

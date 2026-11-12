@@ -107,7 +107,7 @@ func killChild(p *os.Process, done <-chan struct{}) {
 // terminal chỉ tới aisdlc; aisdlc chuyển tiếp): ctx hủy thì gửi SIGINT (harness dừng dịch vụ, dọn container), quá
 // harnessStopWait thì dừng như tín hiệu thứ hai. error khi không chạy được hoặc không có kết quả (kèm stderr).
 func execHarness(ctx context.Context, bin, out string, args ...string) (harnessapi.Result, error) {
-    // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command -- bin là aisdlc-harness do CLI tự định vị, không phải đầu vào người dùng
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command -- bin là aisdlc-harness do CLI tự định vị, không phải đầu vào người dùng
 	cmd := exec.Command(bin, args...)
 	cmd.Env = append(os.Environ(), "AISDLC_LOCALE="+string(i18n.Default()))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

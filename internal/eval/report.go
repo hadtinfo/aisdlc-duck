@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"aisdlc/internal/fsx"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/review"
 	"aisdlc/internal/risk"
 )
@@ -35,8 +36,11 @@ type SoftCheck struct {
 	Detail string `json:"detail"`
 }
 
-// ConfigChanged giữ nguyên văn EvalService.CONFIG_CHANGED.
-const ConfigChanged = " bị sửa trong thay đổi này — sửa cấu hình phải ở MR riêng"
+// ConfigChangedText là hậu tố thông điệp khi file cấu hình bị sửa trong thay đổi (EvalService.CONFIG_CHANGED), theo
+// locale.
+func ConfigChangedText() string {
+	return i18n.T(" bị sửa trong thay đổi này — sửa cấu hình phải ở MR riêng")
+}
 
 // RiskSection là mục rủi ro của report; nil khi tính năng không có risk.yaml nên report cũ không đổi.
 // Override nil là null của Java.
@@ -131,11 +135,11 @@ func (r *EvalReport) UnmarshalJSON(b []byte) error {
 func ReadEvalReport(path string) (EvalReport, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return EvalReport{}, fmt.Errorf("Không đọc được %s: %v", path, err)
+		return EvalReport{}, fmt.Errorf(i18n.T("Không đọc được %s: %v"), path, err)
 	}
 	var r EvalReport
 	if err := json.Unmarshal(b, &r); err != nil {
-		return EvalReport{}, fmt.Errorf("Không đọc được %s: %v", path, err)
+		return EvalReport{}, fmt.Errorf(i18n.T("Không đọc được %s: %v"), path, err)
 	}
 	return r, nil
 }
@@ -147,7 +151,7 @@ func (r EvalReport) Write(path string) error {
 	e.SetEscapeHTML(false)
 	e.SetIndent("", "  ")
 	if err := e.Encode(r); err != nil {
-		return fmt.Errorf("Không ghi được %s: %v", path, err)
+		return fmt.Errorf(i18n.T("Không ghi được %s: %v"), path, err)
 	}
 	return fsx.WriteAtomic(path, buf.Bytes(), 0o644)
 }

@@ -3,10 +3,11 @@ package eval
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"slices"
 	"strings"
+
+	"aisdlc/internal/i18n"
 )
 
 // Các giá trị hợp lệ của review-agent.json.
@@ -77,58 +78,58 @@ func show(p *string) string {
 func ReadAgentReview(path string) (AgentReview, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return AgentReview{}, errors.New("review-agent.json không đọc được: " + err.Error())
+		return AgentReview{}, errors.New(i18n.Tf("review-agent.json không đọc được: %s", err.Error()))
 	}
 	var raw *rawReview
 	if err := json.Unmarshal(b, &raw); err != nil {
-		return AgentReview{}, errors.New("review-agent.json không phải JSON hợp lệ: " + err.Error())
+		return AgentReview{}, errors.New(i18n.Tf("review-agent.json không phải JSON hợp lệ: %s", err.Error()))
 	}
 	if raw == nil {
-		return AgentReview{}, errors.New("review-agent.json rỗng.")
+		return AgentReview{}, errors.New(i18n.T("review-agent.json rỗng."))
 	}
 	r := AgentReview{Summary: sv(raw.Summary), Criteria: []Criterion{}, Issues: []Issue{}}
 	var errs []string
 	seen := map[string]bool{}
 	for _, c := range raw.Criteria {
 		if c == nil {
-			errs = append(errs, "criteria có phần tử rỗng")
+			errs = append(errs, i18n.T("criteria có phần tử rỗng"))
 			continue
 		}
 		r.Criteria = append(r.Criteria, Criterion{sv(c.ID), sv(c.Label), sv(c.Reason)})
 		if c.ID == nil || !slices.Contains(Criteria, *c.ID) {
-			errs = append(errs, "tiêu chí lạ '"+show(c.ID)+"' (chỉ "+strings.Join(Criteria, ", ")+")")
+			errs = append(errs, i18n.Tf("tiêu chí lạ '%s' (chỉ %s)", show(c.ID), strings.Join(Criteria, ", ")))
 		} else if seen[*c.ID] {
-			errs = append(errs, "tiêu chí '"+*c.ID+"' xuất hiện hơn một lần")
+			errs = append(errs, i18n.Tf("tiêu chí '%s' xuất hiện hơn một lần", *c.ID))
 		} else {
 			seen[*c.ID] = true
 		}
 		if c.Label == nil || !slices.Contains(Labels, *c.Label) {
-			errs = append(errs, "tiêu chí '"+show(c.ID)+"': label '"+show(c.Label)+"' không hợp lệ (DAT, CAN_SUA, NGHIEM_TRONG)")
+			errs = append(errs, i18n.Tf("tiêu chí '%s': label '%s' không hợp lệ (DAT, CAN_SUA, NGHIEM_TRONG)", show(c.ID), show(c.Label)))
 		}
 		if c.Reason == nil || strings.TrimSpace(*c.Reason) == "" {
-			errs = append(errs, "tiêu chí '"+show(c.ID)+"': reason không được rỗng")
+			errs = append(errs, i18n.Tf("tiêu chí '%s': reason không được rỗng", show(c.ID)))
 		}
 	}
 	for _, id := range Criteria {
 		if !seen[id] {
-			errs = append(errs, "thiếu tiêu chí '"+id+"'")
+			errs = append(errs, i18n.Tf("thiếu tiêu chí '%s'", id))
 		}
 	}
 	for i, x := range raw.Issues {
 		if x == nil {
-			errs = append(errs, fmt.Sprintf("issues[%d] rỗng", i))
+			errs = append(errs, i18n.Tf("issues[%d] rỗng", i))
 			continue
 		}
 		r.Issues = append(r.Issues, Issue{sv(x.Step), sv(x.File), x.Line, sv(x.Severity), sv(x.Category), sv(x.Message)})
 		if x.Severity == nil || !slices.Contains(Severities, *x.Severity) {
-			errs = append(errs, fmt.Sprintf("issues[%d]: severity '%s' không hợp lệ (high, medium, low)", i, show(x.Severity)))
+			errs = append(errs, i18n.Tf("issues[%d]: severity '%s' không hợp lệ (high, medium, low)", i, show(x.Severity)))
 		}
 		if x.Category == nil || (!slices.Contains(Criteria, *x.Category) && *x.Category != "other") {
-			errs = append(errs, fmt.Sprintf("issues[%d]: category '%s' không hợp lệ (5 tiêu chí hoặc other)", i, show(x.Category)))
+			errs = append(errs, i18n.Tf("issues[%d]: category '%s' không hợp lệ (5 tiêu chí hoặc other)", i, show(x.Category)))
 		}
 	}
 	if len(errs) > 0 {
-		return AgentReview{}, errors.New("review-agent.json không hợp lệ: " + strings.Join(errs, "; ") + ".")
+		return AgentReview{}, errors.New(i18n.Tf("review-agent.json không hợp lệ: %s.", strings.Join(errs, "; ")))
 	}
 	return r, nil
 }

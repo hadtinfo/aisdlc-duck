@@ -62,8 +62,8 @@ func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	httpx.Fail(w, r, err)
 }
 
-// localizeAll dịch lỗi kiểm tra chính sách (của gói risk, tiếng Việt) theo loc: khóa catalog là chính câu tiếng Việt
-// nên câu không có phần động dịch được; câu có phần động giữ nguyên tới khi risk có bản theo locale. Luôn khác nil.
+// localizeAll: lỗi của gói risk giờ đã theo locale của request (hàm …In), nên với chuỗi đã dịch đây là no-op; giữ làm lưới an toàn cho
+// thông điệp tiếng Việt còn sót (khóa catalog là chính câu tiếng Việt). Luôn khác nil.
 func localizeAll(loc i18n.Locale, msgs []string) []string {
 	out := make([]string, len(msgs))
 	for i, m := range msgs {

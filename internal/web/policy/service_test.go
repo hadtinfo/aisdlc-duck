@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/risk"
 )
 
@@ -40,20 +41,20 @@ func noPreset(t *testing.T) risk.RiskPolicy {
 }
 
 func TestPresetUpdateNullWhenCurrentOrNoPreset(t *testing.T) {
-	if u, err := presetUpdate(genericWith(t, risk.PresetLatestVersion("generic"))); err != nil || u != nil {
+	if u, err := presetUpdate(i18n.VI, genericWith(t, risk.PresetLatestVersion("generic"))); err != nil || u != nil {
 		t.Fatal(u, err)
 	}
 	none := noPreset(t)
 	if none.Preset != nil {
 		t.Fatal("còn preset")
 	}
-	if u, err := presetUpdate(none); err != nil || u != nil {
+	if u, err := presetUpdate(i18n.VI, none); err != nil || u != nil {
 		t.Fatal(u, err)
 	}
 }
 
 func TestPresetUpdateBaseMissingWhenOldVersionNotBundled(t *testing.T) {
-	u, err := presetUpdate(genericWith(t, "0"))
+	u, err := presetUpdate(i18n.VI, genericWith(t, "0"))
 	if err != nil || u == nil {
 		t.Fatal(u, err)
 	}
@@ -76,15 +77,15 @@ func TestPresetRuleIDsFromBundledPresetVersionElseEmpty(t *testing.T) {
 			t.Fatalf("%v != %v", got, want)
 		}
 	}
-	eq(presetRuleIDs(genericWith(t, risk.PresetLatestVersion("generic"))), "G1", "G2", "G3", "G4")
-	eq(presetRuleIDs(genericWith(t, "0"))) // phiên bản mẫu không còn đi kèm
-	eq(presetRuleIDs(noPreset(t)))
+	eq(presetRuleIDs(i18n.VI, genericWith(t, risk.PresetLatestVersion("generic"))), "G1", "G2", "G3", "G4")
+	eq(presetRuleIDs(i18n.VI, genericWith(t, "0"))) // phiên bản mẫu không còn đi kèm
+	eq(presetRuleIDs(i18n.VI, noPreset(t)))
 	y, _ := risk.PresetYAML("generic", "1")
 	unknown, err := risk.ParsePolicy(strings.Replace(y, "name: generic", "name: acme", 1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	eq(presetRuleIDs(unknown))
+	eq(presetRuleIDs(i18n.VI, unknown))
 }
 
 func TestMigrateDraftPure(t *testing.T) {
@@ -93,14 +94,14 @@ func TestMigrateDraftPure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pj, ch, err := migrateDraft(p)
+	pj, ch, err := migrateDraft(i18n.VI, p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(pj, `"schema":2`) || len(ch) == 0 || ch[0].Kind != "SCHEMA_MIGRATED" {
 		t.Fatal(pj, ch)
 	}
-	if _, _, err := migrateDraft(genericWith(t, risk.PresetLatestVersion("generic"))); err == nil {
+	if _, _, err := migrateDraft(i18n.VI, genericWith(t, risk.PresetLatestVersion("generic"))); err == nil {
 		t.Fatal("schema 2 phải báo không cần chuyển")
 	}
 }

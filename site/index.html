@@ -138,7 +138,7 @@ git status --short</code></pre>
     <h2>Walkthrough: PAY-1 “daily limit check”</h2>
     <p class="sub">The same scenario the E2E test runs on the sample service <code>e2e/fixture-service</code>. The repo's risk
       policy has a rule described as “Chặn giao dịch theo hạn mức” (blocking transactions by a limit) at level
-      <span class="pill bad">high</span>, which requires a duplicate-request case and a DB invariant. (CLI output is in Vietnamese; translations are in the comments.)</p>
+      <span class="pill bad">high</span>, which requires a duplicate-request case and a DB invariant. (This run uses a Vietnamese repo, so the CLI output is in Vietnamese with translations in the comments; a repo with <code>locale: en</code> prints it in English.)</p>
 
     <h3>1 · Initialize and write the BRD</h3>
     <div class="term"><div class="bar"><i></i><i></i><i></i><span>claude code · agent</span></div><pre><span class="p">$</span> <span class="c">aisdlc init PAY-1 --title "Kiểm tra hạn mức ngày"</span>
@@ -211,7 +211,7 @@ invariants:
   <div class="wrap">
     <h2>Web UI (optional)</h2>
     <p class="sub"><code>aisdlc-web</code> adds a feature board, a live view of the agent, approving gates in the browser, pausing the agent,
-      sending instructions, and accepting steps or allowing files. The UI is currently in Vietnamese.</p>
+      sending instructions, and accepting steps or allowing files. Each user picks English or Vietnamese with the EN/VI switch; the screenshots show the Vietnamese UI.</p>
 
     <div class="tour">
       <figure class="shot wide short">

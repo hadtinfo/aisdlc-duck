@@ -10,3 +10,7 @@
 /e2e/node_modules/
 /e2e/out/
 _site/
+
+# công cụ trình duyệt của agent và cấu hình Impeccable riêng từng máy
+/.playwright-mcp/
+/.impeccable/config.local.json

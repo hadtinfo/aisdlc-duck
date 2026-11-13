@@ -122,7 +122,7 @@ export function Me() {
                         <button type="button" className="ghost" disabled={busy} onClick={() => setConfirmRevoke(null)}>{tr("common.cancel")}</button>
                       </span>
                     ) : (
-                      <button type="button" className="ghost" onClick={() => setConfirmRevoke(t.id)}>{tr("token.revoke")}</button>
+                      <button type="button" className="ghost danger-ghost" onClick={() => setConfirmRevoke(t.id)}>{tr("token.revoke")}</button>
                     ))}
                   </td>
                 </tr>

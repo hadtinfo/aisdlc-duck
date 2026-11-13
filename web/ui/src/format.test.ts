@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, budgetLevel, labelText } from "./format";
+import { ago, budgetLevel, caseRatio, labelText } from "./format";
 
 const now = new Date("2026-11-03T12:00:00Z");
 const before = (ms: number) => new Date(now.getTime() - ms).toISOString();
@@ -28,4 +28,12 @@ describe("labelText", () => {
     expect(labelText("CODING:S2")).toBe("Đang code S2");
     expect(labelText("EVAL_FAIL")).toBe("Eval không đạt");
   });
+});
+
+describe("caseRatio", () => {
+  it("tổng = đạt + chưa đạt, không theo số case của bước", () =>
+    expect(caseRatio({ casesPassed: 13, casesNotPassed: [] })).toEqual({ passed: 13, total: 13 }));
+  it("có case chưa đạt", () =>
+    expect(caseRatio({ casesPassed: 5, casesNotPassed: ["C6", "C7"] })).toEqual({ passed: 5, total: 7 }));
+  it("thiếu trường coi như 0", () => expect(caseRatio({})).toEqual({ passed: 0, total: 0 }));
 });

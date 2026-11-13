@@ -43,3 +43,12 @@ export function labelTone(code: string): "warn" | "bad" | "info" {
   if (kind === "CODING") return "info";
   return "warn";
 }
+
+/**
+ * Tỉ lệ case của một lần check bước. Eval chạy cả bộ case, nên tổng là đạt + chưa đạt
+ * (giống CLI `internal/cli/display.go`), không phải số case gán cho riêng bước.
+ */
+export function caseRatio(check: { casesPassed?: number | null; casesNotPassed?: string[] | null }): { passed: number; total: number } {
+  const passed = check.casesPassed ?? 0;
+  return { passed, total: passed + (check.casesNotPassed?.length ?? 0) };
+}

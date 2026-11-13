@@ -1,0 +1,355 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T06:10:07+00:00",
+  "title": "Design System: AISDLC Web",
+  "extensions": {
+    "colorMeta": {
+      "signal-blue": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "oklch(52.0% 0.183 264)",
+        "tonalRamp": [
+          "#00062b",
+          "#09205a",
+          "#1c3e8f",
+          "#305ec7",
+          "#5584ea",
+          "#83acff",
+          "#afd1ff",
+          "#d4efff"
+        ]
+      },
+      "pass-green": {
+        "role": "tertiary",
+        "displayName": "Pass Green",
+        "canonical": "oklch(49.1% 0.113 155)",
+        "tonalRamp": [
+          "#001003",
+          "#003017",
+          "#11522f",
+          "#27784a",
+          "#539b6e",
+          "#85bd98",
+          "#b2debf",
+          "#d7f9e1"
+        ]
+      },
+      "caution-amber": {
+        "role": "tertiary",
+        "displayName": "Caution Amber",
+        "canonical": "oklch(50.4% 0.108 71)",
+        "tonalRamp": [
+          "#160700",
+          "#392000",
+          "#603c01",
+          "#8a5b13",
+          "#ad7f44",
+          "#cda678",
+          "#eacba7",
+          "#ffeace"
+        ]
+      },
+      "block-red": {
+        "role": "tertiary",
+        "displayName": "Block Red",
+        "canonical": "oklch(50.0% 0.182 30)",
+        "tonalRamp": [
+          "#230000",
+          "#4f0201",
+          "#7f180f",
+          "#b32f22",
+          "#d95c4c",
+          "#f58d7d",
+          "#ffb8ab",
+          "#ffdcd1"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(25.5% 0.027 263)",
+        "tonalRamp": [
+          "#090b10",
+          "#22272e",
+          "#3f4550",
+          "#5e6675",
+          "#828998",
+          "#a8aeba",
+          "#ccd1db",
+          "#eaeff6"
+        ]
+      },
+      "slate-muted": {
+        "role": "neutral",
+        "displayName": "Slate Muted",
+        "canonical": "oklch(51.0% 0.032 265)",
+        "tonalRamp": [
+          "#080b11",
+          "#222630",
+          "#3f4553",
+          "#5e6678",
+          "#81899b",
+          "#a7aebd",
+          "#cbd1dd",
+          "#eaeff8"
+        ]
+      },
+      "cool-paper": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "oklch(97.6% 0.003 265)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262627",
+          "#444546",
+          "#656668",
+          "#88898b",
+          "#adaeaf",
+          "#d0d1d2",
+          "#eeeeef"
+        ]
+      },
+      "surface-sunken": {
+        "role": "neutral",
+        "displayName": "Sunken Well",
+        "canonical": "oklch(95.5% 0.006 265)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#262628",
+          "#444547",
+          "#646669",
+          "#87898c",
+          "#acaeb0",
+          "#d0d1d3",
+          "#eeeef0"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(91.5% 0.010 262)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#25262a",
+          "#434549",
+          "#63666c",
+          "#86898f",
+          "#abaeb3",
+          "#cfd1d5",
+          "#edeef1"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles: top bar, feature key on the review page."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings in panels and boxes."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default text; markdown relaxes to 1.6 line-height, 90ch."
+      },
+      "body-small": {
+        "displayName": "Body Small",
+        "purpose": "Card titles, flag text, event rows."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase column headers, tile labels, flag levels; never below 12px."
+      },
+      "metric": {
+        "displayName": "Metric",
+        "purpose": "Summary strip values, tabular numerals."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Hashes, paths, commands, diffs."
+      }
+    },
+    "shadows": [
+      {
+        "name": "hairline-lift",
+        "value": "0 1px 2px rgba(16, 24, 40, 0.06)",
+        "purpose": "Cards, panels, review columns, login box in light mode; none in dark mode."
+      },
+      {
+        "name": "status-halo",
+        "value": "0 0 0 3px var(--ok-bg)",
+        "purpose": "Status dot on board cards."
+      }
+    ],
+    "motion": [
+      {
+        "name": "card-hover",
+        "value": "border-color 0.12s, transform 0.12s",
+        "purpose": "1px lift + accent border on hoverable feature cards."
+      },
+      {
+        "name": "progress-fill",
+        "value": "width 0.3s",
+        "purpose": "Budget bars easing to their value."
+      },
+      {
+        "name": "session-pulse",
+        "value": "pulse on the live-session dot",
+        "purpose": "Live agent indicator; disabled under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "900px"
+      },
+      {
+        "name": "review-compact",
+        "value": "1200px"
+      },
+      {
+        "name": "board-scroll",
+        "value": "1279px"
+      },
+      {
+        "name": "container-max",
+        "value": "1800px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one coloured action per context: approve, confirm, save.",
+      "html": "<button class=\"ds-btn-primary\">Approve gate</button>",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-btn-primary{font: 600 14px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;background:var(--accent,#2f5fd0);color:var(--accent-text,#fff);border:0;border-radius:6px;padding:7px 14px;cursor:pointer}.ds-btn-primary:focus-visible{outline:2px solid var(--accent,#2f5fd0);outline-offset:2px}.ds-btn-primary:disabled{opacity:.5}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Non-committal actions such as Cancel; takes focus first in confirmations.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-btn-secondary{font: 600 14px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;background:transparent;color:var(--text,#1c2330);border:1px solid var(--border,#dfe3ea);border-radius:6px;padding:7px 14px;cursor:pointer}.ds-btn-secondary:hover{background:var(--surface-2,#eef0f4)}.ds-btn-secondary:focus-visible{outline:2px solid var(--accent,#2f5fd0);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Danger Button",
+      "kind": "button",
+      "refersTo": "button-ghost-danger",
+      "description": "Inline destructive row action, e.g. Revoke token.",
+      "html": "<button class=\"ds-btn-ghost-danger\">Revoke</button>",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-btn-ghost-danger{font:500 12px/1.45 system-ui,sans-serif;background:transparent;color:var(--bad,#b42318);border:1px solid var(--border,#dfe3ea);border-radius:6px;padding:3px 10px;cursor:pointer}.ds-btn-ghost-danger:hover{background:var(--bad-bg,#fde6e3);border-color:var(--bad,#b42318)}.ds-btn-ghost-danger:focus-visible{outline:2px solid var(--accent,#2f5fd0);outline-offset:2px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Token name, filters and form fields.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Token name\">",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-input{font:400 14px/1.45 system-ui,sans-serif;background:var(--surface,#fff);color:var(--text,#1c2330);border:1px solid var(--border,#dfe3ea);border-radius:6px;padding:6px 8px}.ds-input:focus-visible{outline:2px solid var(--accent,#2f5fd0);outline-offset:2px}"
+    },
+    {
+      "name": "Status Pills",
+      "kind": "chip",
+      "refersTo": "status-pill-pass",
+      "description": "Status colour on its own wash; always carries a text label.",
+      "html": "<span class=\"ds-pill ds-ok\">Accepted</span> <span class=\"ds-pill ds-warn\">Awaiting dev</span> <span class=\"ds-pill ds-bad\">Out of scope</span> <span class=\"ds-tag\">room-booking</span>",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-pill{font:600 12px/1.4 system-ui,sans-serif;padding:2px 10px;border-radius:999px;white-space:nowrap}.ds-ok{background:var(--ok-bg,#e3f4ea);color:var(--ok,#167343)}.ds-warn{background:var(--warn-bg,#fdf1d6);color:var(--warn,#8a5800)}.ds-bad{background:var(--bad-bg,#fde6e3);color:var(--bad,#b42318)}.ds-tag{font:600 12px/1.4 system-ui,sans-serif;letter-spacing:.02em;padding:1px 6px;border-radius:4px;background:var(--surface-2,#eef0f4);color:var(--muted,#5d6679)}"
+    },
+    {
+      "name": "Feature Card",
+      "kind": "card",
+      "refersTo": "feature-card",
+      "description": "A feature on the board: key, risk, eval, footer metadata.",
+      "html": "<article class=\"ds-card\"><header><span class=\"ds-key\">ROOM-1</span><span class=\"ds-risk\">Risk: medium</span></header><div class=\"ds-eval\">Eval: PASS 14/14</div><footer><span>room-booking</span><span>hadtinfo</span><span class=\"ds-sync\">synced 1 day ago</span></footer></article>",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-card{font:400 14px/1.45 system-ui,sans-serif;color:var(--text,#1c2330);width:220px;background:var(--surface,#fff);border:1px solid var(--border,#dfe3ea);border-radius:7px;padding:10px 12px;box-shadow:0 1px 2px rgba(16,24,40,.06);cursor:pointer;transition:border-color .12s,transform .12s}.ds-card:hover{border-color:var(--accent,#2f5fd0);transform:translateY(-1px)}.ds-card header{display:flex;gap:6px;align-items:center;margin-bottom:6px}.ds-key{font-size:12px;font-weight:700;color:var(--accent,#2f5fd0)}.ds-risk{font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:10px;background:var(--warn-bg,#fdf1d6);color:var(--warn,#8a5800)}.ds-eval{font-size:12px;font-weight:600;color:var(--ok,#167343);margin-bottom:6px}.ds-card footer{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:11.5px;color:var(--muted,#5d6679);border-top:1px solid var(--border,#dfe3ea);padding-top:6px}.ds-sync{margin-left:auto}"
+    },
+    {
+      "name": "Gate List",
+      "kind": "nav",
+      "refersTo": "gate-item-active",
+      "description": "Review navigation: status dot, name, sub-line; arrow keys move selection.",
+      "html": "<ul class=\"ds-gates\"><li><button class=\"ds-gate\"><i class=\"ds-dot ds-d-ok\"></i><span>BRD<small>Approved</small></span></button></li><li><button class=\"ds-gate ds-active\"><i class=\"ds-dot ds-d-warn\"></i><span>Design<small>Submitted</small></span></button></li><li><button class=\"ds-gate\"><i class=\"ds-dot ds-d-idle\"></i><span>Cases<small>Not started</small></span></button></li></ul>",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-gates{list-style:none;margin:0;padding:10px;width:220px;display:flex;flex-direction:column;gap:2px;background:var(--surface,#fff);border:1px solid var(--border,#dfe3ea);border-radius:8px}.ds-gate{width:100%;display:flex;align-items:center;gap:9px;text-align:left;background:transparent;border:0;color:var(--text,#1c2330);font:500 14px/1.45 system-ui,sans-serif;padding:8px;border-radius:6px;cursor:pointer}.ds-gate small{display:block;font-size:12px;color:var(--muted,#5d6679);font-weight:400}.ds-gate:hover{background:var(--surface-2,#eef0f4)}.ds-gate:focus-visible{outline:2px solid var(--accent,#2f5fd0);outline-offset:2px}.ds-active{background:var(--info-bg,#e5ecfb);color:var(--info,#2f5fd0);font-weight:600}.ds-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}.ds-d-ok{background:var(--ok,#167343)}.ds-d-warn{background:var(--warn,#8a5800)}.ds-d-idle{box-shadow:inset 0 0 0 2px var(--muted,#5d6679)}"
+    },
+    {
+      "name": "Review Summary Strip",
+      "kind": "custom",
+      "refersTo": "summary-tile",
+      "description": "Equal tiles split by hairline gaps; tabular metrics, colour only for signals.",
+      "html": "<div class=\"ds-strip\"><div><span class=\"ds-lbl\">Steps</span><b>3/3</b><span class=\"ds-sub\">all accepted</span></div><div><span class=\"ds-lbl\">Cases</span><b class=\"ds-good\">14/14</b><span class=\"ds-sub\">eval PASS</span></div><div><span class=\"ds-lbl\">Flags</span><b class=\"ds-high\">2</b><span class=\"ds-sub\">accepted at approval</span></div><div><span class=\"ds-lbl\">DB</span><b>?</b><span class=\"ds-sub\">2 SQL files, tables unread</span></div></div>",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-strip{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:1px;background:var(--border,#dfe3ea);border:1px solid var(--border,#dfe3ea);border-radius:8px;overflow:hidden;font-family:system-ui,sans-serif}.ds-strip>div{background:var(--surface,#fff);padding:10px 14px;display:flex;flex-direction:column;gap:2px}.ds-lbl{font-size:12px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#5d6679)}.ds-strip b{font-size:18px;font-variant-numeric:tabular-nums;color:var(--text,#1c2330)}.ds-strip b.ds-good{color:var(--ok,#167343)}.ds-strip b.ds-high{color:var(--bad,#b42318)}.ds-sub{font-size:12.5px;color:var(--muted,#5d6679)}"
+    },
+    {
+      "name": "Flag",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Severity row with the sanctioned 3px leading bar; stays red after approval with an accepted tag.",
+      "html": "<ul class=\"ds-flags\"><li class=\"ds-flag ds-f-bad\"><span class=\"ds-lvl\">High <em>· accepted</em></span><p>Migration drops a column without a backfill.</p><code>db/002_rooms.sql</code></li><li class=\"ds-flag ds-f-warn\"><span class=\"ds-lvl\">Warn</span><p>Step S2 exceeded its line budget.</p></li></ul>",
+      "css": ":host{--accent:#2f5fd0;--accent-text:#fff;--surface:#fff;--surface-2:#eef0f4;--border:#dfe3ea;--text:#1c2330;--muted:#5d6679;--ok:#167343;--ok-bg:#e3f4ea;--warn:#8a5800;--warn-bg:#fdf1d6;--bad:#b42318;--bad-bg:#fde6e3;--info:#2f5fd0;--info-bg:#e5ecfb;}.ds-flags{list-style:none;margin:0;padding:0;width:300px;display:flex;flex-direction:column;gap:8px;font-family:system-ui,sans-serif}.ds-flag{border-left:3px solid var(--c);background:var(--cbg);padding:8px 10px;border-radius:0 6px 6px 0;display:flex;flex-direction:column;gap:3px}.ds-f-bad{--c:var(--bad,#b42318);--cbg:var(--bad-bg,#fde6e3)}.ds-f-warn{--c:var(--warn,#8a5800);--cbg:var(--warn-bg,#fdf1d6)}.ds-lvl{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c)}.ds-lvl em{font-style:normal;text-transform:none;letter-spacing:0;font-weight:600;color:var(--text,#1c2330)}.ds-flag p{margin:0;font-size:13px;color:var(--text,#1c2330)}.ds-flag code{font:12px ui-monospace,Menlo,Consolas,monospace;background:var(--surface-2,#eef0f4);border:1px solid var(--border,#dfe3ea);border-radius:5px;padding:1px 6px;align-self:flex-start}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Control Desk",
+    "overview": "AISDLC Web is the desk a lead sits at to see where every feature stands, read what the agent produced, and decide: approve, reject, accept a step, allow a file. The interface is an instrument panel, not a showcase. It is calm and exact: cool-grey paper, a single blue for action and selection, and three signal colours (pass green, caution amber, block red) that only appear when they mean something. Information density is high, but every row has air and every number is tabular.\n\nDepth comes from tone, not shadow. Surfaces sit on a cool-paper ground, sunken wells (board columns, code, tags) step one shade darker, and hairline borders draw the edges. Shadows are a 1px whisper in light mode and disappear entirely in dark mode. Motion is limited to state feedback: a 1px lift on hoverable cards, a progress bar easing to its value, a pulsing dot for a live agent session (off under reduced motion).\n\nThe UI is bilingual (Vietnamese and English) and shares its vocabulary with the CLI. Copy, layout and widths must survive Vietnamese strings that run longer than English ones.",
+    "keyCharacteristics": [
+      "One action colour (signal blue); green, amber and red are reserved for status.",
+      "Flat tonal layering: paper → surface → sunken well, separated by hairlines.",
+      "System font stack at a 14px base; monospace for hashes, paths, commands and diffs.",
+      "Small, restrained radii (4–8px); pills only for status and counts.",
+      "Severity is stated twice — colour plus a text label — never by colour alone.",
+      "Full light and dark themes driven by the same CSS custom properties."
+    ],
+    "rules": [
+      {
+        "name": "The Signal-Only Rule",
+        "body": "Green, amber and red mean pass, caution and block. They are never used for decoration, branding or emphasis.",
+        "section": "colors"
+      },
+      {
+        "name": "The Approved-Still-Red Rule",
+        "body": "A HIGH or WARN flag on an approved gate keeps its colour as a reminder; approval is shown by an added \"accepted at approval @hash\" note, not by greying the flag out.",
+        "section": "colors"
+      },
+      {
+        "name": "The 4.5 Floor Rule",
+        "body": "Every text/background pair, including muted text and status text on its wash, holds at least 4.5:1 in both themes. Darken the token, never the one-off instance.",
+        "section": "colors"
+      },
+      {
+        "name": "The Copyable-Is-Mono Rule",
+        "body": "Anything the user may paste into a terminal or compare (commands, paths, hashes, step ids in commands) is set in mono; prose never is.",
+        "section": "typography"
+      },
+      {
+        "name": "The Twelve Floor Rule",
+        "body": "No UI text below 12px. The only exception is secondary annotation text inside SVG diagrams.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Surfaces are flat at rest. The only motion-based depth is a 1px upward shift plus an accent border on hoverable feature cards.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use signal blue for exactly one meaning: \"this is actionable or selected\".",
+      "Do pair every status colour with a text label (PASS, HIGH, \"Awaiting dev\") so meaning never depends on colour alone.",
+      "Do set hashes, paths and commands in mono, and numbers in tabular figures.",
+      "Do define every colour through the CSS custom properties in `web/ui/src/styles.css` and give it a dark-mode value in the same file.",
+      "Do keep confirmations inline, focus Cancel first, and close them with Esc.",
+      "Do check every new screen at 390px, 1024px and 1440px in both themes."
+    ],
+    "donts": [
+      "Don't use a coloured leading border (border-left wider than 1px) on cards, panels or alerts; the 3px bar is reserved for severity rows only.",
+      "Don't set UI text below 12px or let muted text fall under 4.5:1 contrast.",
+      "Don't add drop shadows beyond the hairline lift, and never in dark mode.",
+      "Don't introduce a second accent hue or use status colours decoratively.",
+      "Don't grey out or hide flags after a gate is approved; annotate them as accepted.",
+      "Don't fix the page to a minimum width; layouts must reflow down to 390px."
+    ]
+  }
+}

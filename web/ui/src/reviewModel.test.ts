@@ -254,3 +254,11 @@ test("erLayout: tham chiếu có schema `public.account(id)` vẫn nối, không
   ];
   expect(erLayout(t)!.edges).toEqual([{ from: "daily", fromRow: 0, to: "account" }]);
 });
+
+test("summaryTiles DB: có file SQL mà không đọc ra bảng thì ghi ? và cảnh báo, không ghi +0", () => {
+  const card = { gate: "DESIGN", flags: [], design: { steps: [], tables: [], touchesExisting: [], apiLines: [], statusCodes: [] } } as unknown as ReviewCardData;
+  const db = summaryTiles(card, 2)[3];
+  expect(db.value).toBe("?");
+  expect(db.tone).toBe("warn");
+  expect(summaryTiles(card, 0)[3].value).toBe("+0 bảng");
+});

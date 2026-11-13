@@ -20,6 +20,7 @@ var enCLI = map[string]string{
 	"Không tạo được file index tạm: %s":               "Cannot create the temporary index file: %s",
 	"git %s thất bại (%d): %s":                        "git %s failed (%d): %s",
 	"Không chạy được git: %s":                         "Cannot run git: %s",
+	"Không xóa được %s: %s":                           "Cannot delete %s: %s",
 	"Giá trị %s không hợp lệ: %v":                     "Invalid value for %s: %v",
 	"Giá trị %s không hợp lệ: %v (phải lớn hơn 0)":    "Invalid value for %s: %v (must be greater than 0)",
 	"Feature key không hợp lệ: %s (ví dụ: PAY-123)":   "Invalid feature key: %s (example: PAY-123)",

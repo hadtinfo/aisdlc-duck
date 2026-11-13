@@ -1,6 +1,6 @@
 import { getLocale, isLocale, Locale, setLocale, storeLocale, t } from "./i18n";
 import { encodePath } from "./routes";
-import type { ControlState, Resubmission } from "./types";
+import type { AttemptData, ControlState, Resubmission } from "./types";
 
 export interface EvalSummary { passed: boolean; casesPassed: number | null; casesTotal: number | null }
 export interface CardData {
@@ -10,6 +10,8 @@ export interface CardData {
   session: "ACTIVE" | "STOPPED" | "NONE";
   /** Mức rủi ro từ risk.yaml; null khi tính năng chưa được phân loại. */
   riskLevel?: string | null;
+  /** Lần làm hiện tại; vắng (server cũ) coi như 1. */
+  attempt?: number;
 }
 export interface InboxItem { repoId: string; key: string; kind: string; text: string; command: string | null }
 export interface BoardData { me: string; cards: CardData[]; inbox: InboxItem[] }
@@ -206,3 +208,5 @@ export const sendAction = (repo: string, feature: string, kind: "ACCEPT_STEP" | 
   postJson("/api/control/actions", {
     repo, feature, kind, step, ...(opts.path ? { path: opts.path } : {}), ...(opts.endTree ? { endTree: opts.endTree } : {}),
   });
+export const getAttempts = (repoId: string, key: string) =>
+  request<AttemptData[]>(`/api/features/${encodePath(repoId, key)}/attempts`);

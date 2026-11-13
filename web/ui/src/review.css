@@ -273,3 +273,14 @@ details.ga-files summary { cursor: pointer; }
 .resub-fb code { margin-right: 4px; }
 button.linklike { background: none; border: 0; padding: 2px 0; color: inherit; cursor: pointer; text-align: left; font: inherit; }
 button.linklike:disabled { cursor: default; }
+
+/* Các lần làm trước (chỉ đọc) */
+.attempts { margin-top: 24px; }
+.attempt summary { overflow-wrap: anywhere; }
+.attempt-gate h4 { margin: 12px 0 6px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.attempt-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.attempt-log code { font-size: 12.5px; overflow-wrap: anywhere; }
+.attempt-comment { margin: 2px 0 0; color: var(--muted); }
+.attempt-file { margin-top: 4px; }
+.attempt-file summary { cursor: pointer; font-size: 13px; }
+.attempt-pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

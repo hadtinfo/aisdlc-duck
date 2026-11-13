@@ -371,3 +371,70 @@ func TestIngestStillSucceedsWhenSubscriberSendFails(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestAttempts_ListsClosedAttempt(t *testing.T) {
+	f := newIT(t)
+	repo := "r/board/att"
+	f.post(t, "/api/ingest/snapshot", snap(repo, "ATT-1", "a@corp"), f.tokenA)
+	var rw, sub, cur int64
+	ctx := context.Background()
+	if err := f.e.Pool.QueryRow(ctx, "INSERT INTO feature_rewinds(repo_id, feature_key, from_attempt, to_attempt, checkpoint, by_login, request_id, snapshot) "+
+		`VALUES ($1,'ATT-1',1,2,'brd','board.a','rq-1','{"steps":[{"id":"S1","caseIds":["c1","c2"],"status":"ACCEPTED","record":{"check":{"files":3,"lines":40,"casesPassed":2}}}],`+
+		`"reviewCards":{"REVIEW":{"gate":"REVIEW","flags":[{"code":"X","level":"WARN","message":"m","refs":[]}]}}}') RETURNING id`, repo).Scan(&rw); err != nil {
+		t.Fatal(err)
+	}
+	// "# BRD cũ" base64
+	arts := `[{"path":"brd.md","content":"IyBCUkQgY8Wp"}]`
+	if err := f.e.Pool.QueryRow(ctx, "INSERT INTO submissions(repo_id, feature_key, gate, hash, findings, artifacts, submitted_by, rewind_id) "+
+		"VALUES ($1,'ATT-1','BRD','hOld','[]',$2::jsonb,'board.a',$3) RETURNING id", repo, arts, rw).Scan(&sub); err != nil {
+		t.Fatal(err)
+	}
+	f.exec(t, "INSERT INTO approvals(submission_id, repo_id, feature_key, gate, hash, approver, channel, revoked_at, revoked_by) "+
+		"VALUES ($1,$2,'ATT-1','BRD','hOld','board.b','web', now(), 'board.a')", sub, repo)
+	f.exec(t, "INSERT INTO feedback(repo_id, feature_key, gate, kind, by_login, comment, rewind_id) VALUES ($1,'ATT-1','BRD','REJECTED','board.b','thiếu',$2)", repo, rw)
+	f.exec(t, "INSERT INTO feedback(repo_id, feature_key, gate, kind, by_login, comment, rewind_id) VALUES ($1,'ATT-1','BRD','REWOUND','board.a','x',$2)", repo, rw)
+	// bản của lần làm hiện tại không được lẫn vào
+	if err := f.e.Pool.QueryRow(ctx, "INSERT INTO submissions(repo_id, feature_key, gate, hash, findings, artifacts, submitted_by) "+
+		"VALUES ($1,'ATT-1','BRD','hNew','[]','[]','board.a') RETURNING id", repo).Scan(&cur); err != nil {
+		t.Fatal(err)
+	}
+	f.exec(t, "UPDATE features SET attempt = 2 WHERE repo_id = $1", repo)
+
+	r := f.get("/api/features/"+repo+"/ATT-1/attempts", f.tokenA)
+	if r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	a := decode(t, r)
+	if size(a) != 1 || at(a, 0, "attempt") != 1.0 || at(a, 0, "rewind", "checkpoint") != "brd" || at(a, 0, "rewind", "by") != "board.a" {
+		t.Fatal(a)
+	}
+	g := at(a, 0, "gates", 0)
+	if at(g, "gate") != "BRD" || size(at(g, "submissions")) != 1 || at(g, "submissions", 0, "hash") != "hOld" ||
+		at(g, "submissions", 0, "artifacts", 0, "path") != "brd.md" || at(g, "submissions", 0, "artifacts", 0, "content") != "# BRD cũ" {
+		t.Fatal(g)
+	}
+	if size(at(g, "feedback")) != 1 || at(g, "feedback", 0, "kind") != "REJECTED" ||
+		size(at(g, "approvals")) != 1 || at(g, "approvals", 0, "approver") != "board.b" || at(g, "approvals", 0, "revokedAt") == nil {
+		t.Fatal(g)
+	}
+	if size(at(a, 0, "steps")) != 1 || at(a, 0, "steps", 0, "casesTotal") != 2.0 || at(a, 0, "steps", 0, "casesPassed") != 2.0 ||
+		at(a, 0, "steps", 0, "files") != 3.0 || at(a, 0, "reviewCard", "gate") != "REVIEW" {
+		t.Fatal(at(a, 0, "steps"), at(a, 0, "reviewCard"))
+	}
+	// board và chi tiết cho thấy lần làm hiện tại
+	if at(decode(t, f.get("/api/board?repo="+repo, f.tokenA)), "cards", 0, "attempt") != 2.0 ||
+		at(decode(t, f.get("/api/features/"+repo+"/ATT-1", f.tokenA)), "attempt") != 2.0 {
+		t.Fatal("attempt")
+	}
+	// tính năng chưa rewind: mảng rỗng; không có tính năng: 404; không đăng nhập: 401
+	f.post(t, "/api/ingest/snapshot", snap("r/board/att", "ATT-2", "a@corp"), f.tokenA)
+	if e := decode(t, f.get("/api/features/"+repo+"/ATT-2/attempts", f.tokenA)); e == nil || size(e) != 0 {
+		t.Fatal(e)
+	}
+	if r := f.get("/api/features/"+repo+"/NOPE/attempts", f.tokenA); r.Status != 404 {
+		t.Fatal(r.Status)
+	}
+	if r := f.get("/api/features/"+repo+"/ATT-1/attempts", "nope"); r.Status != 401 {
+		t.Fatal(r.Status)
+	}
+}

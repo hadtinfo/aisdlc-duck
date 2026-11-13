@@ -24,6 +24,7 @@ export function Card({ card, now }: { card: CardData; now: Date }) {
       <header>
         <span className="key">{card.key}</span>
         {card.flow === "LITE" && <span className="tag">LITE</span>}
+        {(card.attempt ?? 1) > 1 && <span className="tag">{t("card.attempt", { n: card.attempt! })}</span>}
         {card.riskLevel && <span title={t("risk.levelTitle")}><LevelPill level={card.riskLevel} prefix={t("risk.prefix")} /></span>}
         {card.session === "ACTIVE" && <span className="dot" title={t("card.sessionActive")} aria-label={t("card.running")} />}
       </header>

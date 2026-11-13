@@ -25,7 +25,7 @@ type handlers struct {
 	hub    *Hub
 }
 
-// Routes đăng ký GET /api/board, /api/features/** (chi tiết, /events, /stream, /resubmission, /control) và /api/stream.
+// Routes đăng ký GET /api/board, /api/features/** (chi tiết, /events, /stream, /resubmission, /control, /attempts) và /api/stream.
 func Routes(r chi.Router, reader *Reader, hub *Hub) {
 	h := &handlers{reader: reader, hub: hub}
 	r.Get("/api/board", h.board)
@@ -49,6 +49,7 @@ type Card struct {
 	Session       string       `json:"session"`
 	ApprovalsMode string       `json:"approvalsMode"`
 	RiskLevel     *string      `json:"riskLevel"`
+	Attempt       int          `json:"attempt"`
 }
 
 type inboxJSON struct {
@@ -176,7 +177,7 @@ func (h *handlers) board(w http.ResponseWriter, r *http.Request) {
 			Title: asTextOr(path(row.Tree, "feature", "title"), nil), Flow: asTextOr(path(row.Tree, "feature", "flow"), nil),
 			Owner: ownerLogin, Column: column, Labels: Labels(row.Tree), Eval: EvalSummaryOf(row.Tree),
 			SyncedAt: httpx.Instant(row.SyncedAt), ClockSkew: row.ClockSkew, Session: session,
-			ApprovalsMode: row.ApprovalsMode, RiskLevel: row.RiskLevel,
+			ApprovalsMode: row.ApprovalsMode, RiskLevel: row.RiskLevel, Attempt: row.Attempt,
 		})
 		if out.Me != nil && ownerLogin != nil && *out.Me == *ownerLogin {
 			for _, i := range Inbox(row.Tree, httpx.LocaleFrom(ctx)) {
@@ -203,6 +204,7 @@ type detailJSON struct {
 	ApprovalsMode  string              `json:"approvalsMode"`
 	SubmittedPaths map[string][]string `json:"submittedPaths"`
 	PendingImports []PendingImport     `json:"pendingImports"`
+	Attempt        int                 `json:"attempt"`
 }
 
 // feature: /api/features/{repoId...}/{key}[/events|/stream|/resubmission|/control]. repoId có dấu '/', nên khớp
@@ -221,7 +223,7 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 	}
 	rest := p[len(featuresPrefix):]
 	suffix := ""
-	for _, s := range []string{"/events", "/stream", "/resubmission", "/control"} {
+	for _, s := range []string{"/events", "/stream", "/resubmission", "/control", "/attempts"} {
 		if strings.HasSuffix(rest, s) {
 			suffix, rest = s, rest[:len(rest)-len(s)]
 			break
@@ -258,6 +260,10 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 		v, err := h.reader.Control.View(ctx, repoID, key)
 		writeResult(w, r, v, err)
 		return
+	case "/attempts":
+		v, err := h.reader.Attempts(ctx, repoID, key)
+		writeResult(w, r, v, err)
+		return
 	case "/events":
 		evs, err := h.reader.Events(ctx, repoID, key, max(1, min(limit, maxEventLimit)))
 		writeResult(w, r, evs, err)
@@ -270,7 +276,7 @@ func (h *handlers) feature(w http.ResponseWriter, r *http.Request) {
 	}
 	out := detailJSON{Snapshot: row.Snapshot, Column: Column(row.Tree), Labels: Labels(row.Tree), Owner: owner,
 		SyncedAt: httpx.Instant(row.SyncedAt), ClockSkew: row.ClockSkew, LastSender: row.LastSender,
-		ApprovalsMode: row.ApprovalsMode, SubmittedPaths: map[string][]string{}, PendingImports: []PendingImport{}}
+		ApprovalsMode: row.ApprovalsMode, SubmittedPaths: map[string][]string{}, PendingImports: []PendingImport{}, Attempt: row.Attempt}
 	// Chế độ web: đường dẫn artifact (không nội dung) của bản nộp mới nhất mỗi cổng, để UI cho thấy đang duyệt gì.
 	if row.ApprovalsMode == modeWeb && h.reader.Gates != nil {
 		if out.SubmittedPaths, err = h.reader.Gates.SubmittedPaths(ctx, repoID, key); err == nil {

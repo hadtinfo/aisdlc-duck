@@ -1,7 +1,8 @@
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ApiError, UnauthorizedError, getControl, getEvents, getFeature, postJson } from "../api";
+import { ApiError, UnauthorizedError, getAttempts, getControl, getEvents, getFeature, postJson } from "../api";
 import { AgentReview } from "../components/AgentReview";
+import { AttemptArchive } from "../components/AttemptArchive";
 import { ApiTable } from "../components/ApiTable";
 import { CaseCoverage } from "../components/CaseCoverage";
 import { CasesTable } from "../components/CasesTable";
@@ -26,7 +27,7 @@ import { acceptedApproval, cardFor, erLayout, stepMap, summaryTiles } from "../r
 import { encodePath, featureHref, selectionFromQuery } from "../routes";
 import { eventReloadsControl } from "../control";
 import { subscribe } from "../sse";
-import type { ControlAction, FeatureDetail, FeatureEvent, GateData, GateName, PendingImport, ReviewCardData, Snapshot, StepData } from "../types";
+import type { AttemptData, ControlAction, FeatureDetail, FeatureEvent, GateData, GateName, PendingImport, ReviewCardData, Snapshot, StepData } from "../types";
 import { intlTag, t as tNow, useT } from "../i18n";
 import "../review.css";
 
@@ -300,6 +301,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
   const [detail, setDetail] = useState<FeatureDetail | null>(null);
   const [events, setEvents] = useState<FeatureEvent[]>([]);
   const [controlActions, setControlActions] = useState<ControlAction[]>([]);
+  const [attempts, setAttempts] = useState<AttemptData[]>([]);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("");
   const [now, setNow] = useState(() => new Date());
@@ -326,12 +328,15 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
     getEvents(repoId, featureKey, 200)
       .then((e) => { if (current.current === mine) setEvents(e as FeatureEvent[]); })
       .catch(() => { /* lỗi 401 đã chuyển trang; lỗi khác giữ danh sách cũ */ });
+    getAttempts(repoId, featureKey)
+      .then((a) => { if (current.current === mine) setAttempts(a); })
+      .catch(() => { /* giữ danh sách cũ */ });
     loadControl();
   }, [repoId, featureKey, loadControl]);
 
   useEffect(() => {
     // đổi tính năng: bỏ snapshot, event và lỗi của tính năng trước
-    setDetail(null); setEvents([]); setControlActions([]); setError(""); setSelected(""); applied.current = "";
+    setDetail(null); setEvents([]); setControlActions([]); setAttempts([]); setError(""); setSelected(""); applied.current = "";
     load();
     const stop = subscribe(`/api/features/${encodePath(repoId, featureKey)}/stream`, (type, data) => {
       if (type === "snapshot") load();
@@ -394,6 +399,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
         <Link to="/">← {t("nav.board")}</Link>
         <h1><span className="key">{snap.feature.key}</span>{snap.feature.title && snap.feature.title !== snap.feature.key && <> {snap.feature.title}</>}</h1>
         <span className="tag">{snap.feature.flow}</span>
+        {(detail.attempt ?? 1) > 1 && <span className="tag">{t("card.attempt", { n: detail.attempt! })}</span>}
         <span className="spacer" />
         <div className="meta">
           <span>{snap.repo.id} · {snap.repo.branch}</span>
@@ -430,6 +436,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
         <GatePanel gate={gate} step={step} snapshot={snap} events={events} repoId={repoId} featureKey={featureKey}
           detail={detail} actions={controlActions} onChanged={load} />
       </div>
+      <AttemptArchive attempts={attempts} />
     </div>
   );
 }

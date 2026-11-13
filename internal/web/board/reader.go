@@ -69,6 +69,7 @@ type Row struct {
 	SyncedAt      time.Time
 	ApprovalsMode string
 	RiskLevel     *string
+	Attempt       int // lần làm hiện tại (features.attempt)
 }
 
 func (r *Reader) now() time.Time {
@@ -79,7 +80,7 @@ func (r *Reader) now() time.Time {
 }
 
 const rowCols = "f.repo_id, f.feature_key, f.snapshot::text, f.clock_skew, f.first_sender_login, f.last_sender_login, " +
-	"f.synced_at, f.risk_level, coalesce(s.approvals, 'local') FROM features f LEFT JOIN repo_settings s ON s.repo_id = f.repo_id"
+	"f.synced_at, f.risk_level, coalesce(s.approvals, 'local'), f.attempt FROM features f LEFT JOIN repo_settings s ON s.repo_id = f.repo_id"
 
 // All trả mọi tính năng theo repo, key.
 func (r *Reader) All(ctx context.Context) ([]Row, error) {
@@ -123,7 +124,7 @@ func scanRow(rs pgx.CollectableRow) (Row, error) {
 	var row Row
 	var snap string
 	if err := rs.Scan(&row.RepoID, &row.Key, &snap, &row.ClockSkew, &row.FirstSender, &row.LastSender, &row.SyncedAt,
-		&row.RiskLevel, &row.ApprovalsMode); err != nil {
+		&row.RiskLevel, &row.ApprovalsMode, &row.Attempt); err != nil {
 		return row, err
 	}
 	row.SyncedAt = row.SyncedAt.UTC()

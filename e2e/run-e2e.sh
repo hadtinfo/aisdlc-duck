@@ -1133,7 +1133,9 @@ if [ "$WEB" = 1 ] && part web; then
   has "Đã quay $KEY về đầu S2"
   has "aisdlc step start S2"
   run 0 aisdlc status
-  [ "$(step_status S2)" = NOT_STARTED ] || die "rewind S2: S2 phải NOT_STARTED, được '$(step_status S2)'"
+  # bản ghi S2 bị bỏ khỏi steps.json (step_status đọc steps.json → null); status hiện S2 là NOT_STARTED
+  [ "$(step_status S2)" = null ] || die "rewind S2: bản ghi S2 phải bị bỏ khỏi steps.json, còn '$(step_status S2)'"
+  grep -qE '^  S2 +NOT_STARTED' <<<"$OUT" || die "rewind S2: aisdlc status phải hiện S2 NOT_STARTED"
   [ "$(step_status S1)" = "$S1_BEFORE" ] || die "rewind S2: S1 không được đổi"
   [ -n "$(git for-each-ref "refs/aisdlc/backup/$KEY/")" ] || die "rewind: thiếu ref dự phòng refs/aisdlc/backup/$KEY/"
   [ ! -e "$P/eval" ] || die "rewind S2: eval/ phải bị xoá"

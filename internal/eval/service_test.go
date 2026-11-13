@@ -615,7 +615,7 @@ func TestEvalBashWrittenOutOfScopeFileFailsScope(t *testing.T) {
 func TestEvalScopeExtraAllowsFile(t *testing.T) {
 	e := newEvalEnv(t)
 	e.write("scripts/hack.sh", "echo hi\n")
-	e.must(step.NewScopeExtras(e.paths).Add("scripts/hack.sh", "dev", t0))
+	e.must(step.NewScopeExtras(e.paths).Add("scripts/hack.sh", "dev", "", t0))
 
 	s := hardOf(t, e.run(false), "SCOPE")
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"time"
 
 	"aisdlc/internal/i18n"
@@ -15,6 +16,7 @@ type ScopeEntry struct {
 	Path     string    `json:"path"`
 	Approver string    `json:"approver"`
 	At       time.Time `json:"at"`
+	Step     string    `json:"step,omitempty"` // bước đang mở lúc cho phép; rỗng nếu không rõ
 }
 
 // ScopeExtras là danh sách path ngoài phạm vi mà dev đã cho phép; lưu trong scope-extra.json.
@@ -35,8 +37,8 @@ func (s *ScopeExtras) Paths() ([]string, error) {
 	return out, nil
 }
 
-// Add thêm path (bỏ qua nếu đã có).
-func (s *ScopeExtras) Add(relPath, approver string, at time.Time) error {
+// Add thêm path (bỏ qua nếu đã có); stepID là bước đang mở, rỗng nếu không có.
+func (s *ScopeExtras) Add(relPath, approver, stepID string, at time.Time) error {
 	all, err := s.load()
 	if err != nil {
 		return err
@@ -46,8 +48,24 @@ func (s *ScopeExtras) Add(relPath, approver string, at time.Time) error {
 			return writeJSON(s.file, all)
 		}
 	}
-	all = append(all, ScopeEntry{relPath, approver, at.UTC()})
+	all = append(all, ScopeEntry{Path: relPath, Approver: approver, At: at.UTC(), Step: stepID})
 	return writeJSON(s.file, all)
+}
+
+// RemoveSteps xoá các mục thuộc bước trong ids; giữ mục không gắn bước.
+func (s *ScopeExtras) RemoveSteps(ids []string) error {
+	all, err := s.load()
+	if err != nil {
+		return err
+	}
+	kept := make([]ScopeEntry, 0, len(all))
+	for _, e := range all {
+		if e.Step != "" && slices.Contains(ids, e.Step) {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	return writeJSON(s.file, kept)
 }
 
 func (s *ScopeExtras) load() ([]ScopeEntry, error) {

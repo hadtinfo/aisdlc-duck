@@ -1,6 +1,7 @@
 package step
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -272,7 +273,7 @@ func TestOutOfScopeListsPathAndExtrasWhitelist(t *testing.T) {
 	}
 
 	extras := NewScopeExtras(e.paths)
-	if err := extras.Add("pom.xml", "dev1", t0); err != nil {
+	if err := extras.Add("pom.xml", "dev1", "", t0); err != nil {
 		t.Fatal(err)
 	}
 	if p, _ := extras.Paths(); !slices.Contains(p, "pom.xml") {
@@ -304,7 +305,7 @@ func TestUsesScopeExtras(t *testing.T) {
 	if u, err := s.UsesScopeExtras("S1"); err != nil || u {
 		t.Errorf("uses=%v err=%v", u, err)
 	}
-	if err := NewScopeExtras(e.paths).Add("pom.xml", "dev1", t0); err != nil {
+	if err := NewScopeExtras(e.paths).Add("pom.xml", "dev1", "", t0); err != nil {
 		t.Fatal(err)
 	}
 	if u, err := s.UsesScopeExtras("S1"); err != nil || !u {
@@ -517,5 +518,41 @@ func TestStartRefusesWithTypedNilGates(t *testing.T) {
 	s := NewService(e.paths, e.git, e.specs, e.cfg, clock).WithGates(nilGates)
 	if _, err := s.Start("S1"); !isStepErr(err) {
 		t.Errorf("want StepError, got %v", err)
+	}
+}
+
+func TestStart_WritesCheckpointRef(t *testing.T) {
+	e := newEnv(t)
+	e.openGates()
+	rec := mustRec(t)(e.service().Start("S1"))
+	sha, ok, err := e.git.ResolveRef(context.Background(), CheckpointRef("PAY-123", "S1"))
+	if err != nil || !ok {
+		t.Fatalf("ref chưa có: ok=%v err=%v", ok, err)
+	}
+	out, err := exec.Command("git", "-C", e.dir, "rev-parse", sha+"^{tree}").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != rec.StartTree {
+		t.Errorf("tree = %s, want %s", got, rec.StartTree)
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	e := newEnv(t)
+	e.specs = append(e.specs, budgetSpec("S3", 5, 10))
+	s := e.service()
+	if err := s.save([]StepRecord{{ID: "S1", Status: StepAccepted}, {ID: "S2", Status: StepAccepted}, {ID: "S3", Status: StepInProgress}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Truncate("S2"); err != nil {
+		t.Fatal(err)
+	}
+	all := mustAll(t, s)
+	if len(all) != 1 || all[0].ID != "S1" {
+		t.Errorf("còn %v", all)
+	}
+	if err := s.Truncate("S2"); err != nil { // no-op
+		t.Fatal(err)
 	}
 }

@@ -52,7 +52,15 @@ func newScopeCmd(ctx *Context) *cobra.Command {
 		if err != nil {
 			return 0, err
 		}
-		if err := f.ScopeExtras().Add(rel, approver, ctx.Now()); err != nil {
+		cur, has, err := f.Steps().Current()
+		if err != nil {
+			return 0, err
+		}
+		stepID := ""
+		if has {
+			stepID = cur.ID
+		}
+		if err := f.ScopeExtras().Add(rel, approver, stepID, ctx.Now()); err != nil {
 			return 0, err
 		}
 		ctx.Println(i18n.Tf("Đã cho phép %s.", rel))

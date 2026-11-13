@@ -227,7 +227,7 @@ func TestSnapshotAutoApprovalCarriesRule(t *testing.T) {
 func TestSnapshotStepDiffExcludesFeatureStateAndUnmanagedFiles(t *testing.T) {
 	f := newSnapFix(t)
 	f.start("S1")
-	f.do(step.NewScopeExtras(f.paths).Add("README.md", "dev1", snapClock))
+	f.do(step.NewScopeExtras(f.paths).Add("README.md", "dev1", "", snapClock))
 	f.write("src/a.txt", "a1\n")
 	f.write("README.md", "ghi chú\n")
 	f.write("docs/n.txt", "n\n")

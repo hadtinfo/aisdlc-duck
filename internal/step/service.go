@@ -86,9 +86,49 @@ func (s *Service) Start(id string) (StepRecord, error) {
 	if err != nil {
 		return StepRecord{}, err
 	}
+	// checkpoint: commit mồ côi giữ cây đầu bước để rewind khôi phục; ghi trước khi lưu bản ghi.
+	ctx := context.Background()
+	commit, err := s.git.CommitTree(ctx, tree, "aisdlc checkpoint "+string(s.paths.Key)+" "+id)
+	if err != nil {
+		return StepRecord{}, err
+	}
+	if err := s.git.UpdateRef(ctx, CheckpointRef(s.paths.Key, id), commit); err != nil {
+		return StepRecord{}, err
+	}
 	rec := StepRecord{ID: id, Status: StepInProgress, StartTree: tree}
 	recs = append(recs, rec)
 	return rec, s.save(recs)
+}
+
+// CheckpointRef là ref git giữ cây code đầu bước.
+func CheckpointRef(key model.FeatureKey, stepID string) string {
+	return "refs/aisdlc/checkpoints/" + string(key) + "/" + stepID
+}
+
+// Truncate bỏ bản ghi của fromID và mọi bước sau nó (theo thứ tự spec); fromID chưa có bản ghi thì không làm gì.
+func (s *Service) Truncate(fromID string) error {
+	idx, err := s.indexOf(fromID)
+	if err != nil {
+		return err
+	}
+	recs, err := s.load()
+	if err != nil {
+		return err
+	}
+	if find(recs, fromID) == nil {
+		return nil
+	}
+	drop := map[string]bool{}
+	for _, sp := range s.specs[idx:] {
+		drop[sp.ID] = true
+	}
+	kept := make([]StepRecord, 0, len(recs))
+	for _, r := range recs {
+		if !drop[r.ID] {
+			kept = append(kept, r)
+		}
+	}
+	return s.save(kept)
 }
 
 func (s *Service) Finish(id string, res run.CaseRunResult) (StepRecord, error) {

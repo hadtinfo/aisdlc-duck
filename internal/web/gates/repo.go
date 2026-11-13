@@ -168,7 +168,7 @@ func scanFeedback(rows pgx.Rows) ([]review.FeedbackRow, error) {
 // feedbackBetween: feedback của cổng có thời điểm trong (from, to), cũ trước.
 func feedbackBetween(ctx context.Context, d db, repo, feature string, g gate.Gate, from, to time.Time) ([]review.FeedbackRow, error) {
 	rows, err := d.Query(ctx, "SELECT id, gate, kind, by_login, at, comment FROM feedback WHERE repo_id = $1 AND feature_key = $2 "+
-		"AND gate = $3 AND at > $4 AND at < $5 AND rewind_id IS NULL ORDER BY id", repo, feature, string(g), from, to)
+		"AND gate = $3 AND at > $4 AND at < $5 AND rewind_id IS NULL AND kind <> 'REWOUND' ORDER BY id", repo, feature, string(g), from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +438,7 @@ func state(ctx context.Context, d db, repo, feature, mode string, now time.Time)
 		}
 	}
 	rows, err := d.Query(ctx, "SELECT id, gate, kind, by_login, at, comment FROM feedback WHERE repo_id = $1 AND feature_key = $2 "+
-		"AND rewind_id IS NULL ORDER BY id", repo, feature)
+		"AND rewind_id IS NULL AND kind <> 'REWOUND' ORDER BY id", repo, feature)
 	if err != nil {
 		return st, err
 	}

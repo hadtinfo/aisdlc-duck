@@ -68,7 +68,7 @@ export function Live({ repoId, featureKey }: { repoId: string; featureKey: strin
       <header className="live-head">
         <div>
           <span className="jira-key">{featureKey}</span>
-          <h1>{title}</h1>
+          {title && title !== featureKey && <h1>{title}</h1>}
           <p className="muted small">{repoId} · <Link to={featureHref(repoId, featureKey)}>{t("live.viewReview")}</Link></p>
         </div>
         <span className={`session session-${session.toLowerCase()}`}><i className="dot" />{t(SESSION_TEXT[session])}</span>

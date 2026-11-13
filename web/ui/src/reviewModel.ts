@@ -1,7 +1,7 @@
 /** Mô hình vẽ review card (hàm thuần): ô tóm tắt, bản đồ bước → vùng code, ER diff, "đã xem" giả định. */
 import type { Tone } from "./components/GateList";
 import { Key, t as tr } from "./i18n";
-import type { FlagLevel, GateName, ReviewCardData, ReviewFlag, Snapshot, TablePart } from "./types";
+import type { FlagLevel, GateData, GateName, ReviewCardData, ReviewFlag, Snapshot, TablePart } from "./types";
 
 export type { Tone };
 
@@ -54,19 +54,26 @@ export function middleEllipsis(s: string, max: number): string {
 
 // ---------- Ô tóm tắt ----------
 
-export interface Tile { label: string; value: string; sub: string; tone?: Tone }
+export interface Tile { label: string; value: string; sub: string; tone?: Tone; flag?: boolean }
+
+/** Cổng đã duyệt: cờ lúc đó là rủi ro đã chấp nhận. Giữ màu theo mức, chỉ thêm nhãn kèm hash và người duyệt. */
+export function acceptedApproval(gate: GateData | null): { hash: string; by: string } | null {
+  if (!gate || gate.state !== "APPROVED" || !gate.approval) return null;
+  return { hash: gate.approval.hash.slice(0, 8), by: gate.approval.label ?? gate.approval.approver };
+}
 const NONE = "—";
 
 function flagTiles(flags: ReviewFlag[]): Tile[] {
   const tile = (label: string, level: FlagLevel, tone: Tone): Tile => {
     const hit = flags.filter((f) => f.level === level);
-    return { label, value: String(hit.length), sub: hit.length ? flagTitle(hit[0]) : tr("tile.none"),
+    return { label, value: String(hit.length), sub: hit.length ? flagTitle(hit[0]) : tr("tile.none"), flag: true,
       ...(hit.length ? { tone } : {}) };
   };
   return [tile(tr("flags.title"), "HIGH", "bad"), tile(tr("tile.warnings"), "WARN", "warn")];
 }
 
-export function summaryTiles(card: ReviewCardData): Tile[] {
+/** `sqlFiles`: số file SQL trong snapshot; có file mà không đọc ra bảng nào thì ô DB nói thẳng, không ghi "+0". */
+export function summaryTiles(card: ReviewCardData, sqlFiles = 0): Tile[] {
   const [high, warn] = flagTiles(card.flags ?? []);
   const empty = (label: string): Tile => ({ label, value: NONE, sub: "" });
   switch (card.gate) {
@@ -78,9 +85,11 @@ export function summaryTiles(card: ReviewCardData): Tile[] {
       const altered = tables.filter((t) => t.status === "ALTERED").length;
       const dropped = tables.filter((t) => t.status === "DROPPED").length;
       const touched = new Set((d.touchesExisting ?? []).map((t) => t.table)).size;
+      const unparsed = sqlFiles > 0 && tables.length === 0 && touched === 0;
       return [
         { label: tr("steps.step"), value: String(steps.length), sub: steps.map((s) => s.id).join(", ") },
         high, warn,
+        unparsed ? { label: "DB", value: "?", sub: tr("tile.dbUnparsed", { n: sqlFiles }), tone: "warn" as Tone } :
         { label: "DB", value: tr("tile.dbAdded", { n: added }) + (altered ? ` · ${tr("tile.dbAltered", { n: altered })}` : "") + (dropped ? ` · ${tr("tile.dbDropped", { n: dropped })}` : ""),
           sub: touched ? tr("tile.dbTouched", { n: touched }) : tr("tile.dbUntouched"),
           ...(dropped ? { tone: "bad" as Tone } : altered ? { tone: "warn" as Tone } : {}) },

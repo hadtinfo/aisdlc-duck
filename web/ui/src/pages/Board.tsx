@@ -75,6 +75,7 @@ export function Board() {
               <h2>{title} <span className="count">{col.length}</span></h2>
               <div className="cards">
                 {col.map((c) => <Card key={`${c.repoId}/${c.key}`} card={c} now={now} />)}
+                {data && col.length === 0 && <p className="col-empty">{t("board.colEmpty")}</p>}
               </div>
             </section>
           );

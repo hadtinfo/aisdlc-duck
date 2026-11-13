@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { actionsFor, approvalBadge, canAct } from "../approve";
 import { ago } from "../format";
-import { cardFor, loadSeen, seenKey } from "../reviewModel";
+import { acceptedApproval, cardFor, loadSeen, seenKey } from "../reviewModel";
 import type { ControlAction, FeatureDetail, FeatureEvent, GateData, ReviewCardData, Snapshot, StepData } from "../types";
 import { Assumptions } from "./Assumptions";
 import { CopyCommand } from "./CopyCommand";
@@ -75,7 +75,7 @@ function Events({ events }: { events: FeatureEvent[] }) {
     <section className="panel-sec">
       <h3>{t("events.title")}</h3>
       {rows.length === 0 && <p className="muted">{t("events.none")}</p>}
-      <ul className="events">
+      <ul className="events" aria-live="polite" aria-relevant="additions">
         {rows.map((e, i) => (
           <li key={e.id ?? `${e.at}-${i}`} className={e.outOfScope ? "oos" : ""}>
             <div className="ev-text">{eventText(e)}{e.step && <span className="tag">{e.step}</span>}</div>
@@ -108,7 +108,7 @@ export function GatePanel({ gate, step, snapshot, events, repoId, featureKey, de
         <GateHead gate={gate} snapshot={snapshot} card={card} seen={key ? loadSeen(key) : []}
           detail={detail} repoId={repoId} featureKey={featureKey} onChanged={onChanged} />
       )}
-      {gate && card && <FlagList flags={card.flags ?? []} />}
+      {gate && card && <FlagList flags={card.flags ?? []} accepted={acceptedApproval(gate)} />}
       {gate && card && card.assumptions !== undefined && (
         <Assumptions key={key} items={card.assumptions} section={card.assumptionsSection} storageKey={key}
           onChange={() => setSeenTick((n) => n + 1)} />
@@ -140,17 +140,26 @@ function GateHead({ gate, snapshot, card, seen, detail, repoId, featureKey, onCh
     .filter((c) => !actor || (c !== `aisdlc approve ${name}` && c !== `aisdlc reopen ${name}`));
   const badge = approvalBadge(gate);
   const edited = !!gate.approval && gate.approval.hash !== gate.currentHash;
+  // Nộp = duyệt = hiện tại: một dòng; lệch nhau mới tách ba dòng để thấy chỗ lệch.
+  const sameHash = !!gate.submission && !!gate.approval &&
+    gate.submission.hash === gate.currentHash && gate.approval.hash === gate.currentHash;
   return (
     <>
       <section className="panel-sec">
         <h3>{t("gate.heading", { gate: gate.gate })}</h3>
-        <p className={`state ${gate.state}`}>{stateText(gate.state)}</p>
+        <p className={`state ${gate.state}`} aria-live="polite">{stateText(gate.state)}</p>
         {edited && <p className="pill bad block">{t("gate.editedAfter")}</p>}
         {badge && <p><span className={`tag ${gate.superseded && !gate.approval ? "badge-superseded" : "badge-auto"}`}>{badge}</span></p>}
         <dl className="kv">
-          <dt>{t("gate.hashSubmitted")}</dt><dd className="mono">{short(gate.submission?.hash)}</dd>
-          <dt>{t("gate.hashApproved")}</dt><dd className="mono">{short(gate.approval?.hash)}</dd>
-          <dt>{t("gate.hashCurrent")}</dt><dd className="mono">{short(gate.currentHash)}</dd>
+          {sameHash ? (
+            <><dt>Hash</dt><dd><span className="mono">{short(gate.currentHash)}</span><div className="muted">{t("gate.hashAllSame")}</div></dd></>
+          ) : (
+            <>
+              <dt>{t("gate.hashSubmitted")}</dt><dd className="mono">{short(gate.submission?.hash)}</dd>
+              <dt>{t("gate.hashApproved")}</dt><dd className="mono">{short(gate.approval?.hash)}</dd>
+              <dt>{t("gate.hashCurrent")}</dt><dd className="mono">{short(gate.currentHash)}</dd>
+            </>
+          )}
           {gate.approval && <><dt>{t("gate.approver")}</dt><dd>{gate.approval.label ?? gate.approval.approver}<div className="muted">{ago(gate.approval.at)}</div></dd></>}
           {gate.submission && <><dt>{t("gate.submittedAt")}</dt><dd>{ago(gate.submission.at)}</dd></>}
         </dl>
@@ -217,7 +226,7 @@ function StepInfo({ step, events, actions, actor, repoId, featureKey, onChanged 
     <>
       <section className="panel-sec">
         <h3>{t("step.heading", { id: step.id })}</h3>
-        <p className={`state ${step.status}`}>{stepText(step.status)}</p>
+        <p className={`state ${step.status}`} aria-live="polite">{stepText(step.status)}</p>
         <dl className="kv">
           <dt>{t("steps.budget")}</dt><dd>{t("steps.budgetValue", { files: step.budget.files, lines: step.budget.lines })}</dd>
           {step.record?.acceptedBy && <><dt>{t("step.acceptedBy")}</dt><dd>{step.record.acceptedBy}</dd></>}

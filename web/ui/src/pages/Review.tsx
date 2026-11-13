@@ -11,7 +11,7 @@ import { ErDiagram } from "../components/ErDiagram";
 import { EvalTable } from "../components/EvalTable";
 import { GateItem, GateList, Tone } from "../components/GateList";
 import { approvalBadge } from "../approve";
-import { GatePanel, stateText } from "../components/GatePanel";
+import { GatePanel, stateText, stepText } from "../components/GatePanel";
 import { Resubmission } from "../components/Resubmission";
 import { Markdown } from "../components/Markdown";
 import { ReviewSummary } from "../components/ReviewSummary";
@@ -21,8 +21,8 @@ import { StepMapView } from "../components/StepMapView";
 import { StepsTable } from "../components/StepsTable";
 import { UserMenu, useMe } from "../components/UserMenu";
 import { groupByStep } from "../diff";
-import { ago, budgetLevel } from "../format";
-import { cardFor, erLayout, stepMap, summaryTiles } from "../reviewModel";
+import { ago, budgetLevel, caseRatio } from "../format";
+import { acceptedApproval, cardFor, erLayout, stepMap, summaryTiles } from "../reviewModel";
 import { encodePath, featureHref, selectionFromQuery } from "../routes";
 import { eventReloadsControl } from "../control";
 import { subscribe } from "../sse";
@@ -142,7 +142,9 @@ function DesignCard({ card, snap }: { card: ReviewCardData; snap: Snapshot }) {
             ) : <p className="muted">{t("rvw.noStepsToDraw")}</p>}
           </Panel>
           <Panel title={t("rvw.dbChanges")} src={sql.length > 0 && <>{t("rvw.generatedFrom")} {sql.map((p, i) => <span key={p}>{i > 0 && " + "}<code>{p}</code></span>)}</>}>
-            {er ? <ErDiagram layout={er} /> : <p className="muted">{t("rvw.noTables")}</p>}
+            {er ? <ErDiagram layout={er} />
+              : sql.length > 0 ? <p className="note">{t("rvw.tablesUnparsed", { n: sql.length })}</p>
+              : <p className="muted">{t("rvw.noTables")}</p>}
             {createOnly && <p className="note">{createOnly.message}</p>}
             {(d.touchesExisting ?? []).length > 0 && (
               <div className="tbl">
@@ -204,7 +206,7 @@ function GateMain({ gate, snap, repoId }: { gate: GateData; snap: Snapshot; repo
   }
   return (
     <>
-      <ReviewSummary tiles={summaryTiles(card)} />
+      <ReviewSummary tiles={summaryTiles(card, dbFiles(snap).length)} acceptedHash={acceptedApproval(gate)?.hash} />
       <RiskPanel card={card} repoId={repoId} />
       {card.riskLLM && <RiskLLM data={card.riskLLM} />}
       {gate.gate === "DESIGN" ? <DesignCard card={card} snap={snap} />
@@ -239,7 +241,7 @@ function StepMain({ step, snap }: { step: StepData; snap: Snapshot }) {
               <span className={`budget ${budgetLevel(lines, step.budget.lines)}`}>{t("rvw.lines", { n: lines })}</span>
             </dd>
             <dt>{t("step.casesPassed")}</dt>
-            <dd>{check.casesPassed ?? 0}/{step.caseIds.length}
+            <dd>{caseRatio(check).passed}/{caseRatio(check).total}
               {(check.casesNotPassed?.length ?? 0) > 0 && <span className="pill bad">{t("rvw.notPassed", { list: check.casesNotPassed!.join(", ") })}</span>}</dd>
             {(check.outOfScope?.length ?? 0) > 0 && (
               <><dt>{t("tile.outOfScope")}</dt><dd>{check.outOfScope!.map((p) => <div key={p}><code>{p}</code></div>)}</dd></>
@@ -368,7 +370,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
       ...s.gates.map((g): GateItem => ({
         id: g.gate, title: GATE_TITLE[g.gate], sub: [stateText(g.state), approvalBadge(g)].filter(Boolean).join(" · "), tone: gateTone(g.state), group: "gate",
       })),
-      ...s.steps.map((st): GateItem => ({ id: st.id, title: st.id, sub: st.title, tone: stepTone(st.status), group: "step" })),
+      ...s.steps.map((st): GateItem => ({ id: st.id, title: st.id, sub: st.title, status: stepText(st.status), tone: stepTone(st.status), group: "step" })),
     ];
   }, [detail, locale]);
 
@@ -387,9 +389,10 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
 
   return (
     <div className="page">
+      <a className="skip-link" href="#rv-main">{t("rvw.skipToContent")}</a>
       <header className="review-head">
         <Link to="/">← {t("nav.board")}</Link>
-        <h1><span className="key">{snap.feature.key}</span> {snap.feature.title}</h1>
+        <h1><span className="key">{snap.feature.key}</span>{snap.feature.title && snap.feature.title !== snap.feature.key && <> {snap.feature.title}</>}</h1>
         <span className="tag">{snap.feature.flow}</span>
         <span className="spacer" />
         <div className="meta">
@@ -409,7 +412,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
       )}
       <div className="review">
         <GateList items={items} selected={selected} onSelect={select} />
-        <section className="review-main" aria-label={t("rvw.content")}>
+        <section className="review-main" id="rv-main" tabIndex={-1} aria-label={t("rvw.content")}>
           <h2>{gate ? `${GATE_TITLE[gate.gate]}` : step ? `${step.id} · ${step.title}` : ""}</h2>
           {gate && (
             <ErrorBoundary key={`${repoId}\n${featureKey}\n${gate.gate}`} fallback={

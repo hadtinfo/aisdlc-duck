@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -217,6 +218,19 @@ func (r *Repo) UserName(ctx context.Context) (string, error) {
 func (r *Repo) UserEmail(ctx context.Context) (string, error) {
 	out, err := r.run(ctx, nil, "config", "user.email")
 	return strings.TrimSpace(out), err
+}
+
+// CommonDir trả đường dẫn tuyệt đối của thư mục git dùng chung (.git của repo chính, kể cả khi đứng trong worktree).
+func (r *Repo) CommonDir(ctx context.Context) (string, error) {
+	out, err := r.run(ctx, nil, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	d := strings.TrimSpace(out)
+	if !filepath.IsAbs(d) {
+		d = filepath.Join(r.root, d)
+	}
+	return filepath.Clean(d), nil
 }
 
 // RemoteURL trả URL của remote name; ok=false nếu không có remote đó.

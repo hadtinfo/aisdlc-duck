@@ -43,6 +43,40 @@ func TestRepoIDLocalWhenNoRemoteAndOriginWhenPresent(t *testing.T) {
 	}
 }
 
+// Worktree (vd. Orca tạo cho mỗi task) có tên thư mục riêng; không có remote thì mọi worktree vẫn phải cùng định
+// danh với repo chính, để web dùng chung chính sách và tính năng.
+func TestRepoIDWorktreeWithoutRemoteUsesMainRepoName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	base := t.TempDir()
+	repo := filepath.Join(base, "room-booking")
+	wt := filepath.Join(base, "workspaces", "viết-brd-login")
+	if err := os.Mkdir(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sh := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	sh("init", "-q")
+	sh("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+	sh("worktree", "add", "-q", "-b", "task", wt)
+	ctx := context.Background()
+	if got := RepoID(ctx, gitx.New(wt), wt); got != "local/room-booking" {
+		t.Errorf("worktree không remote: got %q, want local/room-booking", got)
+	}
+	if got := RepoID(ctx, gitx.New(repo), repo); got != "local/room-booking" {
+		t.Errorf("repo chính không remote: got %q", got)
+	}
+	sh("remote", "add", "origin", "git@gitlab.corp:pay/room-booking.git")
+	if got := RepoID(ctx, gitx.New(wt), wt); got != "gitlab.corp/pay/room-booking" {
+		t.Errorf("worktree có origin: got %q", got)
+	}
+}
+
 func TestNormalizeRemote(t *testing.T) {
 	for in, want := range map[string]string{
 		"git@gitlab.corp:pay/svc.git":             "gitlab.corp/pay/svc",

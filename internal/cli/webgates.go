@@ -435,8 +435,11 @@ func (w *WebCache) appendFeedback(key model.FeatureKey, s snapshot.FeatureGateSt
 			continue
 		}
 		kind := i18n.T("trả lại")
-		if fb.Kind == "REOPENED" {
+		switch fb.Kind {
+		case "REOPENED":
 			kind = i18n.T("mở lại")
+		case "REWOUND":
+			kind = i18n.T("quay lại mốc cũ")
 		}
 		add.WriteString(i18n.Tf("## %s — %s bởi %s lúc %s\n%s\n\n", fb.Gate, kind, oneLineOr(fb.By), review.InstantString(fb.At), marker))
 		if c := strings.TrimSpace(fb.Comment); c != "" {

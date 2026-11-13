@@ -26,7 +26,7 @@ import (
 type db = auth.DB
 
 const liveSubmission = " AND s.submitted_at > coalesce((SELECT max(f.at) FROM feedback f WHERE f.repo_id = s.repo_id " +
-	"AND f.feature_key = s.feature_key AND f.gate = s.gate), '-infinity') "
+	"AND f.feature_key = s.feature_key AND f.gate = s.gate AND f.rewind_id IS NULL), '-infinity') AND s.rewind_id IS NULL "
 
 const liveApproval = " AND a.revoked_at IS NULL AND (a.channel <> 'import' OR a.confirmed_at IS NOT NULL) "
 
@@ -105,7 +105,7 @@ func latestSubmission(ctx context.Context, d db, repo, feature string, g gate.Ga
 // submissionCount: số lần nộp (kể cả bản đã bị trả lại) của cổng.
 func submissionCount(ctx context.Context, d db, repo, feature string, g gate.Gate) (int, error) {
 	var n int
-	err := d.QueryRow(ctx, "SELECT count(*) FROM submissions WHERE repo_id = $1 AND feature_key = $2 AND gate = $3",
+	err := d.QueryRow(ctx, "SELECT count(*) FROM submissions WHERE repo_id = $1 AND feature_key = $2 AND gate = $3 AND rewind_id IS NULL",
 		repo, feature, string(g)).Scan(&n)
 	return n, err
 }
@@ -113,7 +113,7 @@ func submissionCount(ctx context.Context, d db, repo, feature string, g gate.Gat
 // lastSubmissions: các lần nộp mới nhất của cổng kèm artifact, mới trước.
 func lastSubmissions(ctx context.Context, d db, repo, feature string, g gate.Gate, limit int) ([]review.StoredSubmission, error) {
 	rows, err := d.Query(ctx, "SELECT id, submitted_at, artifacts::text FROM submissions WHERE repo_id = $1 AND feature_key = $2 "+
-		"AND gate = $3 ORDER BY id DESC LIMIT $4", repo, feature, string(g), limit)
+		"AND gate = $3 AND rewind_id IS NULL ORDER BY id DESC LIMIT $4", repo, feature, string(g), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +168,7 @@ func scanFeedback(rows pgx.Rows) ([]review.FeedbackRow, error) {
 // feedbackBetween: feedback của cổng có thời điểm trong (from, to), cũ trước.
 func feedbackBetween(ctx context.Context, d db, repo, feature string, g gate.Gate, from, to time.Time) ([]review.FeedbackRow, error) {
 	rows, err := d.Query(ctx, "SELECT id, gate, kind, by_login, at, comment FROM feedback WHERE repo_id = $1 AND feature_key = $2 "+
-		"AND gate = $3 AND at > $4 AND at < $5 ORDER BY id", repo, feature, string(g), from, to)
+		"AND gate = $3 AND at > $4 AND at < $5 AND rewind_id IS NULL ORDER BY id", repo, feature, string(g), from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -404,6 +404,11 @@ func state(ctx context.Context, d db, repo, feature, mode string, now time.Time)
 	if mode != ModeWeb {
 		return st, nil
 	}
+	st.Attempt = 1
+	if err := d.QueryRow(ctx, "SELECT attempt FROM features WHERE repo_id = $1 AND feature_key = $2", repo, feature).
+		Scan(&st.Attempt); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return st, err
+	}
 	sup, err := supersededGates(ctx, d, repo, feature)
 	if err != nil {
 		return st, err
@@ -433,7 +438,7 @@ func state(ctx context.Context, d db, repo, feature, mode string, now time.Time)
 		}
 	}
 	rows, err := d.Query(ctx, "SELECT id, gate, kind, by_login, at, comment FROM feedback WHERE repo_id = $1 AND feature_key = $2 "+
-		"ORDER BY id", repo, feature)
+		"AND rewind_id IS NULL ORDER BY id", repo, feature)
 	if err != nil {
 		return st, err
 	}

@@ -21,6 +21,9 @@ type FeatureGateState struct {
 	Approvals   []Appr    `json:"approvals"`
 	Feedback    []Fb      `json:"feedback"`
 	Superseded  []Appr    `json:"superseded,omitempty"`
+	// Attempt: lần làm hiện tại của tính năng (features.attempt, mặc định 1); rewind tăng lên. Phong bì cũ không có
+	// khóa này → 0.
+	Attempt int `json:"attempt"`
 }
 
 // Sub là một lần nộp cổng.

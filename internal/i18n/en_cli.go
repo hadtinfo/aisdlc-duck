@@ -524,6 +524,7 @@ var enCLI = map[string]string{
 	"aisdlc web: không ghi được feedback.md: %s":                                        "aisdlc web: cannot write feedback.md: %s",
 	"trả lại":                          "rejected",
 	"mở lại":                           "reopened",
+	"quay lại mốc cũ":                  "rewound",
 	"## %s — %s bởi %s lúc %s\n%s\n\n": "## %s — %s by %s at %s\n%s\n\n",
 	"Không nộp được lên web: ":         "Cannot submit to the web: ",
 	"aisdlc web: web đã nhận bản nộp nhưng phản hồi không xác minh được bằng khóa đã ghim; chạy `aisdlc status` để làm mới.": "aisdlc web: the web accepted the submission but its response cannot be verified with the pinned key; run `aisdlc status` to refresh.",

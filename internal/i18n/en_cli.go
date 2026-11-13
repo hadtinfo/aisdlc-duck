@@ -3,6 +3,11 @@ package i18n
 // enCLI là bản tiếng Anh của khu vực CLI và hook (đợt 2): internal/cli, policy, gate, step, spec, model, snapshot,
 // gitx, yamlx, fsx và cmd/aisdlc. Quy tắc như en.go: khóa là chuỗi tiếng Việt nguyên văn, cùng dãy động từ %.
 var enCLI = map[string]string{
+	// rewind
+
+	"Mốc %q không hợp lệ hoặc chưa đạt tới. Các mốc hợp lệ: %s": "Checkpoint %q is invalid or not reached yet. Valid checkpoints: %s",
+	"Không tìm thấy bước %s trong thiết kế":                     "Step %s not found in the design",
+	"Mốc %s không thuộc luồng của tính năng":                    "Checkpoint %s is not part of the feature's flow",
 	// fsx, yamlx, gitx, model, snapshot
 
 	"Không ghi được %s: %w": "Cannot write %s: %w",

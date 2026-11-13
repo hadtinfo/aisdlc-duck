@@ -375,19 +375,25 @@ aisdlc policy show
 Khi thiết kế sai giữa chừng, hoặc một bước làm hỏng, dùng `aisdlc rewind [mốc]` để quay tính năng về **đầu** một mốc: `brd`, `design`, `cases`, `S1`…`Sn`, `review` (luồng nhẹ không có `brd`, `design`). Chỉ hiện các mốc đã đạt tới. Chỉ dev chạy, trong terminal thật, gõ lại feature key như `reopen`; không có cờ bỏ qua xác nhận, và agent gọi qua Bash bị hook chặn.
 
 - Không có `<mốc>` thì lệnh in danh sách đánh số (`? Quay về mốc nào (ROOM-1)`, mỗi dòng ghi cái sẽ xoá) và hỏi `Chọn mốc (số):`.
-- Có `<mốc>` (không phân biệt hoa thường) thì in **bản xem trước**: bước bị bỏ, cổng được mở lại, artifact bị xoá, số file code đổi hoặc bị xoá, và tên ref dự phòng; rồi hỏi `Gõ lại feature key (ROOM-1) để xác nhận:`.
+- Có `<mốc>` (không phân biệt hoa thường) thì in **bản xem trước**: bước bị bỏ, cổng được mở lại, artifact bị xoá, số file code đổi hoặc bị xoá, và nơi sẽ cất bản dự phòng (ref chỉ được tạo sau khi bạn xác nhận); rồi hỏi `Gõ lại feature key (ROOM-1) để xác nhận:`.
 - Mọi thứ sau mốc bị **xoá sạch** (artifact, kết quả eval, bước, cổng; `feature.yaml` và `feedback.md` được giữ, `feedback.md` ghi thêm một dòng `REWIND`). Code của **toàn bộ working tree** về đúng snapshot đầu mốc (snapshot lưu ở `refs/aisdlc/checkpoints/<KEY>/<Sx>` từ lúc `step start`). Quay về `review` giữ code, chỉ xoá eval và review.
 - **Cảnh báo file ngoài bước**: file đổi ngoài các bước của tính năng (merge, pull, sửa tay, tính năng khác) cũng về như mốc; bản xem trước liệt kê riêng và in `Cảnh báo: N file đổi ngoài các bước của <KEY> …`. File bị git bỏ qua không khôi phục được (`Không khôi phục N file bị git bỏ qua …`). Thư mục tính năng khác không bị đụng. `HEAD` và lịch sử git không đổi: code đã commit sau mốc hiện ra là thay đổi chưa commit.
 - Xong lệnh in `Đã quay <KEY> về đầu <mốc>. Tiếp: …` (`aisdlc step start Sx` hoặc `/aisdlc:<mốc>`), agent nhận chỉ dẫn bắt đầu lại.
 
 ```
 $ aisdlc rewind s2
+
 Sẽ quay ROOM-1 về đầu S2:
   - Bỏ bước S2, S3
-  - Mở lại cổng Review
+  - Mở lại cổng REVIEW
+  - Xoá aisdlc/features/ROOM-1/eval
+  - Xoá aisdlc/features/ROOM-1/review-agent.json
   - Code về snapshot đầu S2: 7 file đổi, 2 file mới bị xoá
-  - Bản dự phòng đã có: refs/aisdlc/backup/ROOM-1/20261113-1405
-Gõ lại feature key (ROOM-1) để xác nhận:
+      (danh sách file)
+  - Bản hiện tại sẽ được cất vào refs/aisdlc/backup/ROOM-1/<yyyymmdd-hhmm>
+Gõ lại feature key (ROOM-1) để xác nhận: ROOM-1
+Bản hiện tại cất ở refs/aisdlc/backup/ROOM-1/20261113-1405
+Đã quay ROOM-1 về đầu S2. Tiếp: aisdlc step start S2
 ```
 
 **Ref dự phòng.** Trước khi xoá gì, bản hiện tại (cả thư mục tính năng) được cất ở `refs/aisdlc/backup/<KEY>/<yyyymmdd-hhmm>` (ref ẩn, không hiện ở `git branch`, không push). Lấy lại một file:

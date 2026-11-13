@@ -375,19 +375,25 @@ aisdlc policy show
 When the design went wrong midway, or a step went bad, `aisdlc rewind [checkpoint]` rewinds the feature to the **start** of a checkpoint: `brd`, `design`, `cases`, `S1`…`Sn`, `review` (the lite flow has no `brd` or `design`). Only checkpoints already reached are offered. Dev only, in a real terminal, retyping the feature key like `reopen`; there is no flag to skip the confirmation, and the hook blocks an agent that calls it through Bash.
 
 - Without `<checkpoint>` the command prints a numbered list (`? Quay về mốc nào (ROOM-1)`, each line says what would be deleted) and asks `Chọn mốc (số):` (choose the checkpoint, by number).
-- With `<checkpoint>` (case-insensitive) it prints a **preview**: steps dropped, gates reopened, artifacts deleted, how many code files change or are removed, and the backup ref name; then asks `Gõ lại feature key (ROOM-1) để xác nhận:` (retype the feature key to confirm).
+- With `<checkpoint>` (case-insensitive) it prints a **preview**: steps dropped, gates reopened, artifacts deleted, how many code files change or are removed, and where the backup will be saved (the ref is created only after you confirm); then asks `Gõ lại feature key (ROOM-1) để xác nhận:` (retype the feature key to confirm).
 - Everything after the checkpoint is **deleted** (artifacts, eval results, steps, gates; `feature.yaml` and `feedback.md` are kept, and `feedback.md` gets one `REWIND` line). The code of the **whole working tree** goes back to the snapshot taken at the start of the checkpoint (snapshots live in `refs/aisdlc/checkpoints/<KEY>/<Sx>` from `step start`). Rewinding to `review` keeps the code and only deletes eval and review.
 - **Warning about files outside the steps**: files changed outside the feature's steps (merge, pull, hand edits, other features) also go back to the checkpoint; the preview lists them separately and prints `Cảnh báo: N file đổi ngoài các bước của <KEY> …` (warning: N files changed outside the steps). Git-ignored files cannot be restored (`Không khôi phục N file bị git bỏ qua …`). Other features' folders are never touched. `HEAD` and git history do not change: code committed after the checkpoint shows up as uncommitted changes.
 - When done it prints `Đã quay <KEY> về đầu <checkpoint>. Tiếp: …` (rewound to the start; next: `aisdlc step start Sx` or `/aisdlc:<checkpoint>`), and the agent receives an instruction to start again.
 
 ```
 $ aisdlc rewind s2
-Sẽ quay ROOM-1 về đầu S2:
-  - Bỏ bước S2, S3
-  - Mở lại cổng Review
-  - Code về snapshot đầu S2: 7 file đổi, 2 file mới bị xoá
-  - Bản dự phòng đã có: refs/aisdlc/backup/ROOM-1/20261113-1405
-Gõ lại feature key (ROOM-1) để xác nhận:
+
+Will rewind ROOM-1 to the start of S2:
+  - Drop steps S2, S3
+  - Reopen gates REVIEW
+  - Delete aisdlc/features/ROOM-1/eval
+  - Delete aisdlc/features/ROOM-1/review-agent.json
+  - Code back to the snapshot at the start of S2: 7 files changed, 2 new files deleted
+      (file list)
+  - The current state will be saved under refs/aisdlc/backup/ROOM-1/<yyyymmdd-hhmm>
+Type the feature key (ROOM-1) again to confirm: ROOM-1
+Current state saved at refs/aisdlc/backup/ROOM-1/20261113-1405
+Rewound ROOM-1 to the start of S2. Next: aisdlc step start S2
 ```
 
 **Backup ref.** Before deleting anything, the current state (including the feature folder) is saved at `refs/aisdlc/backup/<KEY>/<yyyymmdd-hhmm>` (a hidden ref: not shown by `git branch`, never pushed). Get a file back:

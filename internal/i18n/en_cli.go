@@ -41,6 +41,7 @@ var enCLI = map[string]string{
 	"Không xoá được %s: %s":                                                                     "Cannot delete %s: %s",
 	"%s hỏng; xoá file này rồi chạy lại aisdlc rewind":                                          "%s is corrupt; delete it and run aisdlc rewind again",
 	"## REWIND — quay về %s bởi %s lúc %s (dự phòng: %s)\n\n":                                   "## REWIND — rewound to %s by %s at %s (backup: %s)\n\n",
+	"Từ chối khôi phục %q: path phải tương đối, nằm trong repo và ngoài .git/":                  "Refusing to restore %q: the path must be relative, inside the repo and outside .git/",
 	// fsx, yamlx, gitx, model, snapshot
 
 	"Không ghi được %s: %w": "Cannot write %s: %w",

@@ -87,3 +87,37 @@ func TestRestorePathsRename(t *testing.T) {
 	}
 	eq(t, f.snap(), t0)
 }
+
+// TestRestorePathsRejectsUnsafe: path tuyệt đối, có đoạn ".." hoặc nằm dưới .git/ bị từ chối trước khi ghi gì.
+func TestRestorePathsRejectsUnsafe(t *testing.T) {
+	f := newFixture(t)
+	f.write("a.go", "1")
+	f.commitAll()
+	t0 := f.snap()
+	f.write("a.go", "2")
+	outside := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(outside, []byte("v"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []FileChange{
+		{Path: outside, Type: Deleted},
+		{Path: "../victim", Type: Deleted},
+		{Path: "sub/../../victim", Type: Deleted},
+		{Path: ".git/config", Type: Deleted},
+		{Path: ".git", Type: Deleted},
+		{Path: "a.go", OldPath: "../victim", Type: Renamed},
+	} {
+		changes := []FileChange{{Path: "a.go", Type: Modified}, bad}
+		if err := f.repo.RestorePaths(ctx, t0, changes); err == nil {
+			t.Errorf("phải từ chối %+v", bad)
+		}
+		b, _ := os.ReadFile(filepath.Join(f.dir, "a.go"))
+		eq(t, string(b), "2") // không ghi gì
+		if _, err := os.Stat(outside); err != nil {
+			t.Fatalf("file ngoài repo bị đụng: %v", err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, ".git", "config")); err != nil {
+		t.Fatal(".git/config bị xoá")
+	}
+}

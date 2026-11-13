@@ -47,8 +47,16 @@ func (r *Repo) ObjectExists(ctx context.Context, sha string) bool {
 
 // RestorePaths đưa các file trong changes về đúng trạng thái ở tree: path có
 // trong tree thì ghi lại nội dung (giữ mode thực thi), không có thì xóa khỏi
-// đĩa. Rename xử lý cả OldPath. Không đụng index và HEAD.
+// đĩa. Rename xử lý cả OldPath. Không đụng index và HEAD. Path tuyệt đối, có đoạn ".." hoặc nằm dưới .git/
+// bị từ chối trước khi ghi bất cứ gì.
 func (r *Repo) RestorePaths(ctx context.Context, tree string, changes []FileChange) error {
+	for _, c := range changes {
+		for _, p := range []string{c.Path, c.OldPath} {
+			if p != "" && !safeRelPath(p) {
+				return &Error{Msg: i18n.Tf("Từ chối khôi phục %q: path phải tương đối, nằm trong repo và ngoài .git/", p)}
+			}
+		}
+	}
 	for _, c := range changes {
 		paths := []string{c.Path}
 		if c.OldPath != "" {
@@ -61,6 +69,20 @@ func (r *Repo) RestorePaths(ctx context.Context, tree string, changes []FileChan
 		}
 	}
 	return nil
+}
+
+// safeRelPath: path tương đối kiểu git (dấu /), không có đoạn ".." và không thuộc .git.
+func safeRelPath(p string) bool {
+	if filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
+		return false
+	}
+	for _, seg := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg == ".." {
+			return false
+		}
+	}
+	first, _, _ := strings.Cut(strings.TrimPrefix(p, "./"), "/")
+	return !strings.EqualFold(first, ".git") && p != "" && p != "."
 }
 
 func (r *Repo) restoreOne(ctx context.Context, tree, p string) error {

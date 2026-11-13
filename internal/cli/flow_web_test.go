@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/model"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/webclient"
@@ -315,4 +316,128 @@ func TestWebModeSchema1PolicyAbortsClassification(t *testing.T) {
 	eq(t, r.run("submit", "design"), 2)
 	contains(t, r.err, "quản trị cần chuyển chính sách sang schema 2 trên web.")
 	eq(t, r.exists(riskFile), false)
+}
+
+// ---- aisdlc rewind ở chế độ web: server trước, rồi mới xoá cục bộ ----
+
+// rewindWebRepo: repo đã làm xong S1, S2 ở chế độ cục bộ rồi chuyển sang web; server giả giữ BRD/DESIGN/CASES đã duyệt.
+func rewindWebRepo(t *testing.T) (*testRepo, *fakeweb.Server) {
+	r := rewindRepo(t)
+	repoID := NewWebCache(r.context(noConsole(), "", &bytes.Buffer{}, &bytes.Buffer{}), r.root).RepoID()
+	web := fakeweb.New(t)
+	web.SetFeature(repoID, "PAY-1")
+	home := t.TempDir()
+	r.env["HOME"] = home
+	must(t, webclient.Pin(home, web.Pub))
+	r.env["AISDLC_WEB_URL"] = web.URL()
+	r.env["AISDLC_WEB_TOKEN"] = "ingest-tok"
+	must(t, webclient.SaveConfig(home, webclient.Config{URL: web.URL(), Token: "ingest-tok", ApproveToken: "appr-tok"}))
+	r.write("aisdlc/config.yaml", r.read("aisdlc/config.yaml")+"approvals: web\n")
+	paths := model.FeaturePaths{RepoRoot: r.root, Key: "PAY-1"}
+	var subs []snapshot.Sub
+	var apprs []snapshot.Appr
+	for _, g := range []gate.Gate{gate.BRD, gate.DESIGN, gate.CASES} {
+		c, err := g.ArtifactContents(paths, model.FlowFull)
+		must(t, err)
+		h := model.SHA256Contents(c)
+		subs = append(subs, snapshot.Sub{Gate: string(g), Hash: h, At: fakeweb.T})
+		apprs = append(apprs, snapshot.Appr{Gate: string(g), Hash: h, Approver: "dev", At: fakeweb.T, Channel: "web"})
+	}
+	web.Update(func(s *fakeweb.Server) {
+		s.State = snapshot.FeatureGateState{Repo: repoID, Feature: "PAY-1", Mode: "web", IssuedAt: fakeweb.T,
+			Submissions: subs, Approvals: apprs}
+	})
+	r.ok(noConsole(), "status") // nạp cache cổng
+	return r, web
+}
+
+func TestRewindWeb_ServerFirst(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/gates/rewind"] = fakeweb.JSONResp(500, `{"error":"hỏng"}`)
+	})
+	s2 := "internal/limit/service/limit_service.go"
+	stepsBefore := r.read("aisdlc/features/PAY-1/steps.json")
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 2)
+	if !r.exists(s2) {
+		t.Fatal("server lỗi: working tree không được đổi")
+	}
+	eq(t, r.read("aisdlc/features/PAY-1/steps.json"), stepsBefore)
+	if r.exists("aisdlc/features/PAY-1/rewind-pending.json") {
+		t.Fatal("lỗi server ở lần chạy mới: dấu đang dở phải được gỡ")
+	}
+	ref := strings.TrimSpace(r.backupRefs())
+	if !strings.Contains(ref, "refs/aisdlc/backup/PAY-1/") {
+		t.Fatal("thiếu ref dự phòng")
+	}
+	contains(t, r.out+r.err, "refs/aisdlc/backup/PAY-1/")
+	eq(t, r.status().Steps["S2"], "ACCEPTED")
+	eq(t, len(web.RequestsFor("POST", "/api/gates/rewind")), 1)
+}
+
+func TestRewindWeb_ServerErrorOnResumeKeepsMarker(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	r.write("aisdlc/features/PAY-1/rewind-pending.json", `{"backupRef":"refs/aisdlc/backup/PAY-1/old","by":"x",
+"at":"2026-01-01T00:00:00Z","plan":{"Target":{"ID":"S2","Gate":"","Step":"S2"},"ClearGates":["REVIEW"],
+"DropSteps":["S2"],"ScopeSteps":["S2"]}}`)
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/gates/rewind"] = fakeweb.JSONResp(500, `{"error":"hỏng"}`)
+	})
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 2)
+	if !r.exists("aisdlc/features/PAY-1/rewind-pending.json") {
+		t.Fatal("chạy tiếp mà server lỗi: phải giữ dấu đang dở")
+	}
+	eq(t, r.status().Steps["S2"], "ACCEPTED")
+}
+
+func TestRewindWeb_Success(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	if c := r.runC(typed("PAY-1"), "rewind", "cases"); c != 0 {
+		t.Fatalf("exit %d\n%s%s", c, r.out, r.err)
+	}
+	contains(t, r.out, "Đã quay PAY-1 về đầu cases.")
+	reqs := web.RequestsFor("POST", "/api/gates/rewind")
+	eq(t, len(reqs), 1)
+	var body struct {
+		Repo, Feature, Checkpoint, RequestID, Channel string
+		Gates                                         []string
+	}
+	must(t, reqs[0].JSON(&body))
+	eq(t, body.Feature, "PAY-1")
+	eq(t, body.Checkpoint, "cases")
+	eq(t, body.Channel, "terminal")
+	eq(t, strings.Join(body.Gates, ","), "CASES,REVIEW")
+	if !strings.HasPrefix(body.RequestID, "refs/aisdlc/backup/PAY-1/") || !strings.Contains(r.backupRefs(), body.RequestID) {
+		t.Fatalf("requestId phải là tên ref dự phòng: %q", body.RequestID)
+	}
+	eq(t, reqs[0].Auth, "Bearer appr-tok")
+
+	home := r.env["HOME"]
+	wc := NewWebCache(r.context(noConsole(), "", &bytes.Buffer{}, &bytes.Buffer{}), r.root)
+	st, ok := gate.ReadWebGateState(wc.CacheFile("PAY-1"), webclient.LoadPinnedKey(home), wc.RepoID(), "PAY-1")
+	if !ok || st.Attempt != 2 {
+		t.Fatalf("cache cổng phải có attempt=2: %+v ok=%v", st, ok)
+	}
+	s := r.status()
+	eq(t, s.Gates["BRD"], "APPROVED")
+	eq(t, s.Gates["DESIGN"], "APPROVED")
+	if s.Gates["CASES"] == "APPROVED" {
+		t.Fatal("CASES phải được mở lại")
+	}
+	eq(t, s.Steps["S1"], "NOT_STARTED")
+	eq(t, r.exists("aisdlc/features/PAY-1/rewind-pending.json"), false)
+	eq(t, r.exists("aisdlc/features/PAY-1/cases.yaml"), false)
+}
+
+// Chạy lại sau khi đứt giữa chừng: dùng lại ref dự phòng của dấu đang dở làm requestId (server idempotent).
+func TestRewindWeb_ResumeReusesBackupRefAsRequestID(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	r.write("aisdlc/features/PAY-1/rewind-pending.json", `{"backupRef":"refs/aisdlc/backup/PAY-1/old","by":"x",
+"at":"2026-01-01T00:00:00Z","plan":{"Target":{"ID":"S2","Gate":"","Step":"S2"},"ClearGates":["REVIEW"],
+"DropSteps":["S2"],"ScopeSteps":["S2"]}}`)
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 0)
+	reqs := web.RequestsFor("POST", "/api/gates/rewind")
+	eq(t, len(reqs), 1)
+	eq(t, reqs[0].Field("requestId"), "refs/aisdlc/backup/PAY-1/old")
+	eq(t, r.backupRefs(), "")
 }

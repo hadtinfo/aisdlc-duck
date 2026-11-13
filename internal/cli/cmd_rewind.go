@@ -27,9 +27,6 @@ func newRewindCmd(ctx *Context) *cobra.Command {
 		if err != nil {
 			return 0, err
 		}
-		if f.Mode == gate.ModeWeb {
-			return 0, abort(2, i18n.T("`aisdlc rewind` chưa hỗ trợ chế độ web."))
-		}
 		return runRewind(ctx, f, args)
 	})
 	return c
@@ -77,8 +74,15 @@ func runRewind(ctx *Context, f *Feature, args []string) (int, error) {
 		}
 	}
 
+	web := f.Mode == gate.ModeWeb
+	if web {
+		if err := f.Web.RequireApproveToken(f, firstGate(plan)); err != nil {
+			return 0, err
+		}
+	}
 	printRewindPreview(ctx, f, plan, backupRef)
-	if _, err := ctx.ConfirmDev(f.Key, invocation(ctx, "rewind"), ""); err != nil {
+	channel, err := ctx.ConfirmDev(f.Key, invocation(ctx, "rewind"), "")
+	if err != nil {
 		return 0, err
 	}
 	if !resume {
@@ -87,13 +91,34 @@ func runRewind(ctx *Context, f *Feature, args []string) (int, error) {
 		}
 		ctx.Println(i18n.Tf("Bản hiện tại cất ở %s", backupRef))
 	}
-	// Task 9: chế độ web gọi server giữa Backup và Apply tại đây.
+	if web {
+		// Server trước: dấu đang dở ghi trước để đứt giữa chừng thì chạy lại dùng cùng ref (requestId) rồi Apply.
+		if !resume {
+			if err := rewind.WritePending(d, plan, backupRef); err != nil {
+				return 0, err
+			}
+		}
+		if err := f.Web.Rewind(f, plan.Target, plan.ClearGates, backupRef, channel); err != nil {
+			if !resume {
+				_ = os.Remove(rewind.PendingFile(f.Paths)) // chưa đổi gì: lần sau lập kế hoạch lại từ đầu
+			}
+			ctx.Eprintln(i18n.Tf("Server chưa nhận lần quay về nên chưa đổi gì cục bộ. Bản dự phòng: %s", backupRef))
+			return 0, err
+		}
+	}
 	if err := rewind.Apply(ctx.Std(), d, plan, backupRef); err != nil {
 		return 0, err
 	}
 	ctx.Println(i18n.Tf("Đã quay %s về đầu %s. Tiếp: %s", f.Key.String(), cp.ID, rewindNext(cp)))
 	ctx.AfterCommand(f, "rewind "+strings.ToLower(cp.ID))
 	return ExitOK, nil
+}
+
+func firstGate(p rewind.Plan) gate.Gate {
+	if len(p.ClearGates) > 0 {
+		return p.ClearGates[0]
+	}
+	return p.Target.Gate
 }
 
 func rewindNext(cp rewind.Checkpoint) string {
@@ -138,10 +163,13 @@ func rewindDeps(ctx *Context, f *Feature) (rewind.Deps, error) {
 	if err != nil {
 		return rewind.Deps{}, err
 	}
-	store := gate.NewLocalGateStore(f.Paths)
+	clear := gate.NewLocalGateStore(f.Paths).Clear
+	if f.Mode == gate.ModeWeb {
+		clear = func(gate.Gate) error { return nil } // server đã xoá trạng thái; cache được làm mới sau lệnh gọi
+	}
 	return rewind.Deps{
 		Git: f.Git(), Paths: f.Paths, Cfg: f.Config, Steps: f.Steps(), Extras: f.ScopeExtras(),
-		ClearGate:      store.Clear,
+		ClearGate:      clear,
 		AppendFeedback: func(text string) error { return appendFeedback(f.Paths, text) },
 		Now:            ctx.Clock(), By: by,
 	}, nil

@@ -19,6 +19,7 @@ import (
 	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
+	"aisdlc/internal/rewind"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/spec"
@@ -599,6 +600,56 @@ func (w *WebCache) Act(action string, f *Feature, g gate.Gate, comment *string, 
 	if r.Status == http.StatusConflict {
 		e := w.webError(r)
 		// thiếu điều kiện (repo không ở chế độ web) là exit 2; vi phạm luật duyệt là exit 1
+		if isNotWeb(r, e) {
+			return abort(2, e)
+		}
+		return abort(1, e)
+	}
+	if !r.OK() {
+		return abort(2, prefix+w.webError(r))
+	}
+	if !w.accept(f.Key, r.Body) {
+		w.ctx.Eprintln(i18n.T("aisdlc web: phản hồi không xác minh được bằng khóa đã ghim; chạy `aisdlc status`."))
+	}
+	return f.Store.Refresh()
+}
+
+// Rewind báo server quay tính năng về mốc cp: xoá bản nộp/duyệt/feedback của gates, tăng attempt. requestID là tên ref
+// dự phòng (chạy lại sau khi đứt dùng cùng giá trị, server coi là cùng một lần). Xử lý lỗi như Act; thành công → cache
+// cập nhật từ phong bì trả về. Gọi trước mọi thao tác xoá cục bộ.
+func (w *WebCache) Rewind(f *Feature, cp rewind.Checkpoint, gates []gate.Gate, requestID, channel string) error {
+	first := cp.Gate
+	if len(gates) > 0 {
+		first = gates[0]
+	}
+	if err := w.RequireApproveToken(f, first); err != nil {
+		return err
+	}
+	prefix := i18n.T("Không gửi được lên web: ")
+	if _, err := w.requireLogin(prefix); err != nil {
+		return err
+	}
+	if channel != gate.ApprovalClaudeCode {
+		channel = "terminal"
+	}
+	names := make([]string, len(gates))
+	for i, g := range gates {
+		names[i] = string(g)
+	}
+	body := struct {
+		Repo       string   `json:"repo"`
+		Feature    string   `json:"feature"`
+		Checkpoint string   `json:"checkpoint"`
+		Gates      []string `json:"gates"`
+		RequestID  string   `json:"requestId"`
+		Channel    string   `json:"channel"`
+	}{w.RepoID(), f.Key.String(), cp.ID, names, requestID, channel}
+	r, err := w.post("/api/gates/rewind", w.approveToken(), body, prefix)
+	if err != nil {
+		return err
+	}
+	if r.Status == http.StatusConflict {
+		e := w.webError(r)
 		if isNotWeb(r, e) {
 			return abort(2, e)
 		}

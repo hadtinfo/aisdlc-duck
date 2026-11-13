@@ -218,7 +218,7 @@ func Apply(ctx context.Context, d Deps, p Plan, backupRef string) error {
 		}
 	}
 	// Ghi dấu đang dở trước thay đổi đầu tiên: chạy lại sau sự cố dùng lại kế hoạch và ref dự phòng này.
-	if err := writePending(d, p, backupRef); err != nil {
+	if err := WritePending(d, p, backupRef); err != nil {
 		return err
 	}
 	if p.CodeTree != "" {
@@ -314,7 +314,9 @@ func Pending(p model.FeaturePaths) (PendingRewind, bool, error) {
 	return pr, true, nil
 }
 
-func writePending(d Deps, p Plan, backupRef string) error {
+// WritePending ghi dấu đang dở (rewind-pending.json). Chế độ web ghi trước khi gọi server để lần chạy lại
+// dùng cùng ref dự phòng làm requestId.
+func WritePending(d Deps, p Plan, backupRef string) error {
 	b, err := json.MarshalIndent(PendingRewind{BackupRef: backupRef, By: d.By, At: d.Now(), Plan: p}, "", "  ")
 	if err != nil {
 		return errorf(i18n.Tf("Không ghi được %s: %s", d.Paths.Rel(PendingFile(d.Paths)), err.Error()))

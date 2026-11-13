@@ -4,12 +4,12 @@ package i18n
 // gitx, yamlx, fsx và cmd/aisdlc. Quy tắc như en.go: khóa là chuỗi tiếng Việt nguyên văn, cùng dãy động từ %.
 var enCLI = map[string]string{
 	// rewind (lệnh CLI)
-	"Chỉ dev: quay tính năng về đầu một mốc (brd, design, cases, Sx, review), xoá mọi thứ sau đó; có ref dự phòng.": "Dev only: rewind a feature to the start of a checkpoint (brd, design, cases, Sx, review), deleting everything after it; a backup ref is kept.",
-	"`aisdlc rewind` chưa hỗ trợ chế độ web.":                                                                           "`aisdlc rewind` does not support web mode yet.",
+	"Chỉ dev: quay tính năng về đầu một mốc (brd, design, cases, Sx, review), xoá mọi thứ sau đó; có ref dự phòng.":     "Dev only: rewind a feature to the start of a checkpoint (brd, design, cases, Sx, review), deleting everything after it; a backup ref is kept.",
 	"Tiếp tục lần quay về %s đang dở (dự phòng: %s).":                                                                   "Resuming the unfinished rewind to %s (backup: %s).",
 	"Cảnh báo: có lần quay về %s đang dở (rewind-pending.json); đang quay về %s thay thế. Bản dự phòng của lần dở: %s.": "Warning: an unfinished rewind to %s exists (rewind-pending.json); rewinding to %s instead. Backup of the unfinished one: %s.",
-	"Bản hiện tại cất ở %s":                                                                                             "Current state saved at %s",
-	"Đã quay %s về đầu %s. Tiếp: %s":                                                                                    "Rewound %s to the start of %s. Next: %s",
+	"Server chưa nhận lần quay về nên chưa đổi gì cục bộ. Bản dự phòng: %s":                                             "The server has not accepted the rewind, so nothing changed locally. Backup: %s",
+	"Bản hiện tại cất ở %s":          "Current state saved at %s",
+	"Đã quay %s về đầu %s. Tiếp: %s": "Rewound %s to the start of %s. Next: %s",
 	"Thiết kế": "Design",
 	"Case":     "Cases",
 	"xoá: ":    "delete: ",

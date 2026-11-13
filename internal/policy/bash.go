@@ -25,7 +25,7 @@ var (
 	// lockedConfig: file cấu hình chỉ dev sửa, ngoài Claude Code.
 	lockedConfig = []string{configFile, riskPolicyFile}
 	// stateNames: tên các file trạng thái của một tính năng (featureState).
-	stateNames = []string{"gates.json", "steps.json", "scope-extra.json", "feedback.md", "risk.yaml"}
+	stateNames = []string{"gates.json", "steps.json", "scope-extra.json", "feedback.md", "risk.yaml", "rewind-pending.json"}
 )
 
 // BashCheck trả lý do chặn (và true) nếu lệnh Bash có vẻ ghi vào file được bảo vệ hoặc là lệnh chỉ dev.

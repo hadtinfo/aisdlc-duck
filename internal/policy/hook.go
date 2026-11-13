@@ -17,7 +17,7 @@ import (
 
 var (
 	writeTools   = map[string]bool{"Edit": true, "Write": true, "MultiEdit": true, "NotebookEdit": true}
-	featureState = regexp.MustCompile(`^aisdlc/features/[^/]+/(gates\.json|steps\.json|scope-extra\.json|feedback\.md|risk\.yaml)$`)
+	featureState = regexp.MustCompile(`^aisdlc/features/[^/]+/(gates\.json|steps\.json|scope-extra\.json|feedback\.md|risk\.yaml|rewind-pending\.json)$`)
 )
 
 const (

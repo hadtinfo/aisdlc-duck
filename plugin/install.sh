@@ -23,7 +23,7 @@ mkdir -p "$HOME/.local/bin"
 chmod +x plugin/bin/aisdlc
 ln -sf "$ROOT/plugin/bin/aisdlc" "$HOME/.local/bin/aisdlc"
 echo "Đã cài lệnh aisdlc tại ~/.local/bin/aisdlc (đảm bảo thư mục này nằm trong PATH)."
-echo "Dev chạy lệnh duyệt (approve/reject/reopen/step accept/scope allow) trong terminal riêng bằng lệnh này."
+echo "Dev chạy lệnh duyệt (approve/reject/reopen/rewind/step accept/scope allow) trong terminal riêng bằng lệnh này."
 echo "Trong Claude Code chạy:"
 echo "  /plugin marketplace add $ROOT"
 echo "  /plugin install aisdlc@aisdlc"

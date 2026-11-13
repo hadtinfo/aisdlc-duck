@@ -29,7 +29,7 @@ Each arrow to the right is one agent submission; the agent moves on to the next 
 | | Agent (Claude Code) | Dev |
 | --- | --- | --- |
 | Writes | `brd.md`, `design.md`, `design.yaml`, migrations, `cases.yaml`, code, `risk-agent.json` and `review-agent.json` (via subagents) | Nothing required; reads the review card, diff, report |
-| Commands | `init`, `submit`, `step start`, `step finish`, `eval`, `review`, `status`, `diff`, `policy show`, `risk inputs` | `approve`, `reject`, `reopen`, `step accept`, `scope allow`, `risk set`, `risk reclassify`, `web login` |
+| Commands | `init`, `submit`, `step start`, `step finish`, `eval`, `review`, `status`, `diff`, `policy show`, `risk inputs` | `approve`, `reject`, `reopen`, `rewind`, `step accept`, `scope allow`, `risk set`, `risk reclassify`, `web login` |
 | Cannot | Approve, accept steps, allow out-of-scope files, edit state files or approved artifacts | (no limits; dev commands require a real console or the Yes/No dialog in Claude Code) |
 
 **Full and lite flow.** FULL (default) goes through all 5 gates and is meant for changes touching the DB, APIs or money movement. LITE (`aisdlc init <KEY> --lite`) is for bug fixes or small changes that do not alter the DB/API: it skips BRD and Design, leaving Cases → S1 → Review (section 3.3).
@@ -176,7 +176,7 @@ The agent runs slash commands in Claude Code. The dev approves with commands in 
 | Eval | `/aisdlc:eval`: build, existing tests and case set, writes `eval/report.md` | Read the report |
 | Review | `/aisdlc:review`: eval, subagent `aisdlc-reviewer` writes `review-agent.json`, `aisdlc submit review` | `aisdlc approve review`, then open the MR |
 
-Approval commands (`approve`, `reject -m`, `reopen`, `step accept`, `scope allow`, `risk set`, `risk reclassify`) require a real console by default and ask you to retype the feature key (`Gõ lại feature key (PAY-123) để xác nhận:`, "retype the feature key to confirm"). Without a console the command prints `Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). Agent không được chạy lệnh này.` (only the dev may run this, in a real terminal) and exits 3 (`risk` exits 2). No flag or environment variable bypasses this; the only alternative is enabling `sessionApprove` (section 3.1).
+Approval commands (`approve`, `reject -m`, `reopen`, `rewind`, `step accept`, `scope allow`, `risk set`, `risk reclassify`) require a real console by default and ask you to retype the feature key (`Gõ lại feature key (PAY-123) để xác nhận:`, "retype the feature key to confirm"). Without a console the command prints `Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). Agent không được chạy lệnh này.` (only the dev may run this, in a real terminal) and exits 3 (`risk` exits 2). No flag or environment variable bypasses this; the only alternative is enabling `sessionApprove` (section 3.1).
 
 `aisdlc approve <gate>` prints the submission details (hash, files, findings at submission) and the review card before asking: red flags (HIGH, WARN, NA, INFO), assumptions the agent settled on its own, step map, DB tables, APIs, case coverage. Preview it with `aisdlc review <brd|design|cases|review>` (read-only, the agent can run it too; `--json` prints JSON). Flags are hints to help the dev scan quickly; they do not block the gate.
 
@@ -369,6 +369,39 @@ aisdlc review cases
 aisdlc use DOC-1
 aisdlc policy show
 ```
+
+### 3.5.1. Redoing a feature (`aisdlc rewind`)
+
+When the design went wrong midway, or a step went bad, `aisdlc rewind [checkpoint]` rewinds the feature to the **start** of a checkpoint: `brd`, `design`, `cases`, `S1`…`Sn`, `review` (the lite flow has no `brd` or `design`). Only checkpoints already reached are offered. Dev only, in a real terminal, retyping the feature key like `reopen`; there is no flag to skip the confirmation, and the hook blocks an agent that calls it through Bash.
+
+- Without `<checkpoint>` the command prints a numbered list (`? Quay về mốc nào (ROOM-1)`, each line says what would be deleted) and asks `Chọn mốc (số):` (choose the checkpoint, by number).
+- With `<checkpoint>` (case-insensitive) it prints a **preview**: steps dropped, gates reopened, artifacts deleted, how many code files change or are removed, and the backup ref name; then asks `Gõ lại feature key (ROOM-1) để xác nhận:` (retype the feature key to confirm).
+- Everything after the checkpoint is **deleted** (artifacts, eval results, steps, gates; `feature.yaml` and `feedback.md` are kept, and `feedback.md` gets one `REWIND` line). The code of the **whole working tree** goes back to the snapshot taken at the start of the checkpoint (snapshots live in `refs/aisdlc/checkpoints/<KEY>/<Sx>` from `step start`). Rewinding to `review` keeps the code and only deletes eval and review.
+- **Warning about files outside the steps**: files changed outside the feature's steps (merge, pull, hand edits, other features) also go back to the checkpoint; the preview lists them separately and prints `Cảnh báo: N file đổi ngoài các bước của <KEY> …` (warning: N files changed outside the steps). Git-ignored files cannot be restored (`Không khôi phục N file bị git bỏ qua …`). Other features' folders are never touched. `HEAD` and git history do not change: code committed after the checkpoint shows up as uncommitted changes.
+- When done it prints `Đã quay <KEY> về đầu <checkpoint>. Tiếp: …` (rewound to the start; next: `aisdlc step start Sx` or `/aisdlc:<checkpoint>`), and the agent receives an instruction to start again.
+
+```
+$ aisdlc rewind s2
+Sẽ quay ROOM-1 về đầu S2:
+  - Bỏ bước S2, S3
+  - Mở lại cổng Review
+  - Code về snapshot đầu S2: 7 file đổi, 2 file mới bị xoá
+  - Bản dự phòng đã có: refs/aisdlc/backup/ROOM-1/20261113-1405
+Gõ lại feature key (ROOM-1) để xác nhận:
+```
+
+**Backup ref.** Before deleting anything, the current state (including the feature folder) is saved at `refs/aisdlc/backup/<KEY>/<yyyymmdd-hhmm>` (a hidden ref: not shown by `git branch`, never pushed). Get a file back:
+
+```
+git for-each-ref refs/aisdlc/backup/
+git restore --source refs/aisdlc/backup/ROOM-1/20261113-1405 -- src/room/service.go
+```
+
+Refs are never cleaned up automatically; delete one you no longer need with `git update-ref -d refs/aisdlc/backup/ROOM-1/20261113-1405`.
+
+**Web mode.** The command goes to the server first and deletes locally only once the server accepts (on a network error nothing has changed, and you can run it again; a re-run does not create a second attempt). The feature moves to **Lần làm 2** (attempt 2): the board and the feature page show only the current attempt with the `Lần làm 2` tag, approvals of the gates from the checkpoint on are revoked, gates before the checkpoint stay approved. Old attempts remain viewable in the **Các lần làm trước** (previous attempts) section of the feature page (read-only: submissions, who approved or rejected, steps, review card). The web has no rewind button; snapshots from a machine still on the old attempt are ignored by the server and the CLI refreshes its cache.
+
+**When to use `reopen` instead.** If only **one** approved artifact needs changing (the gate closes, later gates count as closed), `aisdlc reopen <gate>` is enough and lighter; `rewind` is for dropping the whole stretch of work after a point, code included.
 
 ### 3.6. Writing `cases.yaml`
 
@@ -714,6 +747,7 @@ Other limitations:
 | Case ERROR "aisdlc-harness khác bản build với aisdlc …" | The two binaries were built from different code (half reinstalled, CI downloads from two mismatched URLs) | Rerun `plugin/install.sh` or `make plugin-dist`; in CI point `AISDLC_BIN` and `AISDLC_HARNESS_BIN` at the same build |
 | Hook blocks every write, reports a missing binary | `plugin/lib/aisdlc-<os>-<arch>` missing for this platform | Run `plugin/install.sh` or `make plugin-dist`, reinstall the plugin |
 | Gate becomes STALE | An approved artifact was edited directly | `aisdlc reopen <gate>`, edit, submit and approve again |
+| Went wrong midway, want to drop everything after a point | Wrong design or step, not just one artifact | `aisdlc rewind <checkpoint>`; recover files from `refs/aisdlc/backup/<KEY>/…` with `git restore --source <ref> -- <path>` (section 3.5.1) |
 | Eval reports "không khởi động được Postgres: …", every case ERROR | Docker not running, or CI lacks `docker:dind` / `DOCKER_HOST` | Start Docker; in CI keep the template's `docker:dind` service |
 | Coverage "N/A" in the report | Service does not exit after `SIGTERM` within `shutdownTimeoutSeconds` | Make the service shut down gracefully (`http.Server.Shutdown`), or raise the timeout |
 | Service does not come up: every case `NOT_RUN` | Wrong `healthPath`, wrong port/DB variable names, or exceeds `startTimeoutSeconds` | Read the last 50 log lines in the report, fix `service` in `config.yaml` |
@@ -738,6 +772,7 @@ Other limitations:
 | `aisdlc approve <gate>` | Approve gate `brd`, `design`, `cases`, `review` |
 | `aisdlc reject <gate> -m "..."` | Reject with a reason (written to `feedback.md`) |
 | `aisdlc reopen <gate>` | Reopen an approved gate |
+| `aisdlc rewind [checkpoint]` | Rewind the feature to the start of a checkpoint (deletes everything after, keeps a backup ref) |
 | `aisdlc step accept Sx` | Accept a step |
 | `aisdlc scope allow <path>` | Allow one file outside scope |
 | `aisdlc risk set <level> --reason "..."` | Change the risk level (lowering requires a reason) |

@@ -793,7 +793,7 @@ func InstructionContext(items []snapshot.Instruction, zone *time.Location) strin
 // SessionContext là quy tắc AISDLC và trạng thái hiện tại, đưa vào ngữ cảnh đầu session.
 func SessionContext(s PolicyState) string {
 	var sb strings.Builder
-	sb.WriteString(i18n.T("Quy tắc AISDLC:\n- Quy trình: BRD -> Thiết kế -> Case -> Code từng bước -> Review; mỗi cổng do dev duyệt.\n- Chưa qua cổng thiết kế/case thì không viết code sản phẩm (hook sẽ chặn).\n- Không sửa artifact đã duyệt; cần sửa thì dev chạy `aisdlc reopen <gate>`.\n- Không sửa file trạng thái (gates.json, steps.json, .aisdlc/**), kể cả qua Bash.\n- Chỉ dev chạy: approve, reject, reopen, scope allow, step accept.\n- Bắt đầu bước bằng `aisdlc step start Sx`; chỉ sửa file trong phạm vi bước.\n- Xong bước chạy `aisdlc step finish Sx`, báo kết quả cho dev rồi dừng chờ `step accept`.\n- Cần mở rộng phạm vi: nhờ dev chạy `aisdlc scope allow <path>`."))
+	sb.WriteString(i18n.T("Quy tắc AISDLC:\n- Quy trình: BRD -> Thiết kế -> Case -> Code từng bước -> Review; mỗi cổng do dev duyệt.\n- Chưa qua cổng thiết kế/case thì không viết code sản phẩm (hook sẽ chặn).\n- Không sửa artifact đã duyệt; cần sửa thì dev chạy `aisdlc reopen <gate>`.\n- Không sửa file trạng thái (gates.json, steps.json, .aisdlc/**), kể cả qua Bash.\n- Chỉ dev chạy: approve, reject, reopen, rewind, scope allow, step accept.\n- Bắt đầu bước bằng `aisdlc step start Sx`; chỉ sửa file trong phạm vi bước.\n- Xong bước chạy `aisdlc step finish Sx`, báo kết quả cho dev rồi dừng chờ `step accept`.\n- Cần mở rộng phạm vi: nhờ dev chạy `aisdlc scope allow <path>`."))
 	if s.Active == "" {
 		if len(s.Ambiguous) > 0 {
 			keys := make([]string, len(s.Ambiguous))

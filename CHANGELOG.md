@@ -76,6 +76,13 @@ All notable changes to this project are documented here. The format follows
 - `aisdlc setup` creates a git repository (`git init -b main`) when the directory is not inside one yet, so
   `aisdlc init` works right away in a new project; the remote can be added later.
 
+### Fixed
+
+- Repo identity without a remote `origin` uses the main repository's directory name in every git worktree
+  (`local/<main repo dir>`), not the worktree's own directory name. Worktrees created per task (for example by Orca)
+  now share the web's risk policy and features with the main checkout instead of showing up as a new repo whose first
+  policy import could fail. Features already pushed from a worktree stay under the old `local/<worktree dir>` id.
+
 ## [0.1.0] - 2026-11-06
 
 First public release.

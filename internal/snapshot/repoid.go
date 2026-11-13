@@ -15,7 +15,7 @@ var (
 )
 
 // RepoID là định danh repo như web thấy: remote origin chuẩn hóa về host/group/name; không có remote thì
-// local/<tên thư mục>. "" khi không đọc được git (RepoIdentity.of của Java ném lỗi, WebGates coi là null).
+// local/<tên thư mục repo chính> (worktree dùng tên repo chính, không dùng tên thư mục của worktree). "" khi không đọc được git (RepoIdentity.of của Java ném lỗi, WebGates coi là null).
 func RepoID(ctx context.Context, git *gitx.Repo, root string) string {
 	u, ok, err := git.RemoteURL(ctx, "origin")
 	if err != nil {
@@ -27,6 +27,10 @@ func RepoID(ctx context.Context, git *gitx.Repo, root string) string {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		abs = root
+	}
+	// Worktree có tên thư mục riêng: lấy tên repo chính (cha của .git dùng chung) để mọi worktree cùng định danh.
+	if c, err := git.CommonDir(ctx); err == nil && filepath.Base(c) == ".git" {
+		abs = filepath.Dir(c)
 	}
 	name := filepath.Base(filepath.Clean(abs))
 	if name == "" || name == "/" || name == "." {

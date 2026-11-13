@@ -15,12 +15,12 @@ type DevCommand struct {
 }
 
 var (
-	devOnly = regexp.MustCompile(`\baisdlc\s+(approve|reject|reopen|scope\s+allow|step\s+accept|risk\s+set)\b`)
+	devOnly = regexp.MustCompile(`\baisdlc\s+(approve|reject|reopen|rewind|scope\s+allow|step\s+accept|risk\s+set)\b`)
 	// unsafeChars: ký tự/cấu trúc làm lệnh không còn là lệnh đơn hoặc bị shell khai triển.
 	unsafeChars = regexp.MustCompile("[;&|`<>\\n\\r$\\\\*?\\[\\]{}~()#]|\\beval\\b")
 	// tokenRe: một token: hoặc cả token nằm trong cặp nháy (không chứa nháy), hoặc không có nháy nào.
 	tokenRe  = regexp.MustCompile(`^(?:"([^"']*)"|'([^"']*)'|([^\s"']+))`)
-	verbRe   = regexp.MustCompile(`^(?:approve|reject|reopen|scope allow|step accept|risk set)$`)
+	verbRe   = regexp.MustCompile(`^(?:approve|reject|reopen|rewind|scope allow|step accept|risk set)$`)
 	removeQ  = strings.NewReplacer("'", "", `"`, "")
 	javaTrim = func(r rune) bool { return r <= 0x20 }
 )

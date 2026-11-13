@@ -504,3 +504,14 @@ func TestHookPanicOutsideEventRecoverIsSilentExceptPreToolUse(t *testing.T) {
 	eq(t, runWith(ctx, nil, "hook", "pre-tool-use"), 2)
 	contains(t, e.String(), "Lỗi: stdin hỏng")
 }
+
+func TestHook_RewindIsDevOnly(t *testing.T) {
+	r := newTestRepo(t)
+	r.casesApproved()
+	r.hook("pre-tool-use", hookIn("PreToolUse", r.root, "Bash", "command", "aisdlc rewind S2"))
+	eq(t, str(hookSpecific(t, r.out), "permissionDecision"), "deny")
+	r.hook("pre-tool-use", hookIn("PreToolUse", r.root, "Bash", "command", `bash -c "aisdlc rewind S2"`))
+	o := hookSpecific(t, r.out)
+	eq(t, str(o, "permissionDecision"), "deny")
+	contains(t, str(o, "permissionDecisionReason"), "rewind")
+}

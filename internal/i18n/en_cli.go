@@ -5,9 +5,13 @@ package i18n
 var enCLI = map[string]string{
 	// rewind
 
-	"Mốc %q không hợp lệ hoặc chưa đạt tới. Các mốc hợp lệ: %s": "Checkpoint %q is invalid or not reached yet. Valid checkpoints: %s",
-	"Không tìm thấy bước %s trong thiết kế":                     "Step %s not found in the design",
-	"Mốc %s không thuộc luồng của tính năng":                    "Checkpoint %s is not part of the feature's flow",
+	"Mốc %q không hợp lệ hoặc chưa đạt tới. Các mốc hợp lệ: %s":                                 "Checkpoint %q is invalid or not reached yet. Valid checkpoints: %s",
+	"Không tìm thấy bước %s trong thiết kế":                                                     "Step %s not found in the design",
+	"Mốc %s không thuộc luồng của tính năng":                                                    "Checkpoint %s is not part of the feature's flow",
+	"Không còn snapshot code của mốc %s (đầu bước %s). Hãy chọn một mốc muộn hơn còn snapshot.": "The code snapshot for checkpoint %s (start of step %s) is gone. Choose a later checkpoint that still has a snapshot.",
+	"Từ chối xoá %s: nằm ngoài các artifact của tính năng %s":                                   "Refusing to delete %s: it is not one of feature %s's artifacts",
+	"Không xoá được %s: %s":                                                                     "Cannot delete %s: %s",
+	"## REWIND — quay về %s bởi %s lúc %s (dự phòng: %s)\n\n":                                   "## REWIND — rewound to %s by %s at %s (backup: %s)\n\n",
 	// fsx, yamlx, gitx, model, snapshot
 
 	"Không ghi được %s: %w": "Cannot write %s: %w",

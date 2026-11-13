@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
 	"aisdlc/internal/i18n"
@@ -93,16 +94,29 @@ func runRewind(ctx *Context, f *Feature, args []string) (int, error) {
 	}
 	if web {
 		// Server trước: dấu đang dở ghi trước để đứt giữa chừng thì chạy lại dùng cùng ref (requestId) rồi Apply.
+		var oldMarker []byte
 		if !resume {
+			oldMarker, _ = os.ReadFile(rewind.PendingFile(f.Paths)) // dấu của mốc khác (nếu có) để khôi phục khi bị từ chối
 			if err := rewind.WritePending(d, plan, backupRef); err != nil {
 				return 0, err
 			}
 		}
-		if err := f.Web.Rewind(f, plan.Target, plan.ClearGates, backupRef, channel); err != nil {
-			if !resume {
-				_ = os.Remove(rewind.PendingFile(f.Paths)) // chưa đổi gì: lần sau lập kế hoạch lại từ đầu
+		definite, err := f.Web.Rewind(f, plan.Target, plan.ClearGates, backupRef, channel)
+		if err != nil {
+			switch {
+			case !definite:
+				ctx.Eprintln(i18n.Tf("Không biết server đã áp dụng lần quay về chưa; chạy lại `aisdlc rewind %s` sẽ tiếp tục an toàn. Bản dự phòng: %s",
+					strings.ToLower(cp.ID), backupRef))
+			case resume:
+				ctx.Eprintln(i18n.Tf("Server chưa nhận lần quay về nên chưa đổi gì cục bộ. Bản dự phòng: %s", backupRef))
+			default:
+				if len(oldMarker) > 0 {
+					_ = fsx.WriteAtomic(rewind.PendingFile(f.Paths), oldMarker, 0o644)
+				} else {
+					_ = os.Remove(rewind.PendingFile(f.Paths))
+				}
+				ctx.Eprintln(i18n.Tf("Server chưa nhận lần quay về nên chưa đổi gì cục bộ. Bản dự phòng: %s", backupRef))
 			}
-			ctx.Eprintln(i18n.Tf("Server chưa nhận lần quay về nên chưa đổi gì cục bộ. Bản dự phòng: %s", backupRef))
 			return 0, err
 		}
 	}

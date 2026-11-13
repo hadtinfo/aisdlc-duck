@@ -8,6 +8,7 @@ var enCLI = map[string]string{
 	"Tiếp tục lần quay về %s đang dở (dự phòng: %s).":                                                                   "Resuming the unfinished rewind to %s (backup: %s).",
 	"Cảnh báo: có lần quay về %s đang dở (rewind-pending.json); đang quay về %s thay thế. Bản dự phòng của lần dở: %s.": "Warning: an unfinished rewind to %s exists (rewind-pending.json); rewinding to %s instead. Backup of the unfinished one: %s.",
 	"Server chưa nhận lần quay về nên chưa đổi gì cục bộ. Bản dự phòng: %s":                                             "The server has not accepted the rewind, so nothing changed locally. Backup: %s",
+	"Không biết server đã áp dụng lần quay về chưa; chạy lại `aisdlc rewind %s` sẽ tiếp tục an toàn. Bản dự phòng: %s":  "It is unknown whether the server applied the rewind; re-running `aisdlc rewind %s` will resume safely. Backup: %s",
 	"Bản hiện tại cất ở %s":          "Current state saved at %s",
 	"Đã quay %s về đầu %s. Tiếp: %s": "Rewound %s to the start of %s. Next: %s",
 	"Thiết kế": "Design",

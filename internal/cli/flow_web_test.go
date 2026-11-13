@@ -441,3 +441,39 @@ func TestRewindWeb_ResumeReusesBackupRefAsRequestID(t *testing.T) {
 	eq(t, reqs[0].Field("requestId"), "refs/aisdlc/backup/PAY-1/old")
 	eq(t, r.backupRefs(), "")
 }
+
+// Lỗi mạng sau khi gửi: không biết server đã áp dụng chưa → giữ dấu; chạy lại dùng đúng requestId cũ.
+func TestRewindWeb_TransportErrorKeepsMarkerAndRerunReusesRequestID(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	web.Update(func(s *fakeweb.Server) { s.Drop = true })
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 2)
+	if !r.exists("aisdlc/features/PAY-1/rewind-pending.json") {
+		t.Fatal("lỗi mạng: phải giữ dấu đang dở")
+	}
+	contains(t, r.err, "Không biết server đã áp dụng", "aisdlc rewind s2")
+	if !r.exists("internal/limit/service/limit_service.go") {
+		t.Fatal("chưa đổi gì cục bộ")
+	}
+	first := web.RequestsFor("POST", "/api/gates/rewind")
+	eq(t, len(first), 1)
+	id := first[0].Field("requestId")
+	web.Update(func(s *fakeweb.Server) { s.Drop = false })
+	_ = os.Remove(filepath.Join(r.root, ".aisdlc/web/backoff-until"))
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 0)
+	reqs := web.RequestsFor("POST", "/api/gates/rewind")
+	eq(t, reqs[len(reqs)-1].Field("requestId"), id)
+	eq(t, strings.Count(r.backupRefs(), "refs/aisdlc/backup/"), 1)
+}
+
+// Server từ chối rõ ràng ở lần chạy mới: dấu cũ của mốc khác được khôi phục nguyên vẹn, không bị xoá.
+func TestRewindWeb_RejectionRestoresOlderMarkerOfOtherCheckpoint(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	const old = `{"backupRef":"refs/aisdlc/backup/PAY-1/old","by":"x","at":"2026-01-01T00:00:00Z","plan":{"Target":{"ID":"S1","Gate":"","Step":"S1"},"ClearGates":["REVIEW"],"DropSteps":["S1","S2"],"ScopeSteps":["S1","S2"]}}`
+	r.write("aisdlc/features/PAY-1/rewind-pending.json", old)
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/gates/rewind"] = fakeweb.JSONResp(500, `{"error":"hỏng"}`)
+	})
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 2)
+	eq(t, r.read("aisdlc/features/PAY-1/rewind-pending.json"), old)
+	eq(t, r.status().Steps["S2"], "ACCEPTED")
+}

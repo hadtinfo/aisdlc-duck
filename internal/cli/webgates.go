@@ -616,18 +616,19 @@ func (w *WebCache) Act(action string, f *Feature, g gate.Gate, comment *string, 
 
 // Rewind báo server quay tính năng về mốc cp: xoá bản nộp/duyệt/feedback của gates, tăng attempt. requestID là tên ref
 // dự phòng (chạy lại sau khi đứt dùng cùng giá trị, server coi là cùng một lần). Xử lý lỗi như Act; thành công → cache
-// cập nhật từ phong bì trả về. Gọi trước mọi thao tác xoá cục bộ.
-func (w *WebCache) Rewind(f *Feature, cp rewind.Checkpoint, gates []gate.Gate, requestID, channel string) error {
+// cập nhật từ phong bì trả về. Gọi trước mọi thao tác xoá cục bộ. definite=true: server (hoặc điều kiện trước khi gửi)
+// từ chối rõ ràng, chưa có gì đổi; false: không biết server đã áp dụng chưa (lỗi mạng) hoặc đã áp dụng.
+func (w *WebCache) Rewind(f *Feature, cp rewind.Checkpoint, gates []gate.Gate, requestID, channel string) (definite bool, err error) {
 	first := cp.Gate
 	if len(gates) > 0 {
 		first = gates[0]
 	}
 	if err := w.RequireApproveToken(f, first); err != nil {
-		return err
+		return true, err
 	}
 	prefix := i18n.T("Không gửi được lên web: ")
 	if _, err := w.requireLogin(prefix); err != nil {
-		return err
+		return true, err
 	}
 	if channel != gate.ApprovalClaudeCode {
 		channel = "terminal"
@@ -644,24 +645,29 @@ func (w *WebCache) Rewind(f *Feature, cp rewind.Checkpoint, gates []gate.Gate, r
 		RequestID  string   `json:"requestId"`
 		Channel    string   `json:"channel"`
 	}{w.RepoID(), f.Key.String(), cp.ID, names, requestID, channel}
-	r, err := w.post("/api/gates/rewind", w.approveToken(), body, prefix)
+	b, merr := jsonMarshal(body)
+	if merr != nil {
+		return true, abort(2, prefix+merr.Error())
+	}
+	r, err := w.do(http.MethodPost, "/api/gates/rewind", w.approveToken(), b, webWriteTimeout)
 	if err != nil {
-		return err
+		// mạng/quá giờ: không biết server đã áp dụng chưa
+		return false, abort(2, prefix+w.scrub(err.Error()))
 	}
 	if r.Status == http.StatusConflict {
 		e := w.webError(r)
 		if isNotWeb(r, e) {
-			return abort(2, e)
+			return true, abort(2, e)
 		}
-		return abort(1, e)
+		return true, abort(1, e)
 	}
 	if !r.OK() {
-		return abort(2, prefix+w.webError(r))
+		return true, abort(2, prefix+w.webError(r))
 	}
 	if !w.accept(f.Key, r.Body) {
 		w.ctx.Eprintln(i18n.T("aisdlc web: phản hồi không xác minh được bằng khóa đã ghim; chạy `aisdlc status`."))
 	}
-	return f.Store.Refresh()
+	return false, f.Store.Refresh() // server đã nhận: lỗi làm mới cache không có nghĩa là bị từ chối
 }
 
 // Migrate (`web migrate`): gửi mỗi approval cục bộ (gates.json) còn khớp nội dung hiện tại lên /api/cli/import.

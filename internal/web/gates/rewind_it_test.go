@@ -76,10 +76,15 @@ func TestFeatureGateState_OldEnvelopeWithoutAttempt(t *testing.T) {
 	}
 }
 
-func (ft *feat) rewind(s webtest.Session, checkpoint, reqID string, gates ...string) webtest.Resp {
+func (ft *feat) rewindBody(checkpoint, reqID string, gates ...string) string {
 	gj, _ := json.Marshal(gates)
-	return ft.f.w.PostSession("/api/gates/rewind", fmt.Sprintf(`{"repo":"%s","feature":"%s","checkpoint":"%s","requestId":"%s","gates":%s}`,
-		ft.repo, ft.key, checkpoint, reqID, gj), s, s.CSRF)
+	return fmt.Sprintf(`{"repo":"%s","feature":"%s","checkpoint":"%s","requestId":"%s","gates":%s}`,
+		ft.repo, ft.key, checkpoint, reqID, gj)
+}
+
+// rewind gọi bằng token approve (chỉ CLI được quay về).
+func (ft *feat) rewind(tok, checkpoint, reqID string, gates ...string) webtest.Resp {
+	return ft.f.w.PostBearer("/api/gates/rewind", ft.rewindBody(checkpoint, reqID, gates...), tok)
 }
 
 func apprOf(st snapshot.FeatureGateState, g string) *snapshot.Appr {
@@ -99,7 +104,7 @@ func TestRewind_ToDesign(t *testing.T) {
 	if before == nil {
 		t.Fatal("BRD chưa duyệt")
 	}
-	r := f.rewind(fx.ownerS, "design", "req-1", "DESIGN", "CASES", "REVIEW")
+	r := f.rewind(fx.approveOwner, "design", "req-1", "DESIGN", "CASES", "REVIEW")
 	if r.Status != 200 {
 		t.Fatal(r.Status, r.Body)
 	}
@@ -167,7 +172,7 @@ func TestRewind_SameRequestIDNoDouble(t *testing.T) {
 	f := fx.feat(t, "r/rw4-1", "K-1", "FULL")
 	f.openGates("BRD", "DESIGN")
 	for i := 0; i < 2; i++ {
-		r := f.rewind(fx.ownerS, "design", "same", "DESIGN", "CASES", "REVIEW")
+		r := f.rewind(fx.approveOwner, "design", "same", "DESIGN", "CASES", "REVIEW")
 		if r.Status != 200 {
 			t.Fatal(r.Status, r.Body)
 		}
@@ -187,7 +192,7 @@ func TestRewind_CancelsPendingActions(t *testing.T) {
 	fx := newGfx(t, "rw5")
 	f := fx.feat(t, "r/rw5-1", "K-1", "FULL")
 	fx.exec(t, "INSERT INTO pending_actions(repo_id, feature_key, kind, step, created_by, expires_at) VALUES ('r/rw5-1','K-1','ACCEPT_STEP','S1','x', now() + interval '1 day')")
-	if r := f.rewind(fx.ownerS, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 200 {
+	if r := f.rewind(fx.approveOwner, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 200 {
 		t.Fatal(r.Status, r.Body)
 	}
 	if n := fx.count(t, "SELECT count(*) FROM pending_actions WHERE repo_id='r/rw5-1' AND status='CANCELLED'"); n != 1 {
@@ -198,11 +203,41 @@ func TestRewind_CancelsPendingActions(t *testing.T) {
 func TestRewind_ForbiddenForNonOwner(t *testing.T) {
 	fx := newGfx(t, "rw6")
 	f := fx.feat(t, "r/rw6-1", "K-1", "FULL")
-	if r := f.rewind(fx.devS, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 403 {
+	if r := f.rewind(fx.approveDev, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 403 {
 		t.Fatal(r.Status, r.Body)
 	}
 	if n := fx.count(t, "SELECT count(*) FROM feature_rewinds WHERE repo_id='r/rw6-1'"); n != 0 {
 		t.Fatal(n)
+	}
+}
+
+// Quay về chỉ từ CLI: phiên web (cookie) bị 403 dù là chủ tính năng; không đổi gì.
+func TestRewind_SessionForbidden(t *testing.T) {
+	fx := newGfx(t, "rw10")
+	f := fx.feat(t, "r/rw10-1", "K-1", "FULL")
+	body := f.rewindBody("brd", "q", "BRD", "DESIGN", "CASES", "REVIEW")
+	for _, s := range []webtest.Session{fx.ownerS, fx.leadS} {
+		if r := fx.w.PostSession("/api/gates/rewind", body, s, s.CSRF); r.Status != 403 {
+			t.Fatal(r.Status, r.Body)
+		}
+	}
+	if n := fx.count(t, "SELECT count(*) FROM feature_rewinds WHERE repo_id='r/rw10-1'"); n != 0 {
+		t.Fatal(n)
+	}
+}
+
+// Checkpoint hợp lệ không phân biệt hoa thường và khớp cổng đầu.
+func TestRewind_CheckpointCaseInsensitive(t *testing.T) {
+	fx := newGfx(t, "rw11")
+	f := fx.feat(t, "r/rw11-1", "K-1", "FULL")
+	for i, cp := range []string{"s2", "Review", "CASES"} {
+		gs := []string{"REVIEW"}
+		if cp == "CASES" {
+			gs = []string{"CASES", "REVIEW"}
+		}
+		if r := f.rewind(fx.approveOwner, cp, fmt.Sprintf("q%d", i), gs...); r.Status != 200 {
+			t.Fatal(cp, r.Status, r.Body)
+		}
 	}
 }
 
@@ -211,20 +246,28 @@ func TestRewind_Validation(t *testing.T) {
 	f := fx.feat(t, "r/rw7-1", "K-1", "FULL")
 	long := strings.Repeat("x", 201)
 	for name, r := range map[string]webtest.Resp{
-		"gates rỗng":       f.rewind(fx.ownerS, "brd", "q"),
-		"không liên tiếp":  f.rewind(fx.ownerS, "design", "q", "DESIGN", "REVIEW"),
-		"không tới cuối":   f.rewind(fx.ownerS, "design", "q", "DESIGN", "CASES"),
-		"checkpoint rỗng":  f.rewind(fx.ownerS, " ", "q", "BRD", "DESIGN", "CASES", "REVIEW"),
-		"requestId rỗng":   f.rewind(fx.ownerS, "brd", "", "BRD", "DESIGN", "CASES", "REVIEW"),
-		"requestId dài":    f.rewind(fx.ownerS, "brd", long, "BRD", "DESIGN", "CASES", "REVIEW"),
-		"cổng ngoài luồng": f.rewind(fx.ownerS, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW", "X"),
+		"gates rỗng":       f.rewind(fx.approveOwner, "brd", "q"),
+		"không liên tiếp":  f.rewind(fx.approveOwner, "design", "q", "DESIGN", "REVIEW"),
+		"không tới cuối":   f.rewind(fx.approveOwner, "design", "q", "DESIGN", "CASES"),
+		"checkpoint rỗng":  f.rewind(fx.approveOwner, " ", "q", "BRD", "DESIGN", "CASES", "REVIEW"),
+		"requestId rỗng":   f.rewind(fx.approveOwner, "brd", "", "BRD", "DESIGN", "CASES", "REVIEW"),
+		"requestId dài":    f.rewind(fx.approveOwner, "brd", long, "BRD", "DESIGN", "CASES", "REVIEW"),
+		"cổng ngoài luồng": f.rewind(fx.approveOwner, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW", "X"),
+		"checkpoint lạ":    f.rewind(fx.approveOwner, "x", "q", "BRD", "DESIGN", "CASES", "REVIEW"),
+		"checkpoint S":     f.rewind(fx.approveOwner, "S", "q", "REVIEW"),
+		"checkpoint S1x":   f.rewind(fx.approveOwner, "S1x", "q", "REVIEW"),
+		"brd lệch cổng":    f.rewind(fx.approveOwner, "brd", "q", "DESIGN", "CASES", "REVIEW"),
+		"design lệch cổng": f.rewind(fx.approveOwner, "design", "q", "CASES", "REVIEW"),
+		"cases lệch cổng":  f.rewind(fx.approveOwner, "cases", "q", "REVIEW"),
+		"review lệch cổng": f.rewind(fx.approveOwner, "review", "q", "CASES", "REVIEW"),
+		"Sx lệch cổng":     f.rewind(fx.approveOwner, "S2", "q", "CASES", "REVIEW"),
 	} {
 		if r.Status != 400 {
 			t.Fatal(name, r.Status, r.Body)
 		}
 	}
 	lite := fx.feat(t, "r/rw7-2", "K-1", "LITE")
-	if r := lite.rewind(fx.ownerS, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 400 {
+	if r := lite.rewind(fx.approveOwner, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 400 {
 		t.Fatal("lite", r.Status, r.Body)
 	}
 	if n := fx.count(t, "SELECT count(*) FROM feature_rewinds WHERE repo_id IN ('r/rw7-1','r/rw7-2')"); n != 0 {
@@ -236,7 +279,7 @@ func TestRewind_NoFeatureRow409(t *testing.T) {
 	fx := newGfx(t, "rw8")
 	f := fx.feat(t, "r/rw8-1", "K-1", "FULL")
 	f.key = "K-2" // chưa đồng bộ
-	r := f.rewind(fx.ownerS, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW")
+	r := f.rewind(fx.approveOwner, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW")
 	if r.Status != 409 || !strings.Contains(fx.errOf(t, r), "aisdlc status") {
 		t.Fatal(r.Status, r.Body)
 	}
@@ -247,7 +290,7 @@ func TestRewind_DropsUndeliveredInstructions(t *testing.T) {
 	f := fx.feat(t, "r/rw9-1", "K-1", "FULL")
 	fx.exec(t, "INSERT INTO instructions(repo_id, feature_key, by_login, text, source) VALUES ('r/rw9-1','K-1','x','cũ chưa giao','web')")
 	fx.exec(t, "INSERT INTO instructions(repo_id, feature_key, by_login, text, source, delivered_at) VALUES ('r/rw9-1','K-1','x','cũ đã giao','web', now())")
-	if r := f.rewind(fx.ownerS, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 200 {
+	if r := f.rewind(fx.approveOwner, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 200 {
 		t.Fatal(r.Status, r.Body)
 	}
 	r := fx.w.GetBearer("/api/cli/control?repo=r/rw9-1&feature=K-1", fx.ingest)

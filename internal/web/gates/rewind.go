@@ -3,6 +3,7 @@ package gates
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,6 +29,23 @@ func restartCommand(checkpoint string) string {
 	return "aisdlc step start " + checkpoint
 }
 
+var stepCheckpoint = regexp.MustCompile(`^[sS][0-9]+$`)
+
+// checkpointGate: cổng đầu phải xoá của mốc (brd→BRD, design→DESIGN, cases→CASES, Sx/review→REVIEW).
+func checkpointGate(checkpoint string) (gate.Gate, bool) {
+	switch strings.ToLower(checkpoint) {
+	case "brd":
+		return gate.BRD, true
+	case "design":
+		return gate.DESIGN, true
+	case "cases":
+		return gate.CASES, true
+	case "review":
+		return gate.REVIEW, true
+	}
+	return gate.REVIEW, stepCheckpoint.MatchString(checkpoint)
+}
+
 // RewindInstruction là câu chỉ dẫn agent sau khi quay về mốc.
 func RewindInstruction(feature, checkpoint, login string) string {
 	return i18n.VI.Tf(rewindText, feature, checkpoint, login, restartCommand(checkpoint))
@@ -38,11 +56,19 @@ func RewindInstruction(feature, checkpoint, login string) string {
 // chỉ dẫn agent + audit. Cùng requestID gọi lại: không đổi gì, trả trạng thái hiện tại.
 func (s *Service) Rewind(ctx context.Context, p httpx.Principal, ip, channel, repo, feature, checkpoint, requestID string,
 	gates []gate.Gate) (snapshot.FeatureGateState, error) {
+	if p.IsSession() { // chỉ CLI (token approve) được quay về; web không có thao tác này
+		return snapshot.FeatureGateState{}, httpx.Err(http.StatusForbidden, httpx.T("Chỉ quay về được từ CLI (aisdlc rewind)"))
+	}
 	if len(gates) == 0 {
 		return snapshot.FeatureGateState{}, bad(httpx.T("Thiếu gates"))
 	}
 	if isBlank(checkpoint) {
 		return snapshot.FeatureGateState{}, bad(httpx.T("Thiếu checkpoint"))
+	}
+	if g, ok := checkpointGate(checkpoint); !ok {
+		return snapshot.FeatureGateState{}, bad(httpx.T("checkpoint phải là brd, design, cases, review hoặc Sx"))
+	} else if gates[0] != g {
+		return snapshot.FeatureGateState{}, bad(httpx.T("checkpoint không khớp cổng đầu của gates"))
 	}
 	if n := utf8.RuneCountInString(requestID); n < 1 || n > 200 {
 		return snapshot.FeatureGateState{}, bad(httpx.T("requestId phải dài 1–200 ký tự"))

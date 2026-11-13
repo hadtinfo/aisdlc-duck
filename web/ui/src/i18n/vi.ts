@@ -2,6 +2,7 @@
 export const vi = {
   "action.acceptPending": "Đã accept, chờ áp dụng",
   "action.allowPending": "Đã cho phép, chờ áp dụng",
+  "action.cancelled": "Đã huỷ — bấm lại",
   "action.applied": "Đã áp dụng",
   "action.expired": "Hết hạn (7 ngày) — bấm lại",
   "action.stale": "Hết hiệu lực — bấm lại",

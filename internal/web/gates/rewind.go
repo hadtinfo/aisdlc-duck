@@ -150,7 +150,12 @@ func doRewind(ctx context.Context, tx pgx.Tx, repo, feature, checkpoint, request
 		return err
 	}
 	if _, err := tx.Exec(ctx, "UPDATE pending_actions SET status = 'CANCELLED', resolved_at = $3, reason = 'rewind' "+
-		"WHERE repo_id = $1 AND feature_key = $2 AND status = 'PENDING'", repo, feature, now); err != nil {
+		"WHERE repo_id = $1 AND feature_key = $2 AND status = 'PENDING' AND rewind_id IS NULL", repo, feature, now); err != nil {
+		return err
+	}
+	// mọi lệnh của lần làm cũ (kể cả đã áp dụng/hết hiệu lực) được lưu trữ: không còn hiện hay chặn lệnh mới
+	if _, err := tx.Exec(ctx, "UPDATE pending_actions SET rewind_id = $1 WHERE repo_id = $2 AND feature_key = $3 AND rewind_id IS NULL",
+		id, repo, feature); err != nil {
 		return err
 	}
 	// chỉ dẫn chưa giao của lần làm cũ không được tới agent nữa (không đặt delivered_at: chưa hề giao)

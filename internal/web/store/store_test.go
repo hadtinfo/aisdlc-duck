@@ -31,7 +31,7 @@ var want = map[string]string{
 	"audit":                "id at login ip channel action repo_id feature_key target detail",
 	"feature_control":      "repo_id feature_key paused paused_by paused_at",
 	"instructions":         "id repo_id feature_key by_login at text source feedback_id delivered_at rewind_id",
-	"pending_actions":      "id repo_id feature_key kind step path end_tree created_by created_at expires_at status resolved_at reason",
+	"pending_actions":      "id repo_id feature_key kind step path end_tree created_by created_at expires_at status resolved_at reason rewind_id",
 	"feature_rewinds":      "id repo_id feature_key from_attempt to_attempt checkpoint by_login at snapshot request_id",
 	"risk_policy_versions": "repo_id version body hash author reason source created_at",
 }

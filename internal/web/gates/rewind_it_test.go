@@ -200,6 +200,48 @@ func TestRewind_CancelsPendingActions(t *testing.T) {
 	}
 }
 
+// Lệnh điều khiển của lần làm cũ (mọi trạng thái) được gắn rewind_id và không còn hiện ở trang điều khiển hay chặn
+// lệnh mới: sau quay về, nút Accept web hiện lại và gửi được lệnh mới.
+func TestRewind_ArchivesOldAttemptActions(t *testing.T) {
+	fx := newGfx(t, "rw12")
+	f := fx.feat(t, "r/rw12-1", "K-1", "FULL")
+	f.stepsJSON = `[{"id":"S1","status":"AWAITING_DEV","record":{"endTree":"t1"}}]`
+	f.push()
+	for _, st := range []string{"PENDING", "APPLIED", "STALE"} {
+		fx.exec(t, "INSERT INTO pending_actions(repo_id, feature_key, kind, step, created_by, expires_at, status) "+
+			"VALUES ('r/rw12-1','K-1','ACCEPT_STEP','S1','x', now() + interval '1 day', $1)", st)
+	}
+	if r := f.rewind(fx.approveOwner, "S1", "q", "REVIEW"); r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	if n := fx.count(t, "SELECT count(*) FROM pending_actions WHERE repo_id='r/rw12-1' AND rewind_id IS NOT NULL"); n != 3 {
+		t.Fatal("rewind_id", n)
+	}
+	view := func() []any {
+		r := fx.w.GetSession("/api/features/r/rw12-1/K-1/control", fx.ownerS)
+		if r.Status != 200 {
+			t.Fatal("view", r.Status, r.Body)
+		}
+		l, _ := r.JSON(t)["actions"].([]any)
+		return l
+	}
+	if l := view(); len(l) != 0 {
+		t.Fatalf("lệnh lần làm cũ còn hiện: %v", l)
+	}
+	// lệnh PENDING của lần cũ (giả lập chưa bị huỷ) không được làm lệnh mới bị gộp vào nó
+	fx.exec(t, "UPDATE pending_actions SET status = 'PENDING' WHERE repo_id = 'r/rw12-1'")
+	body := `{"repo":"r/rw12-1","feature":"K-1","kind":"ACCEPT_STEP","step":"S1","endTree":"t1"}`
+	if r := fx.w.PostSession("/api/control/actions", body, fx.ownerS, fx.ownerS.CSRF); r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	if l := view(); len(l) != 1 || l[0].(map[string]any)["status"] != "PENDING" {
+		t.Fatalf("lệnh mới: %v", l)
+	}
+	if n := fx.count(t, "SELECT count(*) FROM pending_actions WHERE repo_id='r/rw12-1' AND rewind_id IS NULL"); n != 1 {
+		t.Fatal("lệnh mới", n)
+	}
+}
+
 func TestRewind_ForbiddenForNonOwner(t *testing.T) {
 	fx := newGfx(t, "rw6")
 	f := fx.feat(t, "r/rw6-1", "K-1", "FULL")

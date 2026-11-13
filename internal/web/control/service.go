@@ -152,7 +152,7 @@ func (s *Service) view(ctx context.Context, d querier, repo, feature string) (Vi
 	}
 	rows, err = d.Query(ctx, "SELECT id, kind, step, path, created_by, created_at, expires_at, "+
 		"CASE WHEN status = 'PENDING' AND expires_at <= $3 THEN 'EXPIRED' ELSE status END, resolved_at, reason "+
-		"FROM pending_actions WHERE repo_id = $1 AND feature_key = $2 ORDER BY id DESC LIMIT 50", repo, feature, s.now())
+		"FROM pending_actions WHERE repo_id = $1 AND feature_key = $2 AND rewind_id IS NULL ORDER BY id DESC LIMIT 50", repo, feature, s.now())
 	if err != nil {
 		return ViewJSON{}, err
 	}
@@ -338,7 +338,7 @@ func (s *Service) Action(ctx context.Context, p httpx.Principal, ip, repo, featu
 		}
 		var dup int64
 		err := tx.QueryRow(ctx, "SELECT id FROM pending_actions WHERE repo_id = $1 AND feature_key = $2 AND kind = $3 AND step = $4 "+
-			"AND path IS NOT DISTINCT FROM $5 AND status = 'PENDING' AND expires_at > $6 ORDER BY id LIMIT 1",
+			"AND path IS NOT DISTINCT FROM $5 AND status = 'PENDING' AND rewind_id IS NULL AND expires_at > $6 ORDER BY id LIMIT 1",
 			repo, feature, kind, stepID, storedPath, now).Scan(&dup)
 		if err == nil {
 			return nil // bấm lại: giữ lệnh cũ
@@ -413,7 +413,7 @@ func (s *Service) ForCLI(ctx context.Context, repo, feature string) (snapshot.Fe
 		return c, err
 	}
 	rows, err = s.Pool.Query(ctx, "SELECT id, kind, step, path, end_tree, created_by, created_at, expires_at FROM pending_actions "+
-		"WHERE repo_id = $1 AND feature_key = $2 AND status = 'PENDING' AND expires_at > $3 ORDER BY id LIMIT 100", repo, feature, now)
+		"WHERE repo_id = $1 AND feature_key = $2 AND status = 'PENDING' AND rewind_id IS NULL AND expires_at > $3 ORDER BY id LIMIT 100", repo, feature, now)
 	if err != nil {
 		return c, err
 	}

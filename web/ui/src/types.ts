@@ -121,7 +121,7 @@ export interface ControlInstruction {
 }
 export interface ControlAction {
   id: number; kind: "ACCEPT_STEP" | "ALLOW_SCOPE"; step: string; path: string | null; by: string; at: string;
-  expiresAt: string; status: "PENDING" | "APPLIED" | "STALE" | "EXPIRED"; resolvedAt: string | null; reason: string | null;
+  expiresAt: string; status: "PENDING" | "APPLIED" | "STALE" | "EXPIRED" | "CANCELLED"; resolvedAt: string | null; reason: string | null;
 }
 export interface ControlState {
   paused: boolean; pausedBy: string | null; pausedAt: string | null;

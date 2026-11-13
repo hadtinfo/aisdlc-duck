@@ -267,7 +267,7 @@ details.ga-files summary { cursor: pointer; }
 .control-panel .ctl-list li { display: block; }
 .ctl-status { font-size: 12.5px; font-weight: 600; margin: 0; color: var(--warn); }
 .ctl-status.applied { color: var(--ok); }
-.ctl-status.stale, .ctl-status.expired { color: var(--bad); }
+.ctl-status.stale, .ctl-status.expired, .ctl-status.cancelled { color: var(--bad); }
 .pill.block { display: block; }
 .resub-fb, .resub-files { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .resub-fb code { margin-right: 4px; }

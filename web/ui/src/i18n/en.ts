@@ -4,6 +4,7 @@ import type { vi } from "./vi";
 export const en: Record<keyof typeof vi, string> = {
   "action.acceptPending": "Accepted, waiting to apply",
   "action.allowPending": "Allowed, waiting to apply",
+  "action.cancelled": "Cancelled — click again",
   "action.applied": "Applied",
   "action.expired": "Expired (7 days) — click again",
   "action.stale": "No longer valid — click again",

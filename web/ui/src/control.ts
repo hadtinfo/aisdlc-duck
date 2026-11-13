@@ -2,7 +2,7 @@
 import { t } from "./i18n";
 import type { ControlAction, FeatureEvent, StepData } from "./types";
 
-export type ActionStatus = "PENDING" | "APPLIED" | "STALE" | "EXPIRED";
+export type ActionStatus = "PENDING" | "APPLIED" | "STALE" | "EXPIRED" | "CANCELLED";
 export const INSTRUCTION_MAX = 2000;
 
 export function actionLabel(kind: "ACCEPT_STEP" | "ALLOW_SCOPE", status: ActionStatus, reason?: string | null): string {
@@ -11,7 +11,13 @@ export function actionLabel(kind: "ACCEPT_STEP" | "ALLOW_SCOPE", status: ActionS
     case "APPLIED": return t("action.applied");
     case "STALE": return reason ? t("action.staleReason", { reason }) : t("action.stale");
     case "EXPIRED": return t("action.expired");
+    case "CANCELLED": return t("action.cancelled");
   }
+}
+
+/** Lệnh không còn hiệu lực (chưa có, hết hiệu lực, hết hạn, bị huỷ do quay về mốc): nút gửi lại được hiện. */
+export function actionRetryable(a: ControlAction | null): boolean {
+  return !a || a.status === "STALE" || a.status === "EXPIRED" || a.status === "CANCELLED";
 }
 
 /**

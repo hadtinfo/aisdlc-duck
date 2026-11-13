@@ -240,8 +240,14 @@ func Apply(ctx context.Context, d Deps, p Plan, backupRef string) error {
 			}
 		}
 	}
-	if len(p.DropSteps) > 0 {
-		if err := d.Steps.Truncate(p.DropSteps[0]); err != nil {
+	// Bỏ bản ghi theo ID, không theo spec: lần chạy lại mốc cổng xảy ra khi design.yaml đã bị xoá.
+	switch {
+	case p.Target.Step != "":
+		if err := d.Steps.DropRecords(p.Target.Step, p.DropSteps); err != nil {
+			return err
+		}
+	case p.Target.Gate != gate.REVIEW:
+		if err := d.Steps.DropRecords("", nil); err != nil {
 			return err
 		}
 	}

@@ -585,6 +585,65 @@ func TestApply_ResumeGateCheckpoint(t *testing.T) {
 	}
 }
 
+// TestApply_ResumeGateCheckpointWithoutSpecs: chạy lại lần quay về mốc cổng sau khi design.yaml đã bị xoá
+// (spec dựng lại từ đĩa rỗng) vẫn hoàn tất và bỏ mọi bản ghi bước.
+func TestApply_ResumeGateCheckpointWithoutSpecs(t *testing.T) {
+	for _, crash := range []string{"clearGate", "feedback"} {
+		t.Run(crash, func(t *testing.T) {
+			f := newFixture(t)
+			p := f.plan("design")
+			d := f.deps()
+			if err := ResolveCode(bg, d, &p); err != nil {
+				t.Fatal(err)
+			}
+			ref, _ := Backup(bg, d)
+			broken := d
+			if crash == "clearGate" {
+				broken.ClearGate = func(gate.Gate) error { return os.ErrPermission }
+			} else {
+				broken.AppendFeedback = func(string) error { return os.ErrPermission }
+			}
+			if err := Apply(bg, broken, p, ref); err == nil {
+				t.Fatal("muốn lỗi")
+			}
+			if f.exists(feat + "design.yaml") {
+				t.Fatal("design.yaml phải đã bị xoá")
+			}
+			pr, ok, err := Pending(f.paths)
+			if err != nil || !ok {
+				t.Fatalf("pending: %v %v", ok, err)
+			}
+			f.specs = nil // như CLI: spec đọc lại từ design.yaml đã mất
+			if err := Apply(bg, f.deps(), pr.Plan, pr.BackupRef); err != nil {
+				t.Fatalf("chạy lại phải xong: %v", err)
+			}
+			if recs := f.records(); len(recs) != 0 {
+				t.Fatalf("còn bản ghi: %+v", recs)
+			}
+			if f.exists(feat + "rewind-pending.json") {
+				t.Fatal("dấu đang dở phải bị xoá")
+			}
+		})
+	}
+}
+
+// TestApply_StepCheckpointDropsStaleRecords: bản ghi của bước không còn trong thiết kế cũng bị bỏ khi quay về Sk.
+func TestApply_StepCheckpointDropsStaleRecords(t *testing.T) {
+	f := newFixture(t)
+	recs := f.records()
+	recs = append(recs, step.StepRecord{ID: "S9", Status: step.StepAccepted})
+	b, _ := json.MarshalIndent(recs, "", "  ")
+	f.write(feat+"steps.json", string(b))
+	f.rewind("S2")
+	got := []string{}
+	for _, r := range f.records() {
+		got = append(got, r.ID)
+	}
+	if !slices.Equal(got, []string{"S1"}) {
+		t.Fatalf("bản ghi còn lại = %v, muốn [S1]", got)
+	}
+}
+
 func TestApply_DeleteRefusesPendingMarker(t *testing.T) {
 	f := newFixture(t)
 	p := f.plan("review")

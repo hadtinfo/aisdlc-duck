@@ -105,28 +105,35 @@ func CheckpointRef(key model.FeatureKey, stepID string) string {
 	return "refs/aisdlc/checkpoints/" + string(key) + "/" + stepID
 }
 
-// Truncate bỏ bản ghi của fromID và mọi bước sau nó (theo thứ tự spec); fromID chưa có bản ghi thì không làm gì.
-func (s *Service) Truncate(fromID string) error {
-	idx, err := s.indexOf(fromID)
-	if err != nil {
-		return err
-	}
+// DropRecords bỏ bản ghi bước khi quay về. keepBefore rỗng (mốc cổng): bỏ mọi bản ghi, không cần spec nên vẫn
+// chạy được sau khi design.yaml đã bị xoá. keepBefore khác rỗng (mốc Sk): chỉ giữ bản ghi của các bước đứng
+// trước Sk trong thiết kế, kể cả bỏ bản ghi của bước không còn trong thiết kế; Sk không còn trong thiết kế thì
+// chỉ bỏ các bước trong drop. Bản ghi có ID trong drop luôn bị bỏ. Không có gì để bỏ thì không ghi file.
+func (s *Service) DropRecords(keepBefore string, drop []string) error {
 	recs, err := s.load()
 	if err != nil {
 		return err
 	}
-	if find(recs, fromID) == nil {
-		return nil
+	dropped := map[string]bool{}
+	for _, id := range drop {
+		dropped[id] = true
 	}
-	drop := map[string]bool{}
-	for _, sp := range s.specs[idx:] {
-		drop[sp.ID] = true
+	keep := func(id string) bool { return keepBefore != "" && !dropped[id] }
+	if idx, err := s.indexOf(keepBefore); keepBefore != "" && err == nil {
+		before := map[string]bool{}
+		for _, sp := range s.specs[:idx] {
+			before[sp.ID] = true
+		}
+		keep = func(id string) bool { return before[id] && !dropped[id] }
 	}
 	kept := make([]StepRecord, 0, len(recs))
 	for _, r := range recs {
-		if !drop[r.ID] {
+		if keep(r.ID) {
 			kept = append(kept, r)
 		}
+	}
+	if len(kept) == len(recs) {
+		return nil
 	}
 	return s.save(kept)
 }

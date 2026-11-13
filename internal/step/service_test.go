@@ -538,21 +538,30 @@ func TestStart_WritesCheckpointRef(t *testing.T) {
 	}
 }
 
-func TestTruncate(t *testing.T) {
+func TestDropRecords(t *testing.T) {
 	e := newEnv(t)
 	e.specs = append(e.specs, budgetSpec("S3", 5, 10))
 	s := e.service()
-	if err := s.save([]StepRecord{{ID: "S1", Status: StepAccepted}, {ID: "S2", Status: StepAccepted}, {ID: "S3", Status: StepInProgress}}); err != nil {
+	if err := s.save([]StepRecord{{ID: "S1", Status: StepAccepted}, {ID: "S2", Status: StepAccepted},
+		{ID: "S3", Status: StepInProgress}, {ID: "S9", Status: StepAccepted}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Truncate("S2"); err != nil {
+	if err := s.DropRecords("S2", []string{"S2", "S3"}); err != nil {
 		t.Fatal(err)
 	}
 	all := mustAll(t, s)
 	if len(all) != 1 || all[0].ID != "S1" {
 		t.Errorf("còn %v", all)
 	}
-	if err := s.Truncate("S2"); err != nil { // no-op
+	if err := s.DropRecords("S2", []string{"S2"}); err != nil { // no-op
 		t.Fatal(err)
+	}
+	// mốc cổng: bỏ tất cả, không cần spec
+	noSpecs := NewService(e.paths, e.git, nil, e.cfg, time.Now)
+	if err := noSpecs.DropRecords("", nil); err != nil {
+		t.Fatal(err)
+	}
+	if all := mustAll(t, s); len(all) != 0 {
+		t.Errorf("còn %v", all)
 	}
 }

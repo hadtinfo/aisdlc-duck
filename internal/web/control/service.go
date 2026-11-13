@@ -127,7 +127,7 @@ func (s *Service) view(ctx context.Context, d querier, repo, feature string) (Vi
 		v.PausedAt = instantPtr(at)
 	}
 	rows, err := d.Query(ctx, "SELECT id, by_login, at, text, source, delivered_at FROM instructions WHERE repo_id = $1 "+
-		"AND feature_key = $2 ORDER BY id DESC LIMIT 50", repo, feature)
+		"AND feature_key = $2 AND (rewind_id IS NULL OR delivered_at IS NOT NULL) ORDER BY id DESC LIMIT 50", repo, feature)
 	if err != nil {
 		return ViewJSON{}, err
 	}
@@ -395,7 +395,7 @@ func (s *Service) ForCLI(ctx context.Context, repo, feature string) (snapshot.Fe
 		c.Pause = &pa
 	}
 	rows, err := s.Pool.Query(ctx, "SELECT id, by_login, at, text FROM instructions WHERE repo_id = $1 AND feature_key = $2 "+
-		"AND delivered_at IS NULL ORDER BY id LIMIT 100", repo, feature)
+		"AND delivered_at IS NULL AND rewind_id IS NULL ORDER BY id LIMIT 100", repo, feature)
 	if err != nil {
 		return c, err
 	}

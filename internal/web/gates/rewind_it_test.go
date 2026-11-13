@@ -241,3 +241,40 @@ func TestRewind_NoFeatureRow409(t *testing.T) {
 		t.Fatal(r.Status, r.Body)
 	}
 }
+
+func TestRewind_DropsUndeliveredInstructions(t *testing.T) {
+	fx := newGfx(t, "rw9")
+	f := fx.feat(t, "r/rw9-1", "K-1", "FULL")
+	fx.exec(t, "INSERT INTO instructions(repo_id, feature_key, by_login, text, source) VALUES ('r/rw9-1','K-1','x','cũ chưa giao','web')")
+	fx.exec(t, "INSERT INTO instructions(repo_id, feature_key, by_login, text, source, delivered_at) VALUES ('r/rw9-1','K-1','x','cũ đã giao','web', now())")
+	if r := f.rewind(fx.ownerS, "brd", "q", "BRD", "DESIGN", "CASES", "REVIEW"); r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	r := fx.w.GetBearer("/api/cli/control?repo=r/rw9-1&feature=K-1", fx.ingest)
+	if r.Status != 200 {
+		t.Fatal(r.Status, r.Body)
+	}
+	pk := fx.w.GetBearer("/api/cli/pubkey", fx.ingest)
+	pub, err := snapshot.PublicKeyFromBase64(pk.JSON(t)["publicKey"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var se snapshot.SignedEnvelope
+	if err := json.Unmarshal([]byte(r.Body), &se); err != nil {
+		t.Fatal(err)
+	}
+	payload, ok := se.Verify(pub)
+	if !ok {
+		t.Fatal("chữ ký sai")
+	}
+	c, err := snapshot.FeatureControlFromJSON(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Instructions) != 1 || !strings.Contains(c.Instructions[0].Text, "quay về đầu brd") {
+		t.Fatalf("%+v", c.Instructions)
+	}
+	if n := fx.count(t, "SELECT count(*) FROM instructions WHERE repo_id='r/rw9-1' AND text='cũ chưa giao' AND delivered_at IS NULL AND rewind_id IS NOT NULL"); n != 1 {
+		t.Fatal(n)
+	}
+}

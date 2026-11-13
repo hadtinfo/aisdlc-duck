@@ -17,6 +17,7 @@ CREATE TABLE feature_rewinds (
 ALTER TABLE features ADD COLUMN attempt int NOT NULL DEFAULT 1;
 ALTER TABLE submissions ADD COLUMN rewind_id bigint NULL REFERENCES feature_rewinds(id);
 ALTER TABLE feedback ADD COLUMN rewind_id bigint NULL REFERENCES feature_rewinds(id);
+ALTER TABLE instructions ADD COLUMN rewind_id bigint NULL REFERENCES feature_rewinds(id);
 
 ALTER TABLE feedback DROP CONSTRAINT feedback_kind_check;
 ALTER TABLE feedback ADD CONSTRAINT feedback_kind_check CHECK (kind IN ('REJECTED', 'REOPENED', 'REWOUND'));
@@ -31,6 +32,7 @@ ALTER TABLE pending_actions ADD CONSTRAINT pending_actions_status_check CHECK (s
 DELETE FROM feedback WHERE kind = 'REWOUND';
 ALTER TABLE feedback DROP CONSTRAINT feedback_kind_check;
 ALTER TABLE feedback ADD CONSTRAINT feedback_kind_check CHECK (kind IN ('REJECTED', 'REOPENED'));
+ALTER TABLE instructions DROP COLUMN rewind_id;
 ALTER TABLE feedback DROP COLUMN rewind_id;
 ALTER TABLE submissions DROP COLUMN rewind_id;
 ALTER TABLE features DROP COLUMN attempt;

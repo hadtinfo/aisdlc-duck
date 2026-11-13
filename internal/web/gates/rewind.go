@@ -127,6 +127,11 @@ func doRewind(ctx context.Context, tx pgx.Tx, repo, feature, checkpoint, request
 		"WHERE repo_id = $1 AND feature_key = $2 AND status = 'PENDING'", repo, feature, now); err != nil {
 		return err
 	}
+	// chỉ dẫn chưa giao của lần làm cũ không được tới agent nữa (không đặt delivered_at: chưa hề giao)
+	if _, err := tx.Exec(ctx, "UPDATE instructions SET rewind_id = $1 WHERE repo_id = $2 AND feature_key = $3 "+
+		"AND delivered_at IS NULL AND rewind_id IS NULL", id, repo, feature); err != nil {
+		return err
+	}
 	fb, err := saveFeedback(ctx, tx, repo, feature, gates[0], "REWOUND", login, "", now)
 	if err != nil {
 		return err

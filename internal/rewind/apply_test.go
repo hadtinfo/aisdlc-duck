@@ -95,7 +95,10 @@ func (f *fixture) runStep(id string, edit func()) {
 
 const feat = "aisdlc/features/ROOM-1/"
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T) *fixture { t.Helper(); return newFixtureWith(t, nil) }
+
+// newFixtureWith như newFixture; beforeS2 chạy ngay trước khi bắt đầu S2 (sau S1).
+func newFixtureWith(t *testing.T, beforeS2 func(*fixture)) *fixture {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
@@ -135,6 +138,9 @@ func newFixture(t *testing.T) *fixture {
 	f.sh("commit", "-qm", "init")
 
 	f.runStep("S1", func() { f.write("src/s1.go", "s1\n") })
+	if beforeS2 != nil {
+		beforeS2(f)
+	}
 	f.runStep("S2", func() {
 		f.write("src/a.go", "a2\n")
 		f.write("src/b.go", "b2\n")
@@ -493,5 +499,129 @@ func TestApply_RefusesPathOutsideFeature(t *testing.T) {
 	}
 	if !f.exists("aisdlc/features/ROOM-2/steps.json") || !f.exists(feat+"eval/r.json") {
 		t.Fatal("không được xoá gì khi kế hoạch có path lạ")
+	}
+}
+
+func TestApply_ResumeAfterCrash(t *testing.T) {
+	f := newFixture(t)
+	s2 := f.record("S2")
+	p := f.plan("S2")
+	d := f.deps()
+	if err := ResolveCode(bg, d, &p); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := Backup(bg, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sự cố sau Truncate: ghi feedback lỗi
+	broken := d
+	broken.AppendFeedback = func(string) error { return os.ErrPermission }
+	if err := Apply(bg, broken, p, ref); err == nil {
+		t.Fatal("muốn lỗi")
+	}
+	if recs := f.records(); len(recs) != 1 {
+		t.Fatalf("Truncate phải đã chạy: %+v", recs)
+	}
+	if !f.exists(feat + "rewind-pending.json") {
+		t.Fatal("thiếu dấu đang dở")
+	}
+
+	// chạy lại qua đường lập kế hoạch thật: mốc S2 vẫn hợp lệ dù bản ghi đã mất
+	in := Input{Key: f.paths.Key, Flow: model.FlowFull, Paths: f.paths, Steps: f.specs, Records: f.records(),
+		Reached: f.reached, RiskFromDesign: true}
+	cp, err := Parse(in, "s2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr, ok, err := Pending(f.paths)
+	if err != nil || !ok || pr.Plan.Target.ID != cp.ID || pr.BackupRef != ref || pr.By != "dev1" {
+		t.Fatalf("pending = %+v %v %v", pr, ok, err)
+	}
+	if pr.Plan.CodeTree != s2.StartTree || len(pr.Plan.OwnChanges) == 0 {
+		t.Fatalf("kế hoạch lưu thiếu: %+v", pr.Plan)
+	}
+	if err := Apply(bg, f.deps(), pr.Plan, pr.BackupRef); err != nil {
+		t.Fatal(err)
+	}
+	if f.exists(feat + "rewind-pending.json") {
+		t.Fatal("dấu đang dở phải bị xoá khi xong")
+	}
+	if l := f.rewindLines(); len(l) != 1 || !strings.Contains(l[0], ref) {
+		t.Fatalf("feedback: %v", l)
+	}
+	if d := f.codeDiff(s2.StartTree); len(d) != 0 {
+		t.Fatalf("code: %v", d)
+	}
+	if _, ok, _ := Pending(f.paths); ok {
+		t.Fatal("còn pending")
+	}
+	if _, err := Parse(in, "S3"); err == nil {
+		// in.Records cũ không có S3 → S3 không hợp lệ; chỉ mốc đang dở được thêm
+		t.Fatal("S3 không được hợp lệ")
+	}
+}
+
+func TestApply_ResumeGateCheckpoint(t *testing.T) {
+	f := newFixture(t)
+	p := f.plan("design")
+	d := f.deps()
+	if err := ResolveCode(bg, d, &p); err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := Backup(bg, d)
+	broken := d
+	broken.AppendFeedback = func(string) error { return os.ErrPermission }
+	if err := Apply(bg, broken, p, ref); err == nil {
+		t.Fatal("muốn lỗi")
+	}
+	in := Input{Key: f.paths.Key, Flow: model.FlowFull, Paths: f.paths, Steps: f.specs, Records: f.records(),
+		Reached: f.reached, RiskFromDesign: true}
+	if _, err := Parse(in, "design"); err != nil {
+		t.Fatalf("mốc design đang dở phải hợp lệ: %v", err)
+	}
+	if _, err := Parse(in, "cases"); err == nil {
+		t.Fatal("cases đã bị xoá, không hợp lệ")
+	}
+}
+
+func TestApply_DeleteRefusesPendingMarker(t *testing.T) {
+	f := newFixture(t)
+	p := f.plan("review")
+	p.DeletePaths = append(p.DeletePaths, PendingFile(f.paths))
+	if err := Apply(bg, f.deps(), p, "refs/aisdlc/backup/ROOM-1/x"); err == nil {
+		t.Fatal("không được xoá dấu đang dở qua DeletePaths")
+	}
+}
+
+func TestResolveCode_IgnoredFileNotOverwritten(t *testing.T) {
+	// .env có trong snapshot đầu S2 (chưa bị ignore lúc đó), sau đó mới bị gitignore
+	f2 := newFixtureWith(t, func(f *fixture) { f.write(".env", "secret1\n") })
+	f2.write(".gitignore", ".env\n")
+	f2.write(".env", "secret2\n")
+	p := f2.plan("S2")
+	d := f2.deps()
+	if err := ResolveCode(bg, d, &p); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(p.Skipped, ".env") {
+		t.Fatalf("skipped = %v", p.Skipped)
+	}
+	for _, c := range append(append([]gitx.FileChange{}, p.OwnChanges...), p.ForeignChanges...) {
+		if c.Path == ".env" || c.OldPath == ".env" {
+			t.Fatal(".env không được nằm trong thay đổi khôi phục")
+		}
+	}
+	ref, _ := Backup(bg, d)
+	// kể cả kế hoạch bị sửa tay đưa .env trở lại, Apply vẫn bỏ qua path trong Skipped
+	p.ForeignChanges = append(p.ForeignChanges, gitx.FileChange{Path: ".env", Type: gitx.Deleted})
+	if err := Apply(bg, d, p, ref); err != nil {
+		t.Fatal(err)
+	}
+	if got := f2.read(".env"); got != "secret2\n" {
+		t.Fatalf(".env = %q", got)
+	}
+	if f2.exists("src/b.go") {
+		t.Fatal("phần còn lại vẫn phải khôi phục")
 	}
 }

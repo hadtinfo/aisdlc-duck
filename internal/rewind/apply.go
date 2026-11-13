@@ -3,12 +3,15 @@ package rewind
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"aisdlc/internal/fsx"
 	"aisdlc/internal/gate"
 	"aisdlc/internal/gitx"
 	"aisdlc/internal/i18n"
@@ -73,7 +76,7 @@ func codeStep(p *Plan) string {
 // ResolveCode điền OwnChanges/ForeignChanges của p. Tree mốc mất thì thử ref checkpoint; vẫn mất thì
 // trả lỗi và không đổi gì trên đĩa.
 func ResolveCode(ctx context.Context, d Deps, p *Plan) error {
-	p.OwnChanges, p.ForeignChanges = nil, nil
+	p.OwnChanges, p.ForeignChanges, p.Skipped = nil, nil, nil
 	if p.CodeTree == "" {
 		return nil
 	}
@@ -99,6 +102,10 @@ func ResolveCode(ctx context.Context, d Deps, p *Plan) error {
 		return err
 	}
 	for _, c := range codeChanges(d.Cfg, diff) {
+		c, keep := d.dropUnsnapshotted(c, p)
+		if !keep {
+			continue
+		}
 		if own[c.Path] || (c.OldPath != "" && own[c.OldPath]) {
 			p.OwnChanges = append(p.OwnChanges, c)
 		} else {
@@ -106,6 +113,27 @@ func ResolveCode(ctx context.Context, d Deps, p *Plan) error {
 		}
 	}
 	return nil
+}
+
+// onDisk: path đang có trên đĩa (file, symlink hay thư mục).
+func (d Deps) onDisk(rel string) bool {
+	_, err := os.Lstat(filepath.Join(d.Paths.RepoRoot, filepath.FromSlash(rel)))
+	return err == nil
+}
+
+// dropUnsnapshotted bỏ phía của thay đổi mà path vắng trong snapshot hiện tại nhưng vẫn có trên đĩa (file bị
+// gitignore sau mốc): nội dung đó không có trong ref dự phòng nên không được ghi đè. Path bị bỏ ghi vào
+// p.Skipped. keep=false khi không còn gì để khôi phục.
+func (d Deps) dropUnsnapshotted(c gitx.FileChange, p *Plan) (gitx.FileChange, bool) {
+	if c.OldPath != "" && d.onDisk(c.OldPath) { // nguồn rename vắng trong snapshot hiện tại
+		p.Skipped = append(p.Skipped, c.OldPath)
+		c.OldPath = ""
+	}
+	if c.Type == gitx.Deleted && d.onDisk(c.Path) {
+		p.Skipped = append(p.Skipped, c.Path)
+		return c, false
+	}
+	return c, true
 }
 
 // ownPaths: path do các bước bị bỏ đổi (Changes, cộng diff của bước IN_PROGRESS bị bỏ).
@@ -184,12 +212,18 @@ func Apply(ctx context.Context, d Deps, p Plan, backupRef string) error {
 	for _, path := range p.DeletePaths {
 		c := filepath.Clean(path)
 		if !filepath.IsAbs(c) || !strings.HasPrefix(c, dir+string(filepath.Separator)) ||
-			c == filepath.Clean(d.Paths.Meta()) || c == filepath.Clean(d.Paths.Feedback()) {
+			c == filepath.Clean(d.Paths.Meta()) || c == filepath.Clean(d.Paths.Feedback()) ||
+			c == filepath.Clean(PendingFile(d.Paths)) {
 			return errorf(i18n.Tf("Từ chối xoá %s: nằm ngoài các artifact của tính năng %s", path, string(d.Paths.Key)))
 		}
 	}
+	// Ghi dấu đang dở trước thay đổi đầu tiên: chạy lại sau sự cố dùng lại kế hoạch và ref dự phòng này.
+	if err := writePending(d, p, backupRef); err != nil {
+		return err
+	}
 	if p.CodeTree != "" {
-		changes := codeChanges(d.Cfg, append(append([]gitx.FileChange{}, p.OwnChanges...), p.ForeignChanges...))
+		changes := skipPaths(codeChanges(d.Cfg, append(append([]gitx.FileChange{}, p.OwnChanges...), p.ForeignChanges...)),
+			p.Skipped)
 		if err := d.Git.RestorePaths(ctx, p.CodeTree, changes); err != nil {
 			return err
 		}
@@ -218,7 +252,80 @@ func Apply(ctx context.Context, d Deps, p Plan, backupRef string) error {
 			}
 		}
 	}
-	return appendRewind(d, p, backupRef)
+	if err := appendRewind(d, p, backupRef); err != nil {
+		return err
+	}
+	if err := os.Remove(PendingFile(d.Paths)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errorf(i18n.Tf("Không xoá được %s: %s", d.Paths.Rel(PendingFile(d.Paths)), err.Error()))
+	}
+	return nil
+}
+
+// skipPaths bỏ khỏi changes mọi phía có path nằm trong skipped (phòng thủ thêm cho Apply).
+func skipPaths(cs []gitx.FileChange, skipped []string) []gitx.FileChange {
+	if len(skipped) == 0 {
+		return cs
+	}
+	skip := map[string]bool{}
+	for _, s := range skipped {
+		skip[s] = true
+	}
+	out := []gitx.FileChange{}
+	for _, c := range cs {
+		if skip[c.OldPath] {
+			c.OldPath = ""
+		}
+		if skip[c.Path] {
+			if c.OldPath == "" {
+				continue
+			}
+			c.Path, c.OldPath = c.OldPath, ""
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// PendingRewind là lần quay về đã bắt đầu Apply nhưng chưa xong (rewind-pending.json).
+type PendingRewind struct {
+	BackupRef string    `json:"backupRef"`
+	By        string    `json:"by"`
+	At        time.Time `json:"at"`
+	Plan      Plan      `json:"plan"`
+}
+
+// PendingFile là dấu lần quay về đang dở trong thư mục tính năng.
+func PendingFile(p model.FeaturePaths) string { return filepath.Join(p.Dir(), "rewind-pending.json") }
+
+// Pending đọc dấu lần quay về đang dở; ok=false nếu không có. CLI dùng để chạy tiếp với Plan và
+// BackupRef đã lưu thay vì lập kế hoạch lại từ trạng thái đã bị xoá dở.
+func Pending(p model.FeaturePaths) (PendingRewind, bool, error) {
+	b, err := os.ReadFile(PendingFile(p))
+	if errors.Is(err, os.ErrNotExist) {
+		return PendingRewind{}, false, nil
+	}
+	if err != nil {
+		return PendingRewind{}, false, errorf(i18n.Tf("Không đọc được %s: %s", p.Rel(PendingFile(p)), err.Error()))
+	}
+	var pr PendingRewind
+	if err := json.Unmarshal(b, &pr); err != nil || pr.Plan.Target.ID == "" {
+		return PendingRewind{}, false, errorf(i18n.Tf("%s hỏng; xoá file này rồi chạy lại aisdlc rewind", p.Rel(PendingFile(p))))
+	}
+	return pr, true, nil
+}
+
+func writePending(d Deps, p Plan, backupRef string) error {
+	b, err := json.MarshalIndent(PendingRewind{BackupRef: backupRef, By: d.By, At: d.Now(), Plan: p}, "", "  ")
+	if err != nil {
+		return errorf(i18n.Tf("Không ghi được %s: %s", d.Paths.Rel(PendingFile(d.Paths)), err.Error()))
+	}
+	if err := os.MkdirAll(d.Paths.Dir(), 0o755); err != nil {
+		return errorf(i18n.Tf("Không ghi được %s: %s", d.Paths.Rel(PendingFile(d.Paths)), err.Error()))
+	}
+	if err := fsx.WriteAtomic(PendingFile(d.Paths), b, 0o644); err != nil {
+		return errorf(i18n.Tf("Không ghi được %s: %s", d.Paths.Rel(PendingFile(d.Paths)), err.Error()))
+	}
+	return nil
 }
 
 // appendRewind ghi dòng REWIND vào feedback.md, trừ khi tiêu đề "## " cuối đã là REWIND cùng mốc và cùng ref.

@@ -44,6 +44,9 @@ type Plan struct {
 	CodeTree       string      // "" = không đổi code
 	OwnChanges     []gitx.FileChange
 	ForeignChanges []gitx.FileChange
+	// Skipped: path có trong mốc, không có trong snapshot hiện tại (thường do bị gitignore) nhưng vẫn
+	// đang có trên đĩa; nội dung hiện tại không nằm trong ref dự phòng nên không bao giờ bị ghi đè.
+	Skipped []string
 }
 
 func (in Input) record(id string) (step.StepRecord, bool) {
@@ -58,22 +61,31 @@ func (in Input) record(id string) (step.StepRecord, bool) {
 func gateID(g gate.Gate) string { return strings.ToLower(string(g)) }
 
 // Checkpoints liệt kê các mốc đã đạt tới theo thứ tự luồng.
+// Lần quay về đang dở (rewind-pending.json) vẫn được liệt kê dù cổng/bản ghi của mốc đã bị xoá, để chạy lại
+// hoàn tất được.
 func Checkpoints(in Input) []Checkpoint {
+	var pend Checkpoint
+	if pr, ok, err := Pending(in.Paths); err == nil && ok {
+		pend = pr.Plan.Target
+	}
+	reached := func(g gate.Gate) bool {
+		return (in.Reached != nil && in.Reached(g)) || (pend.Gate == g && pend.Step == "")
+	}
 	var out []Checkpoint
 	for _, g := range gate.Sequence(in.Flow) {
 		if g == gate.REVIEW {
 			continue
 		}
-		if in.Reached != nil && in.Reached(g) {
+		if reached(g) {
 			out = append(out, Checkpoint{ID: gateID(g), Gate: g})
 		}
 	}
 	for _, s := range in.Steps {
-		if _, ok := in.record(s.ID); ok {
+		if _, ok := in.record(s.ID); ok || pend.Step == s.ID {
 			out = append(out, Checkpoint{ID: s.ID, Step: s.ID})
 		}
 	}
-	if in.Reached != nil && in.Reached(gate.REVIEW) {
+	if reached(gate.REVIEW) {
 		out = append(out, Checkpoint{ID: "review", Gate: gate.REVIEW})
 	}
 	return out

@@ -11,6 +11,7 @@ var enCLI = map[string]string{
 	"Không còn snapshot code của mốc %s (đầu bước %s). Hãy chọn một mốc muộn hơn còn snapshot.": "The code snapshot for checkpoint %s (start of step %s) is gone. Choose a later checkpoint that still has a snapshot.",
 	"Từ chối xoá %s: nằm ngoài các artifact của tính năng %s":                                   "Refusing to delete %s: it is not one of feature %s's artifacts",
 	"Không xoá được %s: %s":                                                                     "Cannot delete %s: %s",
+	"%s hỏng; xoá file này rồi chạy lại aisdlc rewind":                                          "%s is corrupt; delete it and run aisdlc rewind again",
 	"## REWIND — quay về %s bởi %s lúc %s (dự phòng: %s)\n\n":                                   "## REWIND — rewound to %s by %s at %s (backup: %s)\n\n",
 	// fsx, yamlx, gitx, model, snapshot
 

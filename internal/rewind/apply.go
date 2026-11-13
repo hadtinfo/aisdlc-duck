@@ -217,8 +217,13 @@ func Apply(ctx context.Context, d Deps, p Plan, backupRef string) error {
 			return errorf(i18n.Tf("Từ chối xoá %s: nằm ngoài các artifact của tính năng %s", path, string(d.Paths.Key)))
 		}
 	}
-	// Ghi dấu đang dở trước thay đổi đầu tiên: chạy lại sau sự cố dùng lại kế hoạch và ref dự phòng này.
-	if err := WritePending(d, p, backupRef); err != nil {
+	// Ghi dấu đang dở trước thay đổi đầu tiên: chạy lại sau sự cố dùng lại kế hoạch này. requestId của dấu cùng mốc
+	// (chế độ web đã gửi server) được giữ nguyên để server coi lần chạy lại là cùng một lần.
+	requestID := backupRef
+	if pr, ok, err := Pending(d.Paths); err == nil && ok && pr.Plan.Target.ID == p.Target.ID {
+		requestID = pr.RequestID
+	}
+	if err := WritePending(d, p, backupRef, requestID); err != nil {
 		return err
 	}
 	if p.CodeTree != "" {
@@ -294,7 +299,10 @@ func skipPaths(cs []gitx.FileChange, skipped []string) []gitx.FileChange {
 
 // PendingRewind là lần quay về đã bắt đầu Apply nhưng chưa xong (rewind-pending.json).
 type PendingRewind struct {
-	BackupRef string    `json:"backupRef"`
+	BackupRef string `json:"backupRef"`
+	// RequestID: ref dự phòng của lần chạy đầu, gửi server làm requestId cho mọi lần chạy lại (dấu cũ thiếu
+	// trường này thì lấy BackupRef).
+	RequestID string    `json:"requestId,omitempty"`
 	By        string    `json:"by"`
 	At        time.Time `json:"at"`
 	Plan      Plan      `json:"plan"`
@@ -317,13 +325,36 @@ func Pending(p model.FeaturePaths) (PendingRewind, bool, error) {
 	if err := json.Unmarshal(b, &pr); err != nil || pr.Plan.Target.ID == "" {
 		return PendingRewind{}, false, errorf(i18n.Tf("%s hỏng; xoá file này rồi chạy lại aisdlc rewind", p.Rel(PendingFile(p))))
 	}
+	if pr.RequestID == "" {
+		pr.RequestID = pr.BackupRef
+	}
 	return pr, true, nil
 }
 
+// CheckResume kiểm dấu đang dở trước khi chạy tiếp: ref dự phòng phải thuộc BackupPrefix của tính năng và trỏ
+// tới một commit; requestId cũng phải mang tiền tố đó. Sai thì từ chối, chưa đổi gì.
+func CheckResume(ctx context.Context, d Deps, pr PendingRewind) error {
+	prefix := BackupPrefix(d.Paths.Key)
+	bad := func(ref string) error {
+		return errorf(i18n.Tf("%s không hợp lệ: %q không phải ref dự phòng của %s (%s...); xoá file này rồi chạy lại aisdlc rewind",
+			d.Paths.Rel(PendingFile(d.Paths)), ref, string(d.Paths.Key), prefix))
+	}
+	if len(pr.BackupRef) <= len(prefix) || !strings.HasPrefix(pr.BackupRef, prefix) {
+		return bad(pr.BackupRef)
+	}
+	if len(pr.RequestID) <= len(prefix) || !strings.HasPrefix(pr.RequestID, prefix) {
+		return bad(pr.RequestID)
+	}
+	if _, ok, err := d.Git.ResolveRef(ctx, pr.BackupRef+"^{commit}"); err != nil || !ok {
+		return bad(pr.BackupRef)
+	}
+	return nil
+}
+
 // WritePending ghi dấu đang dở (rewind-pending.json). Chế độ web ghi trước khi gọi server để lần chạy lại
-// dùng cùng ref dự phòng làm requestId.
-func WritePending(d Deps, p Plan, backupRef string) error {
-	b, err := json.MarshalIndent(PendingRewind{BackupRef: backupRef, By: d.By, At: d.Now(), Plan: p}, "", "  ")
+// dùng cùng requestId.
+func WritePending(d Deps, p Plan, backupRef, requestID string) error {
+	b, err := json.MarshalIndent(PendingRewind{BackupRef: backupRef, RequestID: requestID, By: d.By, At: d.Now(), Plan: p}, "", "  ")
 	if err != nil {
 		return errorf(i18n.Tf("Không ghi được %s: %s", d.Paths.Rel(PendingFile(d.Paths)), err.Error()))
 	}

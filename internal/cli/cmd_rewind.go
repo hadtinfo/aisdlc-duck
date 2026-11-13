@@ -56,12 +56,15 @@ func runRewind(ctx *Context, f *Feature, args []string) (int, error) {
 		return 0, err
 	}
 	var plan rewind.Plan
-	backupRef := ""
 	resume := hasPend && pend.Plan.Target.ID == cp.ID
+	requestID := "" // web: requestId gửi server; chạy tiếp dùng lại của lần đầu
 	switch {
 	case resume:
-		plan, backupRef = pend.Plan, pend.BackupRef
-		ctx.Println(i18n.Tf("Tiếp tục lần quay về %s đang dở (dự phòng: %s).", cp.ID, backupRef))
+		if err := rewind.CheckResume(ctx.Std(), d, pend); err != nil {
+			return 0, abort(2, err.Error())
+		}
+		plan, requestID = pend.Plan, pend.RequestID
+		ctx.Println(i18n.Tf("Tiếp tục lần quay về %s đang dở (dự phòng: %s).", cp.ID, pend.BackupRef))
 	default:
 		if hasPend {
 			ctx.Println(i18n.Tf("Cảnh báo: có lần quay về %s đang dở (rewind-pending.json); đang quay về %s thay thế. "+
@@ -70,9 +73,10 @@ func runRewind(ctx *Context, f *Feature, args []string) (int, error) {
 		if plan, err = rewind.Build(in, cp); err != nil {
 			return 0, abort(2, err.Error())
 		}
-		if err := rewind.ResolveCode(ctx.Std(), d, &plan); err != nil {
-			return 0, abort(2, err.Error())
-		}
+	}
+	// Luôn lập lại phần code theo cây mốc: dấu đang dở có thể đã cũ (dev sửa tiếp sau khi đứt).
+	if err := rewind.ResolveCode(ctx.Std(), d, &plan); err != nil {
+		return 0, abort(2, err.Error())
 	}
 
 	web := f.Mode == gate.ModeWeb
@@ -81,27 +85,30 @@ func runRewind(ctx *Context, f *Feature, args []string) (int, error) {
 			return 0, err
 		}
 	}
-	printRewindPreview(ctx, f, plan, backupRef)
+	printRewindPreview(ctx, f, plan)
 	channel, err := ctx.ConfirmDev(f.Key, invocation(ctx, "rewind"), "")
 	if err != nil {
 		return 0, err
 	}
-	if !resume {
-		if backupRef, err = rewind.Backup(ctx.Std(), d); err != nil {
-			return 0, err
-		}
-		ctx.Println(i18n.Tf("Bản hiện tại cất ở %s", backupRef))
+	// Luôn cất bản hiện tại, kể cả khi chạy tiếp: phần sửa sau lần đứt không được mất.
+	backupRef, err := rewind.Backup(ctx.Std(), d)
+	if err != nil {
+		return 0, err
+	}
+	ctx.Println(i18n.Tf("Bản hiện tại cất ở %s", backupRef))
+	if requestID == "" {
+		requestID = backupRef
 	}
 	if web {
-		// Server trước: dấu đang dở ghi trước để đứt giữa chừng thì chạy lại dùng cùng ref (requestId) rồi Apply.
+		// Server trước: dấu đang dở ghi trước để đứt giữa chừng thì chạy lại dùng cùng requestId rồi Apply.
 		var oldMarker []byte
 		if !resume {
 			oldMarker, _ = os.ReadFile(rewind.PendingFile(f.Paths)) // dấu của mốc khác (nếu có) để khôi phục khi bị từ chối
-			if err := rewind.WritePending(d, plan, backupRef); err != nil {
-				return 0, err
-			}
 		}
-		definite, err := f.Web.Rewind(f, plan.Target, plan.ClearGates, backupRef, channel)
+		if err := rewind.WritePending(d, plan, backupRef, requestID); err != nil {
+			return 0, err
+		}
+		definite, err := f.Web.Rewind(f, plan.Target, plan.ClearGates, requestID, channel)
 		if err != nil {
 			switch {
 			case !definite:
@@ -270,7 +277,7 @@ func pickCheckpoint(ctx *Context, f *Feature, in rewind.Input) (rewind.Checkpoin
 	return cps[n-1], nil
 }
 
-func printRewindPreview(ctx *Context, f *Feature, p rewind.Plan, backupRef string) {
+func printRewindPreview(ctx *Context, f *Feature, p rewind.Plan) {
 	key := f.Key.String()
 	ctx.Println("")
 	ctx.Println(i18n.Tf("Sẽ quay %s về đầu %s:", key, checkpointLabel(p.Target)))
@@ -318,9 +325,5 @@ func printRewindPreview(ctx *Context, f *Feature, p rewind.Plan, backupRef strin
 			}
 		}
 	}
-	if backupRef != "" {
-		ctx.Println("  - " + i18n.Tf("Bản dự phòng đã có: %s", backupRef))
-	} else {
-		ctx.Println("  - " + i18n.T("Bản hiện tại sẽ được cất vào refs/aisdlc/backup/") + key + "/<yyyymmdd-hhmm>")
-	}
+	ctx.Println("  - " + i18n.T("Bản hiện tại sẽ được cất vào refs/aisdlc/backup/") + key + "/<yyyymmdd-hhmm>")
 }

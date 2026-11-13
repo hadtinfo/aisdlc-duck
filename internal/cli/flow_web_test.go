@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -377,9 +378,7 @@ func TestRewindWeb_ServerFirst(t *testing.T) {
 
 func TestRewindWeb_ServerErrorOnResumeKeepsMarker(t *testing.T) {
 	r, web := rewindWebRepo(t)
-	r.write("aisdlc/features/PAY-1/rewind-pending.json", `{"backupRef":"refs/aisdlc/backup/PAY-1/old","by":"x",
-"at":"2026-01-01T00:00:00Z","plan":{"Target":{"ID":"S2","Gate":"","Step":"S2"},"ClearGates":["REVIEW"],
-"DropSteps":["S2"],"ScopeSteps":["S2"]}}`)
+	r.write("aisdlc/features/PAY-1/rewind-pending.json", fmt.Sprintf(s2Marker, r.oldBackup()))
 	web.Update(func(s *fakeweb.Server) {
 		s.Override["POST /api/gates/rewind"] = fakeweb.JSONResp(500, `{"error":"hỏng"}`)
 	})
@@ -429,20 +428,21 @@ func TestRewindWeb_Success(t *testing.T) {
 	eq(t, r.exists("aisdlc/features/PAY-1/cases.yaml"), false)
 }
 
-// Chạy lại sau khi đứt giữa chừng: dùng lại ref dự phòng của dấu đang dở làm requestId (server idempotent).
+// Chạy lại sau khi đứt giữa chừng: dấu cũ (chưa có requestId) dùng ref dự phòng của nó làm requestId (server
+// idempotent), nhưng vẫn chụp bản dự phòng mới.
 func TestRewindWeb_ResumeReusesBackupRefAsRequestID(t *testing.T) {
 	r, web := rewindWebRepo(t)
-	r.write("aisdlc/features/PAY-1/rewind-pending.json", `{"backupRef":"refs/aisdlc/backup/PAY-1/old","by":"x",
-"at":"2026-01-01T00:00:00Z","plan":{"Target":{"ID":"S2","Gate":"","Step":"S2"},"ClearGates":["REVIEW"],
-"DropSteps":["S2"],"ScopeSteps":["S2"]}}`)
+	old := r.oldBackup()
+	r.write("aisdlc/features/PAY-1/rewind-pending.json", fmt.Sprintf(s2Marker, old))
 	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 0)
 	reqs := web.RequestsFor("POST", "/api/gates/rewind")
 	eq(t, len(reqs), 1)
-	eq(t, reqs[0].Field("requestId"), "refs/aisdlc/backup/PAY-1/old")
-	eq(t, r.backupRefs(), "")
+	eq(t, reqs[0].Field("requestId"), old)
+	eq(t, strings.Count(r.backupRefs(), "refs/aisdlc/backup/"), 2)
 }
 
-// Lỗi mạng sau khi gửi: không biết server đã áp dụng chưa → giữ dấu; chạy lại dùng đúng requestId cũ.
+// Lỗi mạng sau khi gửi: không biết server đã áp dụng chưa → giữ dấu; dev sửa tiếp rồi chạy lại: phần sửa nằm
+// trong bản dự phòng mới, requestId gửi đi vẫn là của lần đầu.
 func TestRewindWeb_TransportErrorKeepsMarkerAndRerunReusesRequestID(t *testing.T) {
 	r, web := rewindWebRepo(t)
 	web.Update(func(s *fakeweb.Server) { s.Drop = true })
@@ -451,18 +451,31 @@ func TestRewindWeb_TransportErrorKeepsMarkerAndRerunReusesRequestID(t *testing.T
 		t.Fatal("lỗi mạng: phải giữ dấu đang dở")
 	}
 	contains(t, r.err, "Không biết server đã áp dụng", "aisdlc rewind s2")
-	if !r.exists("internal/limit/service/limit_service.go") {
+	const f = "internal/limit/service/limit_service.go"
+	if !r.exists(f) {
 		t.Fatal("chưa đổi gì cục bộ")
 	}
 	first := web.RequestsFor("POST", "/api/gates/rewind")
 	eq(t, len(first), 1)
 	id := first[0].Field("requestId")
+	r.write(f, "// sửa sau khi đứt\n")
 	web.Update(func(s *fakeweb.Server) { s.Drop = false })
 	_ = os.Remove(filepath.Join(r.root, ".aisdlc/web/backoff-until"))
 	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 0)
 	reqs := web.RequestsFor("POST", "/api/gates/rewind")
 	eq(t, reqs[len(reqs)-1].Field("requestId"), id)
-	eq(t, strings.Count(r.backupRefs(), "refs/aisdlc/backup/"), 1)
+	refs := strings.Split(r.backupRefs(), "\n")
+	eq(t, len(refs), 2)
+	fresh := ""
+	for _, l := range refs {
+		if ref := l[strings.LastIndex(l, "\t")+1:]; ref != id {
+			fresh = ref
+		}
+	}
+	if fresh == "" {
+		t.Fatalf("thiếu bản dự phòng mới: %v", refs)
+	}
+	eq(t, gitOut(t, r.root, "show", fresh+":"+f), "// sửa sau khi đứt")
 }
 
 // Server từ chối rõ ràng ở lần chạy mới: dấu cũ của mốc khác được khôi phục nguyên vẹn, không bị xoá.

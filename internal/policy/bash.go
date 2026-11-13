@@ -25,7 +25,7 @@ var (
 	// lockedConfig: file cấu hình chỉ dev sửa, ngoài Claude Code.
 	lockedConfig = []string{configFile, riskPolicyFile}
 	// stateNames: tên các file trạng thái của một tính năng (featureState).
-	stateNames = []string{"gates.json", "steps.json", "scope-extra.json", "feedback.md", "risk.yaml"}
+	stateNames = []string{"gates.json", "steps.json", "scope-extra.json", "feedback.md", "risk.yaml", "rewind-pending.json"}
 )
 
 // BashCheck trả lý do chặn (và true) nếu lệnh Bash có vẻ ghi vào file được bảo vệ hoặc là lệnh chỉ dev.
@@ -45,7 +45,7 @@ func BashCheck(command string, protectedPaths []string, repoRoot, cwd string) (s
 		return "", false
 	}
 	if DevCommandMentions(command) {
-		return i18n.T("Lệnh này chỉ dev được chạy (approve/reject/reopen/scope allow/step accept/risk set); agent không được chạy qua Bash."), true
+		return i18n.T("Lệnh này chỉ dev được chạy (approve/reject/reopen/rewind/scope allow/step accept/risk set); agent không được chạy qua Bash."), true
 	}
 	if sessAsgn.MatchString(command) {
 		return i18n.T("Agent không được gán AISDLC_SESSION (đó là định danh session do hook đặt; đổi nó để lách tính năng của session). Muốn đổi tính năng, chạy `aisdlc use <KEY>`."), true

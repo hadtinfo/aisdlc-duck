@@ -21,6 +21,7 @@ import (
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
 	"aisdlc/internal/review/cardbuild"
+	"aisdlc/internal/snapshot"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/step"
 	"aisdlc/internal/yamlx"
@@ -57,9 +58,11 @@ type SnapshotInput struct {
 
 // FeatureSnapshot là trạng thái một tính năng, hợp đồng v1 giữa CLI và web (FeatureSnapshot.java).
 type FeatureSnapshot struct {
-	SchemaVersion int                         `json:"schemaVersion"`
-	Repo          SnapRepo                    `json:"repo"`
-	ClientID      string                      `json:"clientId"`
+	SchemaVersion int      `json:"schemaVersion"`
+	Repo          SnapRepo `json:"repo"`
+	ClientID      string   `json:"clientId"`
+	// Attempt: lần làm trong phong bì cổng đã ký mà CLI đang giữ (chế độ web); 0 = không biết, bỏ khỏi JSON.
+	Attempt       int                         `json:"attempt,omitempty"`
 	CapturedAt    Instant                     `json:"capturedAt"`
 	Sender        string                      `json:"sender"`
 	Feature       SnapFeature                 `json:"feature"`
@@ -272,6 +275,7 @@ func Build(in SnapshotInput) (*FeatureSnapshot, error) {
 		SchemaVersion: 1,
 		Repo:          SnapRepo{ID: in.RepoID, Branch: in.Branch},
 		ClientID:      in.ClientID,
+		Attempt:       cachedAttempt(in.Store),
 		CapturedAt:    Instant(in.CapturedAt),
 		Sender:        in.Sender,
 		Feature: SnapFeature{Key: string(in.Meta.Key), Title: in.Meta.Title, Flow: string(in.Flow),
@@ -633,4 +637,16 @@ func truncateUTF8(s string, maxBytes int) string {
 		end--
 	}
 	return s[:end]
+}
+
+// cachedAttempt là lần làm trong phong bì cổng đã xác minh của store (chỉ WebGateStore có); 0 khi không có.
+func cachedAttempt(st gate.GateStore) int {
+	if ws, ok := st.(interface {
+		State() (snapshot.FeatureGateState, bool)
+	}); ok {
+		if s, ok := ws.State(); ok && s.Attempt > 1 {
+			return s.Attempt
+		}
+	}
+	return 0
 }

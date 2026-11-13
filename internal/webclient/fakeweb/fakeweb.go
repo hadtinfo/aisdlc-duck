@@ -88,6 +88,7 @@ type Server struct {
 	AutoLevel string
 
 	requests []Req
+	rewound  map[string]bool // requestId của POST /api/gates/rewind đã xử lý (chạy lại cùng requestId: không đổi gì)
 	closing  chan struct{}
 }
 
@@ -305,6 +306,43 @@ func (s *Server) route(r Req) Resp {
 				snapshot.Appr{Gate: gate, Hash: hash, Approver: "auto", At: T, Channel: "auto", Rule: "flow:" + s.AutoLevel})
 		}
 		s.State = st
+		return Resp{Status: 200, Body: s.stateEnvelopeLocked()}
+	case "POST /api/gates/rewind":
+		var b struct {
+			Gates     []string `json:"gates"`
+			RequestID string   `json:"requestId"`
+		}
+		if err := r.JSON(&b); err != nil || b.RequestID == "" {
+			return JSONResp(400, `{"error":"requestId"}`)
+		}
+		if s.rewound == nil {
+			s.rewound = map[string]bool{}
+		}
+		if !s.rewound[b.RequestID] {
+			s.rewound[b.RequestID] = true
+			drop := map[string]bool{}
+			for _, g := range b.Gates {
+				drop[g] = true
+			}
+			st := s.State
+			st.IssuedAt = T
+			if st.Attempt < 1 {
+				st.Attempt = 1
+			}
+			st.Attempt++
+			st.Submissions, st.Approvals = nil, nil
+			for _, x := range s.State.Submissions {
+				if !drop[x.Gate] {
+					st.Submissions = append(st.Submissions, x)
+				}
+			}
+			for _, a := range s.State.Approvals {
+				if !drop[a.Gate] {
+					st.Approvals = append(st.Approvals, a)
+				}
+			}
+			s.State = st
+		}
 		return Resp{Status: 200, Body: s.stateEnvelopeLocked()}
 	case "POST /api/gates/approve":
 		st := s.State

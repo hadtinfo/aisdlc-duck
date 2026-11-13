@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type KeyboardEvent, useState } from "react";
 import { ApiError, postJson } from "../api";
 import { actionsFor, approvePlan } from "../approve";
 import { t as tNow, useT } from "../i18n";
@@ -54,6 +54,11 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
 
   if (!can.approve && !can.reject && !can.reopen) return null;
 
+  // Esc đóng hộp xác nhận/biểu mẫu đang mở (trừ lúc đang gửi), như nút Hủy.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && mode !== "idle" && !busy) { e.stopPropagation(); open("idle"); }
+  };
+
   return (
     <div className="gate-actions">
       {mode === "idle" && (
@@ -69,7 +74,7 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
       )}
 
       {mode === "approve" && (
-        <div className="ga-confirm" role="group" aria-label={t("gate.confirmApprove")}>
+        <div className="ga-confirm" role="group" aria-label={t("gate.confirmApprove")} onKeyDown={onKeyDown}>
           <p className="ga-q">{t("gate.approve")} {gate.gate} @ <span className="mono">{plan.hashShort}</span>?</p>
           {plan.flags.length > 0 && (
             <ul className="ga-flags">
@@ -86,13 +91,13 @@ export function GateActions({ gate, card, seen, submittedPaths, repoId, featureK
           {submittedPaths.length > 0 && <SubmittedPaths paths={submittedPaths} />}
           <div className="ga-buttons">
             <button type="button" disabled={busy} onClick={approve}>{t("gate.confirmApprove")}</button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => open("idle")}>{t("common.cancel")}</button>
+            <button type="button" className="secondary" disabled={busy} autoFocus onClick={() => open("idle")}>{t("common.cancel")}</button>
           </div>
         </div>
       )}
 
       {(mode === "reject" || mode === "reopen") && (
-        <form className="ga-confirm" onSubmit={(e) => {
+        <form className="ga-confirm" onKeyDown={onKeyDown} onSubmit={(e) => {
           e.preventDefault();
           send(mode === "reject" ? "/api/gates/reject" : "/api/gates/reopen", { comment: comment.trim() });
         }}>

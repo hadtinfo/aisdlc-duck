@@ -94,7 +94,7 @@ func newRoot(ctx *Context) *cobra.Command {
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.Flags().BoolP("version", "V", false, i18n.T("In phiên bản rồi thoát."))
 	root.AddCommand(newSetupCmd(ctx), newInitCmd(ctx), newUseCmd(ctx), newStatusCmd(ctx),
-		newSubmitCmd(ctx), newApproveCmd(ctx), newRejectCmd(ctx), newReopenCmd(ctx), newReviewCmd(ctx),
+		newSubmitCmd(ctx), newApproveCmd(ctx), newRejectCmd(ctx), newReopenCmd(ctx), newRewindCmd(ctx), newReviewCmd(ctx),
 		newStepCmd(ctx), newScopeCmd(ctx), newDiffCmd(ctx), newRiskCmd(ctx), newPolicyCmd(ctx), newEvalCmd(ctx),
 		newWebCmd(ctx), newHookCmd(ctx))
 	return root

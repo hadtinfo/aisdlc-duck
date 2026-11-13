@@ -24,10 +24,11 @@ export function Card({ card, now }: { card: CardData; now: Date }) {
       <header>
         <span className="key">{card.key}</span>
         {card.flow === "LITE" && <span className="tag">LITE</span>}
+        {(card.attempt ?? 1) > 1 && <span className="tag">{t("card.attempt", { n: card.attempt! })}</span>}
         {card.riskLevel && <span title={t("risk.levelTitle")}><LevelPill level={card.riskLevel} prefix={t("risk.prefix")} /></span>}
         {card.session === "ACTIVE" && <span className="dot" title={t("card.sessionActive")} aria-label={t("card.running")} />}
       </header>
-      <h3>{card.title}</h3>
+      {card.title && card.title !== card.key && <h3>{card.title}</h3>}
       {card.labels.length > 0 && (
         <div className="labels">
           {card.labels.map((l) => (

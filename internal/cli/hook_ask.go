@@ -26,7 +26,7 @@ var (
 
 // indirectDevMsg: lệnh chỉ dev gọi gián tiếp (qua biến, bash -c, eval…).
 func indirectDevMsg() string {
-	return i18n.T("Lệnh chỉ dev (approve/reject/reopen/scope allow/step accept/risk set) phải được gọi thẳng: " +
+	return i18n.T("Lệnh chỉ dev (approve/reject/reopen/rewind/scope allow/step accept/risk set) phải được gọi thẳng: " +
 		"gọi thẳng `aisdlc <lệnh>` để hiện hộp xác nhận (một lệnh đơn, không qua biến, `bash -c`, " +
 		"`eval`, đường dẫn khác hay ghép với lệnh khác).")
 }

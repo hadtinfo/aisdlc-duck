@@ -29,7 +29,7 @@ Mỗi mũi tên sang phải là một lần agent nộp; chỉ sau khi dev duy�
 | | Agent (Claude Code) | Dev |
 | --- | --- | --- |
 | Viết | `brd.md`, `design.md`, `design.yaml`, migration, `cases.yaml`, code, `risk-agent.json` và `review-agent.json` (qua subagent) | Không bắt buộc viết gì; đọc review card, diff, report |
-| Lệnh | `init`, `submit`, `step start`, `step finish`, `eval`, `review`, `status`, `diff`, `policy show`, `risk inputs` | `approve`, `reject`, `reopen`, `step accept`, `scope allow`, `risk set`, `risk reclassify`, `web login` |
+| Lệnh | `init`, `submit`, `step start`, `step finish`, `eval`, `review`, `status`, `diff`, `policy show`, `risk inputs` | `approve`, `reject`, `reopen`, `rewind`, `step accept`, `scope allow`, `risk set`, `risk reclassify`, `web login` |
 | Không được | Duyệt, accept bước, cho phép file ngoài scope, sửa file trạng thái hay artifact đã duyệt | (không giới hạn; lệnh của dev đòi console thật hoặc hộp Yes/No trong Claude Code) |
 
 **Luồng đầy đủ và luồng nhẹ.** FULL (mặc định) đi đủ 5 cổng, dùng cho thay đổi có DB, API hoặc dòng tiền. LITE (`aisdlc init <KEY> --lite`) cho sửa lỗi hay thay đổi nhỏ không đổi DB/API: bỏ BRD và thiết kế, còn Case → S1 → Review (mục 3.3).
@@ -176,7 +176,7 @@ Agent chạy slash command trong Claude Code. Dev duyệt bằng lệnh ở mộ
 | Eval | `/aisdlc:eval`: build, test cũ và bộ case, ghi `eval/report.md` | Đọc report |
 | Review | `/aisdlc:review`: eval, subagent `aisdlc-reviewer` ghi `review-agent.json`, `aisdlc submit review` | `aisdlc approve review`, rồi mở MR |
 
-Lệnh duyệt (`approve`, `reject -m`, `reopen`, `step accept`, `scope allow`, `risk set`, `risk reclassify`) mặc định đòi console thật và bắt gõ lại feature key (`Gõ lại feature key (PAY-123) để xác nhận:`). Không có console thì lệnh in `Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). Agent không được chạy lệnh này.` và thoát 3 (`risk` thoát 2). Không có cờ hay biến môi trường nào để bỏ qua; cách khác duy nhất là bật `sessionApprove` (mục 3.1).
+Lệnh duyệt (`approve`, `reject -m`, `reopen`, `rewind`, `step accept`, `scope allow`, `risk set`, `risk reclassify`) mặc định đòi console thật và bắt gõ lại feature key (`Gõ lại feature key (PAY-123) để xác nhận:`). Không có console thì lệnh in `Lệnh này chỉ dev được chạy, trong terminal thật (không tìm thấy console). Agent không được chạy lệnh này.` và thoát 3 (`risk` thoát 2). Không có cờ hay biến môi trường nào để bỏ qua; cách khác duy nhất là bật `sessionApprove` (mục 3.1).
 
 `aisdlc approve <gate>` in thông tin bản nộp (hash, file, phát hiện lúc nộp) và review card trước khi hỏi: cờ đỏ (HIGH, WARN, NA, INFO), giả định agent tự chốt, bản đồ bước, bảng DB, API, độ phủ case. Xem trước bằng `aisdlc review <brd|design|cases|review>` (chỉ đọc, agent cũng chạy được; `--json` in JSON). Cờ chỉ là gợi ý để dev soi nhanh, không chặn cổng.
 
@@ -369,6 +369,45 @@ aisdlc review cases
 aisdlc use DOC-1
 aisdlc policy show
 ```
+
+### 3.5.1. Làm lại tính năng (`aisdlc rewind`)
+
+Khi thiết kế sai giữa chừng, hoặc một bước làm hỏng, dùng `aisdlc rewind [mốc]` để quay tính năng về **đầu** một mốc: `brd`, `design`, `cases`, `S1`…`Sn`, `review` (luồng nhẹ không có `brd`, `design`). Chỉ hiện các mốc đã đạt tới. Chỉ dev chạy, trong terminal thật, gõ lại feature key như `reopen`; không có cờ bỏ qua xác nhận, và agent gọi qua Bash bị hook chặn.
+
+- Không có `<mốc>` thì lệnh in danh sách đánh số (`? Quay về mốc nào (ROOM-1)`, mỗi dòng ghi cái sẽ xoá) và hỏi `Chọn mốc (số):`.
+- Có `<mốc>` (không phân biệt hoa thường) thì in **bản xem trước**: bước bị bỏ, cổng được mở lại, artifact bị xoá, số file code đổi hoặc bị xoá, và nơi sẽ cất bản dự phòng (ref chỉ được tạo sau khi bạn xác nhận); rồi hỏi `Gõ lại feature key (ROOM-1) để xác nhận:`.
+- Mọi thứ sau mốc bị **xoá sạch** (artifact, kết quả eval, bước, cổng; `feature.yaml` và `feedback.md` được giữ, `feedback.md` ghi thêm một dòng `REWIND`). Code của **toàn bộ working tree** về đúng snapshot đầu mốc (snapshot lưu ở `refs/aisdlc/checkpoints/<KEY>/<Sx>` từ lúc `step start`). Quay về `review` giữ code, chỉ xoá eval và review.
+- **Cảnh báo file ngoài bước**: file đổi ngoài các bước của tính năng (merge, pull, sửa tay, tính năng khác) cũng về như mốc; bản xem trước liệt kê riêng và in `Cảnh báo: N file đổi ngoài các bước của <KEY> …`. File bị git bỏ qua không khôi phục được (`Không khôi phục N file bị git bỏ qua …`). Thư mục tính năng khác không bị đụng. `HEAD` và lịch sử git không đổi: code đã commit sau mốc hiện ra là thay đổi chưa commit.
+- Xong lệnh in `Đã quay <KEY> về đầu <mốc>. Tiếp: …` (`aisdlc step start Sx` hoặc `/aisdlc:<mốc>`), agent nhận chỉ dẫn bắt đầu lại.
+
+```
+$ aisdlc rewind s2
+
+Sẽ quay ROOM-1 về đầu S2:
+  - Bỏ bước S2, S3
+  - Mở lại cổng REVIEW
+  - Xoá aisdlc/features/ROOM-1/eval
+  - Xoá aisdlc/features/ROOM-1/review-agent.json
+  - Code về snapshot đầu S2: 7 file đổi, 2 file mới bị xoá
+      (danh sách file)
+  - Bản hiện tại sẽ được cất vào refs/aisdlc/backup/ROOM-1/<yyyymmdd-hhmm>
+Gõ lại feature key (ROOM-1) để xác nhận: ROOM-1
+Bản hiện tại cất ở refs/aisdlc/backup/ROOM-1/20261113-1405
+Đã quay ROOM-1 về đầu S2. Tiếp: aisdlc step start S2
+```
+
+**Ref dự phòng.** Trước khi xoá gì, bản hiện tại (cả thư mục tính năng) được cất ở `refs/aisdlc/backup/<KEY>/<yyyymmdd-hhmm>` (ref ẩn, không hiện ở `git branch`, không push). Lấy lại một file:
+
+```
+git for-each-ref refs/aisdlc/backup/
+git restore --source refs/aisdlc/backup/ROOM-1/20261113-1405 -- src/room/service.go
+```
+
+Ref không tự dọn; hết cần thì xoá: `git update-ref -d refs/aisdlc/backup/ROOM-1/20261113-1405`.
+
+**Chế độ web.** Lệnh gửi lên server trước và chỉ xoá trên máy khi server nhận (lỗi mạng thì chưa đổi gì, chạy lại được; lần chạy lại không tạo lần làm thứ hai). Tính năng sang **Lần làm 2**: board và trang tính năng chỉ hiện lần làm hiện tại kèm nhãn `Lần làm 2`, approval các cổng từ mốc trở đi bị thu hồi, cổng trước mốc giữ nguyên. Lần làm cũ vẫn xem được ở mục **Các lần làm trước** trên trang tính năng (chỉ đọc: bản nộp, ai duyệt hay trả, bước, review card). Web không có nút quay về; snapshot từ máy còn ở lần làm cũ bị server bỏ qua và CLI làm mới cache.
+
+**Khi nào dùng `reopen`.** Chỉ cần sửa **một** artifact đã duyệt (cổng đóng lại, các cổng sau coi như đóng) thì `aisdlc reopen <gate>` đủ và nhẹ hơn; `rewind` dành cho khi cần bỏ cả đoạn việc phía sau, kể cả code.
 
 ### 3.6. Viết `cases.yaml`
 
@@ -714,6 +753,7 @@ Các giới hạn khác:
 | Case ERROR "aisdlc-harness khác bản build với aisdlc …" | Hai binary build từ hai bản code khác nhau (cài lại một nửa, CI tải hai URL lệch bản) | Chạy lại `plugin/install.sh` hoặc `make plugin-dist`; ở CI cho `AISDLC_BIN` và `AISDLC_HARNESS_BIN` trỏ cùng một lần build |
 | Hook chặn mọi lệnh ghi, báo thiếu binary | Chưa có `plugin/lib/aisdlc-<os>-<arch>` cho nền tảng này | Chạy `plugin/install.sh` hoặc `make plugin-dist`, cài lại plugin |
 | Cổng chuyển STALE | Artifact đã duyệt bị sửa trực tiếp | `aisdlc reopen <gate>`, sửa, nộp và duyệt lại |
+| Làm hỏng giữa chừng, muốn bỏ cả đoạn sau một mốc | Thiết kế hoặc bước sai, không chỉ một artifact | `aisdlc rewind <mốc>`; cứu file từ `refs/aisdlc/backup/<KEY>/…` bằng `git restore --source <ref> -- <path>` (mục 3.5.1) |
 | Eval báo "không khởi động được Postgres: …", mọi case ERROR | Docker không chạy, hoặc CI không có `docker:dind` / `DOCKER_HOST` | Bật Docker; ở CI giữ service `docker:dind` của template |
 | Coverage "N/A" trong report | Dịch vụ không thoát sau `SIGTERM` kịp `shutdownTimeoutSeconds` | Sửa dịch vụ tắt êm (`http.Server.Shutdown`), hoặc tăng timeout |
 | Dịch vụ không lên: mọi case `NOT_RUN` | Sai `healthPath`, sai tên biến cổng/DB, hoặc quá `startTimeoutSeconds` | Đọc 50 dòng log cuối trong report, sửa `service` trong `config.yaml` |
@@ -738,6 +778,7 @@ Các giới hạn khác:
 | `aisdlc approve <gate>` | Duyệt cổng `brd`, `design`, `cases`, `review` |
 | `aisdlc reject <gate> -m "..."` | Trả lại kèm lý do (ghi vào `feedback.md`) |
 | `aisdlc reopen <gate>` | Mở lại cổng đã duyệt |
+| `aisdlc rewind [mốc]` | Quay tính năng về đầu một mốc (xoá mọi thứ sau đó, có ref dự phòng) |
 | `aisdlc step accept Sx` | Accept một bước |
 | `aisdlc scope allow <path>` | Cho phép một file ngoài scope |
 | `aisdlc risk set <mức> --reason "..."` | Đổi mức rủi ro (hạ mức bắt buộc lý do) |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acceptStatusShown, actionLabel, eventReloadsControl, feedbackLabel, INSTRUCTION_MAX, latestAction, outOfScopeFiles, validScopePath } from "./control";
+import { acceptStatusShown, actionLabel, actionRetryable, eventReloadsControl, feedbackLabel, INSTRUCTION_MAX, latestAction, outOfScopeFiles, validScopePath } from "./control";
 import type { ControlAction, FeatureEvent, StepData } from "./types";
 
 const act = (o: Partial<ControlAction>): ControlAction => ({
@@ -22,6 +22,7 @@ describe("actionLabel", () => {
     expect(actionLabel("ALLOW_SCOPE", "STALE", "đổi cây")).toBe("Hết hiệu lực: đổi cây — bấm lại");
     expect(actionLabel("ALLOW_SCOPE", "STALE")).toBe("Hết hiệu lực — bấm lại");
     expect(actionLabel("ACCEPT_STEP", "EXPIRED")).toBe("Hết hạn (7 ngày) — bấm lại");
+    expect(actionLabel("ACCEPT_STEP", "CANCELLED")).toBe("Đã huỷ — bấm lại");
   });
 });
 describe("outOfScopeFiles", () => {
@@ -76,5 +77,14 @@ describe("validScopePath (cùng luật PendingActions.validScopePath)", () => {
     }
     expect(validScopePath(null)).toBe(false);
     expect(validScopePath(undefined)).toBe(false);
+  });
+});
+
+describe("actionRetryable", () => {
+  const a = (status: ControlAction["status"]) => ({ status }) as ControlAction;
+  it("chưa có lệnh hoặc lệnh hết hiệu lực/hết hạn/đã huỷ thì bấm lại được", () => {
+    expect(actionRetryable(null)).toBe(true);
+    for (const s of ["STALE", "EXPIRED", "CANCELLED"] as const) expect(actionRetryable(a(s))).toBe(true);
+    for (const s of ["PENDING", "APPLIED"] as const) expect(actionRetryable(a(s))).toBe(false);
   });
 });

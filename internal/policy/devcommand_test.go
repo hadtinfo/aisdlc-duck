@@ -92,3 +92,10 @@ func TestMentionsAllForms(t *testing.T) {
 	}
 	eq(t, "status", DevCommandMentions("aisdlc status"), false)
 }
+
+func TestParseDevCommand_Rewind(t *testing.T) {
+	parse(t, "aisdlc rewind S2", &DevCommand{"rewind", []string{"S2"}})
+	parse(t, "aisdlc rewind -f K brd", &DevCommand{"rewind", []string{"-f", "K", "brd"}})
+	parse(t, "aisdlc rewind", &DevCommand{"rewind", []string{}})
+	eq(t, "mentions", DevCommandMentions(`bash -c "aisdlc rewind S2"`), true)
+}

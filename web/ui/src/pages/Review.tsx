@@ -1,7 +1,8 @@
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ApiError, UnauthorizedError, getControl, getEvents, getFeature, postJson } from "../api";
+import { ApiError, UnauthorizedError, getAttempts, getControl, getEvents, getFeature, postJson } from "../api";
 import { AgentReview } from "../components/AgentReview";
+import { AttemptArchive } from "../components/AttemptArchive";
 import { ApiTable } from "../components/ApiTable";
 import { CaseCoverage } from "../components/CaseCoverage";
 import { CasesTable } from "../components/CasesTable";
@@ -11,7 +12,7 @@ import { ErDiagram } from "../components/ErDiagram";
 import { EvalTable } from "../components/EvalTable";
 import { GateItem, GateList, Tone } from "../components/GateList";
 import { approvalBadge } from "../approve";
-import { GatePanel, stateText } from "../components/GatePanel";
+import { GatePanel, stateText, stepText } from "../components/GatePanel";
 import { Resubmission } from "../components/Resubmission";
 import { Markdown } from "../components/Markdown";
 import { ReviewSummary } from "../components/ReviewSummary";
@@ -21,12 +22,12 @@ import { StepMapView } from "../components/StepMapView";
 import { StepsTable } from "../components/StepsTable";
 import { UserMenu, useMe } from "../components/UserMenu";
 import { groupByStep } from "../diff";
-import { ago, budgetLevel } from "../format";
-import { cardFor, erLayout, stepMap, summaryTiles } from "../reviewModel";
+import { ago, budgetLevel, caseRatio } from "../format";
+import { acceptedApproval, cardFor, erLayout, stepMap, summaryTiles } from "../reviewModel";
 import { encodePath, featureHref, selectionFromQuery } from "../routes";
 import { eventReloadsControl } from "../control";
 import { subscribe } from "../sse";
-import type { ControlAction, FeatureDetail, FeatureEvent, GateData, GateName, PendingImport, ReviewCardData, Snapshot, StepData } from "../types";
+import type { AttemptData, ControlAction, FeatureDetail, FeatureEvent, GateData, GateName, PendingImport, ReviewCardData, Snapshot, StepData } from "../types";
 import { intlTag, t as tNow, useT } from "../i18n";
 import "../review.css";
 
@@ -142,7 +143,9 @@ function DesignCard({ card, snap }: { card: ReviewCardData; snap: Snapshot }) {
             ) : <p className="muted">{t("rvw.noStepsToDraw")}</p>}
           </Panel>
           <Panel title={t("rvw.dbChanges")} src={sql.length > 0 && <>{t("rvw.generatedFrom")} {sql.map((p, i) => <span key={p}>{i > 0 && " + "}<code>{p}</code></span>)}</>}>
-            {er ? <ErDiagram layout={er} /> : <p className="muted">{t("rvw.noTables")}</p>}
+            {er ? <ErDiagram layout={er} />
+              : sql.length > 0 ? <p className="note">{t("rvw.tablesUnparsed", { n: sql.length })}</p>
+              : <p className="muted">{t("rvw.noTables")}</p>}
             {createOnly && <p className="note">{createOnly.message}</p>}
             {(d.touchesExisting ?? []).length > 0 && (
               <div className="tbl">
@@ -204,7 +207,7 @@ function GateMain({ gate, snap, repoId }: { gate: GateData; snap: Snapshot; repo
   }
   return (
     <>
-      <ReviewSummary tiles={summaryTiles(card)} />
+      <ReviewSummary tiles={summaryTiles(card, dbFiles(snap).length)} acceptedHash={acceptedApproval(gate)?.hash} />
       <RiskPanel card={card} repoId={repoId} />
       {card.riskLLM && <RiskLLM data={card.riskLLM} />}
       {gate.gate === "DESIGN" ? <DesignCard card={card} snap={snap} />
@@ -239,7 +242,7 @@ function StepMain({ step, snap }: { step: StepData; snap: Snapshot }) {
               <span className={`budget ${budgetLevel(lines, step.budget.lines)}`}>{t("rvw.lines", { n: lines })}</span>
             </dd>
             <dt>{t("step.casesPassed")}</dt>
-            <dd>{check.casesPassed ?? 0}/{step.caseIds.length}
+            <dd>{caseRatio(check).passed}/{caseRatio(check).total}
               {(check.casesNotPassed?.length ?? 0) > 0 && <span className="pill bad">{t("rvw.notPassed", { list: check.casesNotPassed!.join(", ") })}</span>}</dd>
             {(check.outOfScope?.length ?? 0) > 0 && (
               <><dt>{t("tile.outOfScope")}</dt><dd>{check.outOfScope!.map((p) => <div key={p}><code>{p}</code></div>)}</dd></>
@@ -298,6 +301,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
   const [detail, setDetail] = useState<FeatureDetail | null>(null);
   const [events, setEvents] = useState<FeatureEvent[]>([]);
   const [controlActions, setControlActions] = useState<ControlAction[]>([]);
+  const [attempts, setAttempts] = useState<AttemptData[]>([]);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("");
   const [now, setNow] = useState(() => new Date());
@@ -324,12 +328,15 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
     getEvents(repoId, featureKey, 200)
       .then((e) => { if (current.current === mine) setEvents(e as FeatureEvent[]); })
       .catch(() => { /* lỗi 401 đã chuyển trang; lỗi khác giữ danh sách cũ */ });
+    getAttempts(repoId, featureKey)
+      .then((a) => { if (current.current === mine) setAttempts(a); })
+      .catch(() => { /* giữ danh sách cũ */ });
     loadControl();
   }, [repoId, featureKey, loadControl]);
 
   useEffect(() => {
     // đổi tính năng: bỏ snapshot, event và lỗi của tính năng trước
-    setDetail(null); setEvents([]); setControlActions([]); setError(""); setSelected(""); applied.current = "";
+    setDetail(null); setEvents([]); setControlActions([]); setAttempts([]); setError(""); setSelected(""); applied.current = "";
     load();
     const stop = subscribe(`/api/features/${encodePath(repoId, featureKey)}/stream`, (type, data) => {
       if (type === "snapshot") load();
@@ -368,7 +375,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
       ...s.gates.map((g): GateItem => ({
         id: g.gate, title: GATE_TITLE[g.gate], sub: [stateText(g.state), approvalBadge(g)].filter(Boolean).join(" · "), tone: gateTone(g.state), group: "gate",
       })),
-      ...s.steps.map((st): GateItem => ({ id: st.id, title: st.id, sub: st.title, tone: stepTone(st.status), group: "step" })),
+      ...s.steps.map((st): GateItem => ({ id: st.id, title: st.id, sub: st.title, status: stepText(st.status), tone: stepTone(st.status), group: "step" })),
     ];
   }, [detail, locale]);
 
@@ -387,10 +394,12 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
 
   return (
     <div className="page">
+      <a className="skip-link" href="#rv-main">{t("rvw.skipToContent")}</a>
       <header className="review-head">
         <Link to="/">← {t("nav.board")}</Link>
-        <h1><span className="key">{snap.feature.key}</span> {snap.feature.title}</h1>
+        <h1><span className="key">{snap.feature.key}</span>{snap.feature.title && snap.feature.title !== snap.feature.key && <> {snap.feature.title}</>}</h1>
         <span className="tag">{snap.feature.flow}</span>
+        {(detail.attempt ?? 1) > 1 && <span className="tag">{t("card.attempt", { n: detail.attempt! })}</span>}
         <span className="spacer" />
         <div className="meta">
           <span>{snap.repo.id} · {snap.repo.branch}</span>
@@ -409,7 +418,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
       )}
       <div className="review">
         <GateList items={items} selected={selected} onSelect={select} />
-        <section className="review-main" aria-label={t("rvw.content")}>
+        <section className="review-main" id="rv-main" tabIndex={-1} aria-label={t("rvw.content")}>
           <h2>{gate ? `${GATE_TITLE[gate.gate]}` : step ? `${step.id} · ${step.title}` : ""}</h2>
           {gate && (
             <ErrorBoundary key={`${repoId}\n${featureKey}\n${gate.gate}`} fallback={
@@ -427,6 +436,7 @@ export function Review({ repoId, featureKey }: { repoId: string; featureKey: str
         <GatePanel gate={gate} step={step} snapshot={snap} events={events} repoId={repoId} featureKey={featureKey}
           detail={detail} actions={controlActions} onChanged={load} />
       </div>
+      <AttemptArchive attempts={attempts} />
     </div>
   );
 }

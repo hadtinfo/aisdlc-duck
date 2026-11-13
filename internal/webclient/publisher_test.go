@@ -613,6 +613,7 @@ func helperCmd(t *testing.T, env ...string) *exec.Cmd {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command -- exe là os.Executable() của chính test, tham số cố định
 	cmd := exec.Command(exe, "-test.run=^TestHelperProcess$")
 	cmd.Env = append(os.Environ(), env...)
 	return cmd
@@ -833,5 +834,21 @@ func TestSendingOrig(t *testing.T) {
 		if got, _ := sendingOrig(name); got != want {
 			t.Errorf("%s: %q, cần %q", name, got, want)
 		}
+	}
+}
+
+func TestStaleAttemptSnapshotDroppedAndReported(t *testing.T) {
+	web := fakeweb.New(t)
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/ingest/snapshot"] = fakeweb.JSONResp(200, `{"accepted":false,"clockSkew":false,"code":"STALE_ATTEMPT"}`)
+	})
+	f := newPubFix(t, web.URL())
+	p := f.pub()
+	var stale []string
+	p.OnStale = func(key string) { stale = append(stale, key) }
+	mustNil(t, p.Outbox.PutSnapshot("PAY-1", []byte(`{"schemaVersion":1,"feature":{"key":"PAY-1"}}`)))
+	r := p.Flush(t.Context())
+	if r.Pending != 0 || len(stale) != 1 || stale[0] != "PAY-1" {
+		t.Fatalf("%+v %v", r, stale)
 	}
 }

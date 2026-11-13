@@ -1,4 +1,4 @@
-import { budgetLevel } from "../format";
+import { budgetLevel, caseRatio } from "../format";
 import { StepEdit } from "../live";
 import { Key, useT } from "../i18n";
 
@@ -38,7 +38,7 @@ export function StepProgress({ step, edits }: { step: LiveStep; edits: StepEdit[
   const [text, tone] = st ? [t(st[0]), st[1]] : [step.status, "muted"];
   const check = step.record?.check;
   const notPassed = check?.casesNotPassed ?? [];
-  const total = check ? check.casesPassed + notPassed.length : 0;
+  const total = check ? caseRatio(check).total : 0;
   const outside = check?.outOfScope ?? [];
   const lastEdit = edits[0];
   return (
@@ -54,7 +54,7 @@ export function StepProgress({ step, edits }: { step: LiveStep; edits: StepEdit[
       </div>
       {check ? (
         <p className="case-line">
-          <b className={notPassed.length ? "lv-far" : "lv-ok"}>{check.casesPassed}/{total} pass</b>
+          <b className={notPassed.length ? "lv-far" : "lv-ok"}>{t("progress.passed", { passed: check.casesPassed, total })}</b>
           {notPassed.length > 0 && <span className="muted"> · {t("progress.notPassed")} {notPassed.map((c) => <code key={c}>{c}</code>)}</span>}
         </p>
       ) : (

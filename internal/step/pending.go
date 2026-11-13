@@ -77,7 +77,7 @@ func allow(a snapshot.Action, steps *Service, extras *ScopeExtras) PendingResult
 	if _, err := steps.AllowedGlobs(a.Step); err != nil { // lỗi nếu bước không có trong thiết kế
 		return stale(a, err.Error())
 	}
-	if err := extras.Add(a.Path, a.By+" (web)", a.At); err != nil {
+	if err := extras.Add(a.Path, a.By+" (web)", a.Step, a.At); err != nil {
 		return stale(a, err.Error())
 	}
 	return applied(a)

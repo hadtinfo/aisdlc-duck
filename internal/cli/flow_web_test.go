@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/model"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/snapshot"
 	"aisdlc/internal/webclient"
@@ -315,4 +317,176 @@ func TestWebModeSchema1PolicyAbortsClassification(t *testing.T) {
 	eq(t, r.run("submit", "design"), 2)
 	contains(t, r.err, "quản trị cần chuyển chính sách sang schema 2 trên web.")
 	eq(t, r.exists(riskFile), false)
+}
+
+// ---- aisdlc rewind ở chế độ web: server trước, rồi mới xoá cục bộ ----
+
+// rewindWebRepo: repo đã làm xong S1, S2 ở chế độ cục bộ rồi chuyển sang web; server giả giữ BRD/DESIGN/CASES đã duyệt.
+func rewindWebRepo(t *testing.T) (*testRepo, *fakeweb.Server) {
+	r := rewindRepo(t)
+	repoID := NewWebCache(r.context(noConsole(), "", &bytes.Buffer{}, &bytes.Buffer{}), r.root).RepoID()
+	web := fakeweb.New(t)
+	web.SetFeature(repoID, "PAY-1")
+	home := t.TempDir()
+	r.env["HOME"] = home
+	must(t, webclient.Pin(home, web.Pub))
+	r.env["AISDLC_WEB_URL"] = web.URL()
+	r.env["AISDLC_WEB_TOKEN"] = "ingest-tok"
+	must(t, webclient.SaveConfig(home, webclient.Config{URL: web.URL(), Token: "ingest-tok", ApproveToken: "appr-tok"}))
+	r.write("aisdlc/config.yaml", r.read("aisdlc/config.yaml")+"approvals: web\n")
+	paths := model.FeaturePaths{RepoRoot: r.root, Key: "PAY-1"}
+	var subs []snapshot.Sub
+	var apprs []snapshot.Appr
+	for _, g := range []gate.Gate{gate.BRD, gate.DESIGN, gate.CASES} {
+		c, err := g.ArtifactContents(paths, model.FlowFull)
+		must(t, err)
+		h := model.SHA256Contents(c)
+		subs = append(subs, snapshot.Sub{Gate: string(g), Hash: h, At: fakeweb.T})
+		apprs = append(apprs, snapshot.Appr{Gate: string(g), Hash: h, Approver: "dev", At: fakeweb.T, Channel: "web"})
+	}
+	web.Update(func(s *fakeweb.Server) {
+		s.State = snapshot.FeatureGateState{Repo: repoID, Feature: "PAY-1", Mode: "web", IssuedAt: fakeweb.T,
+			Submissions: subs, Approvals: apprs}
+	})
+	r.ok(noConsole(), "status") // nạp cache cổng
+	return r, web
+}
+
+func TestRewindWeb_ServerFirst(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/gates/rewind"] = fakeweb.JSONResp(500, `{"error":"hỏng"}`)
+	})
+	s2 := "internal/limit/service/limit_service.go"
+	stepsBefore := r.read("aisdlc/features/PAY-1/steps.json")
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 2)
+	if !r.exists(s2) {
+		t.Fatal("server lỗi: working tree không được đổi")
+	}
+	eq(t, r.read("aisdlc/features/PAY-1/steps.json"), stepsBefore)
+	if r.exists("aisdlc/features/PAY-1/rewind-pending.json") {
+		t.Fatal("lỗi server ở lần chạy mới: dấu đang dở phải được gỡ")
+	}
+	ref := strings.TrimSpace(r.backupRefs())
+	if !strings.Contains(ref, "refs/aisdlc/backup/PAY-1/") {
+		t.Fatal("thiếu ref dự phòng")
+	}
+	contains(t, r.out+r.err, "refs/aisdlc/backup/PAY-1/")
+	eq(t, r.status().Steps["S2"], "ACCEPTED")
+	eq(t, len(web.RequestsFor("POST", "/api/gates/rewind")), 1)
+}
+
+func TestRewindWeb_ServerErrorOnResumeKeepsMarker(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	r.write("aisdlc/features/PAY-1/rewind-pending.json", fmt.Sprintf(s2Marker, r.oldBackup()))
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/gates/rewind"] = fakeweb.JSONResp(500, `{"error":"hỏng"}`)
+	})
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 2)
+	if !r.exists("aisdlc/features/PAY-1/rewind-pending.json") {
+		t.Fatal("chạy tiếp mà server lỗi: phải giữ dấu đang dở")
+	}
+	eq(t, r.status().Steps["S2"], "ACCEPTED")
+}
+
+func TestRewindWeb_Success(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	if c := r.runC(typed("PAY-1"), "rewind", "cases"); c != 0 {
+		t.Fatalf("exit %d\n%s%s", c, r.out, r.err)
+	}
+	contains(t, r.out, "Đã quay PAY-1 về đầu cases.")
+	reqs := web.RequestsFor("POST", "/api/gates/rewind")
+	eq(t, len(reqs), 1)
+	var body struct {
+		Repo, Feature, Checkpoint, RequestID, Channel string
+		Gates                                         []string
+	}
+	must(t, reqs[0].JSON(&body))
+	eq(t, body.Feature, "PAY-1")
+	eq(t, body.Checkpoint, "cases")
+	eq(t, body.Channel, "terminal")
+	eq(t, strings.Join(body.Gates, ","), "CASES,REVIEW")
+	if !strings.HasPrefix(body.RequestID, "refs/aisdlc/backup/PAY-1/") || !strings.Contains(r.backupRefs(), body.RequestID) {
+		t.Fatalf("requestId phải là tên ref dự phòng: %q", body.RequestID)
+	}
+	eq(t, reqs[0].Auth, "Bearer appr-tok")
+
+	home := r.env["HOME"]
+	wc := NewWebCache(r.context(noConsole(), "", &bytes.Buffer{}, &bytes.Buffer{}), r.root)
+	st, ok := gate.ReadWebGateState(wc.CacheFile("PAY-1"), webclient.LoadPinnedKey(home), wc.RepoID(), "PAY-1")
+	if !ok || st.Attempt != 2 {
+		t.Fatalf("cache cổng phải có attempt=2: %+v ok=%v", st, ok)
+	}
+	s := r.status()
+	eq(t, s.Gates["BRD"], "APPROVED")
+	eq(t, s.Gates["DESIGN"], "APPROVED")
+	if s.Gates["CASES"] == "APPROVED" {
+		t.Fatal("CASES phải được mở lại")
+	}
+	eq(t, s.Steps["S1"], "NOT_STARTED")
+	eq(t, r.exists("aisdlc/features/PAY-1/rewind-pending.json"), false)
+	eq(t, r.exists("aisdlc/features/PAY-1/cases.yaml"), false)
+}
+
+// Chạy lại sau khi đứt giữa chừng: dấu cũ (chưa có requestId) dùng ref dự phòng của nó làm requestId (server
+// idempotent), nhưng vẫn chụp bản dự phòng mới.
+func TestRewindWeb_ResumeReusesBackupRefAsRequestID(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	old := r.oldBackup()
+	r.write("aisdlc/features/PAY-1/rewind-pending.json", fmt.Sprintf(s2Marker, old))
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 0)
+	reqs := web.RequestsFor("POST", "/api/gates/rewind")
+	eq(t, len(reqs), 1)
+	eq(t, reqs[0].Field("requestId"), old)
+	eq(t, strings.Count(r.backupRefs(), "refs/aisdlc/backup/"), 2)
+}
+
+// Lỗi mạng sau khi gửi: không biết server đã áp dụng chưa → giữ dấu; dev sửa tiếp rồi chạy lại: phần sửa nằm
+// trong bản dự phòng mới, requestId gửi đi vẫn là của lần đầu.
+func TestRewindWeb_TransportErrorKeepsMarkerAndRerunReusesRequestID(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	web.Update(func(s *fakeweb.Server) { s.Drop = true })
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 2)
+	if !r.exists("aisdlc/features/PAY-1/rewind-pending.json") {
+		t.Fatal("lỗi mạng: phải giữ dấu đang dở")
+	}
+	contains(t, r.err, "Không biết server đã áp dụng", "aisdlc rewind s2")
+	const f = "internal/limit/service/limit_service.go"
+	if !r.exists(f) {
+		t.Fatal("chưa đổi gì cục bộ")
+	}
+	first := web.RequestsFor("POST", "/api/gates/rewind")
+	eq(t, len(first), 1)
+	id := first[0].Field("requestId")
+	r.write(f, "// sửa sau khi đứt\n")
+	web.Update(func(s *fakeweb.Server) { s.Drop = false })
+	_ = os.Remove(filepath.Join(r.root, ".aisdlc/web/backoff-until"))
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 0)
+	reqs := web.RequestsFor("POST", "/api/gates/rewind")
+	eq(t, reqs[len(reqs)-1].Field("requestId"), id)
+	refs := strings.Split(r.backupRefs(), "\n")
+	eq(t, len(refs), 2)
+	fresh := ""
+	for _, l := range refs {
+		if ref := l[strings.LastIndex(l, "\t")+1:]; ref != id {
+			fresh = ref
+		}
+	}
+	if fresh == "" {
+		t.Fatalf("thiếu bản dự phòng mới: %v", refs)
+	}
+	eq(t, gitOut(t, r.root, "show", fresh+":"+f), "// sửa sau khi đứt")
+}
+
+// Server từ chối rõ ràng ở lần chạy mới: dấu cũ của mốc khác được khôi phục nguyên vẹn, không bị xoá.
+func TestRewindWeb_RejectionRestoresOlderMarkerOfOtherCheckpoint(t *testing.T) {
+	r, web := rewindWebRepo(t)
+	const old = `{"backupRef":"refs/aisdlc/backup/PAY-1/old","by":"x","at":"2026-01-01T00:00:00Z","plan":{"Target":{"ID":"S1","Gate":"","Step":"S1"},"ClearGates":["REVIEW"],"DropSteps":["S1","S2"],"ScopeSteps":["S1","S2"]}}`
+	r.write("aisdlc/features/PAY-1/rewind-pending.json", old)
+	web.Update(func(s *fakeweb.Server) {
+		s.Override["POST /api/gates/rewind"] = fakeweb.JSONResp(500, `{"error":"hỏng"}`)
+	})
+	eq(t, r.runC(typed("PAY-1"), "rewind", "S2"), 2)
+	eq(t, r.read("aisdlc/features/PAY-1/rewind-pending.json"), old)
+	eq(t, r.status().Steps["S2"], "ACCEPTED")
 }

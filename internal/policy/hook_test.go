@@ -244,10 +244,19 @@ func TestRule4StateFilesDenied(t *testing.T) {
 	s := e.codeReadyLite()
 	assertDeny(t, wr(s, e.tmp+"/.aisdlc/active.json"), "File trạng thái do CLI quản lý")
 	assertDeny(t, wr(s, ".aisdlc/active.json"), "CLI")
-	for _, f := range []string{"gates.json", "steps.json", "scope-extra.json", "feedback.md"} {
+	for _, f := range []string{"gates.json", "steps.json", "scope-extra.json", "feedback.md", "rewind-pending.json"} {
 		assertDeny(t, wr(s, "aisdlc/features/PAY-123/"+f), "CLI")
 	}
 	assertDeny(t, wr(e.none(), ".aisdlc/active.json"), "CLI")
+}
+
+// TestRewindPendingProtected: agent không được giả dấu quay về đang dở (rewind-pending.json) qua Write hay Bash.
+func TestRewindPendingProtected(t *testing.T) {
+	e := newEnv(t)
+	s := e.codeReadyLite()
+	assertDeny(t, wr(s, "aisdlc/features/OTHER-1/rewind-pending.json"), "CLI")
+	assertDeny(t, bashCall(s, "echo '{}' > aisdlc/features/PAY-123/rewind-pending.json"))
+	assertDeny(t, bashCall(s, "cd aisdlc/features/PAY-123 && tee rewind-pending.json < /tmp/x"))
 }
 
 func TestRule5ApprovedArtifactDenied(t *testing.T) {

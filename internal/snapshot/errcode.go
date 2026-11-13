@@ -5,4 +5,6 @@ package snapshot
 const (
 	// ErrCodeNotWebMode: 409 khi repo không ở chế độ duyệt trên web.
 	ErrCodeNotWebMode = "NOT_WEB_MODE"
+	// ErrCodeStaleAttempt: snapshot của lần làm cũ (tính năng đã rewind); ingest trả 200 accepted=false kèm mã này.
+	ErrCodeStaleAttempt = "STALE_ATTEMPT"
 )

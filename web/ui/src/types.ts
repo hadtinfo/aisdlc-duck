@@ -100,6 +100,8 @@ export interface FeatureDetail {
   syncedAt: string; clockSkew: boolean; lastSender: string | null;
   /** 2b-1: chế độ duyệt của repo; vắng (server cũ) coi như local. */
   approvalsMode?: "local" | "web";
+  /** Lần làm hiện tại (1 khi chưa rewind; server cũ không có). */
+  attempt?: number;
   /** Bản duyệt nhập từ local đang chờ chủ tính năng xác nhận (chỉ chế độ web). */
   pendingImports?: PendingImport[];
   /** Đường dẫn artifact của bản nộp mới nhất mỗi cổng (chỉ chế độ web). */
@@ -119,7 +121,7 @@ export interface ControlInstruction {
 }
 export interface ControlAction {
   id: number; kind: "ACCEPT_STEP" | "ALLOW_SCOPE"; step: string; path: string | null; by: string; at: string;
-  expiresAt: string; status: "PENDING" | "APPLIED" | "STALE" | "EXPIRED"; resolvedAt: string | null; reason: string | null;
+  expiresAt: string; status: "PENDING" | "APPLIED" | "STALE" | "EXPIRED" | "CANCELLED"; resolvedAt: string | null; reason: string | null;
 }
 export interface ControlState {
   paused: boolean; pausedBy: string | null; pausedAt: string | null;
@@ -134,4 +136,18 @@ export interface ResubFeedback {
 }
 export interface Resubmission {
   n: number; previousAt?: string; latestAt?: string; truncated?: boolean; files?: ResubFile[]; feedback?: ResubFeedback[];
+}
+
+/** GET /api/features/{repo}/{key}/attempts: các lần làm đã khép (rewind), mới nhất trước, chỉ đọc. */
+export interface AttemptData {
+  attempt: number;
+  rewind: { checkpoint: string; by: string; at: string };
+  gates: {
+    gate: GateName;
+    submissions: { hash: string; at: string; by: string; artifacts: { path: string; content: string }[] }[];
+    feedback: { kind: string; by: string; at: string; comment: string }[];
+    approvals: { approver: string; at: string; revokedAt: string | null }[];
+  }[];
+  steps: { id: string; status: string; files: number; lines: number; casesPassed: number; casesTotal: number }[];
+  reviewCard?: ReviewCardData;
 }

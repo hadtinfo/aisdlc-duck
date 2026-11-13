@@ -19,6 +19,7 @@ func gateRoutes(r chi.Router, s *Service) {
 	r.With(limit).Post("/api/gates/approve", s.handle(s.approve))
 	r.With(limit).Post("/api/gates/reject", s.handle(s.reject))
 	r.With(limit).Post("/api/gates/reopen", s.handle(s.reopen))
+	r.With(limit).Post("/api/gates/rewind", s.handle(s.rewind))
 	r.With(limit).Post("/api/gates/confirm-import", s.handle(s.confirmImport))
 	ImportRoutes(r, s)
 	CIRoutes(r, s)

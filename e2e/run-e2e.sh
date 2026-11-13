@@ -1124,6 +1124,28 @@ if [ "$WEB" = 1 ] && part web; then
   unset AISDLC_WEB_URL AISDLC_CI_TOKEN
   [ ! -e "$P/gates.json" ] || die "chế độ web không được tạo gates.json"
 
+  # rewind (chế độ web): quay PAY-1 về đầu S2 (S2 đã ACCEPTED, REVIEW đã duyệt). Chạy sau eval --ci vì xoá eval/review.
+  step "web $KEY rewind S2: nhập key → S2 chưa bắt đầu, S1 giữ, ref dự phòng, web 'Lần làm 2' và archive"
+  git add -A && git commit -qm "$KEY trước rewind" || true
+  S1_BEFORE="$(step_status S1)"
+  dev rewind S2
+  has "Sẽ quay $KEY về đầu S2"
+  has "Đã quay $KEY về đầu S2"
+  has "aisdlc step start S2"
+  run 0 aisdlc status
+  # bản ghi S2 bị bỏ khỏi steps.json (step_status đọc steps.json → null); status hiện S2 là NOT_STARTED
+  [ "$(step_status S2)" = null ] || die "rewind S2: bản ghi S2 phải bị bỏ khỏi steps.json, còn '$(step_status S2)'"
+  grep -qE '^  S2 +NOT_STARTED' <<<"$OUT" || die "rewind S2: aisdlc status phải hiện S2 NOT_STARTED"
+  [ "$(step_status S1)" = "$S1_BEFORE" ] || die "rewind S2: S1 không được đổi"
+  [ -n "$(git for-each-ref "refs/aisdlc/backup/$KEY/")" ] || die "rewind: thiếu ref dự phòng refs/aisdlc/backup/$KEY/"
+  [ ! -e "$P/eval" ] || die "rewind S2: eval/ phải bị xoá"
+  run 0 aisdlc web flush
+  web_assert "web $KEY: attempt 2" "/api/features/$WREPO_ID/$KEY" '.attempt == 2'
+  web_assert "web $KEY: archive có lần làm 1" "/api/features/$WREPO_ID/$KEY/attempts" \
+    '(if type=="array" then . else .attempts end) | map(select(.attempt==1)) | length == 1'
+  web_ctl expect PAGE=gate GATE=REVIEW TEXT="Lần làm 2" SHOT="${SCREENSHOTS:+$SHOTS/rewind-attempt.png}"
+  web_ctl expect PAGE=gate GATE=REVIEW TEXT="Các lần làm trước"
+
   if [ -n "${SCREENSHOTS:-}" ]; then
     step "Chụp /me (token) của luồng web"
     PAGE=/me web_ui shot "" "$SHOTS/me-tokens.png"

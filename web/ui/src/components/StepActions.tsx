@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError, sendAction } from "../api";
-import { acceptStatusShown, actionLabel, latestAction, outOfScopeFiles, validScopePath } from "../control";
+import { caseRatio } from "../format";
+import { acceptStatusShown, actionLabel, actionRetryable, latestAction, outOfScopeFiles, validScopePath } from "../control";
 import { t as tNow, useT } from "../i18n";
 import type { ControlAction, FeatureEvent, StepData } from "../types";
 import { CopyCommand } from "./CopyCommand";
@@ -37,7 +38,7 @@ export function StepActions({ step, events, actions, actor, repoId, featureKey, 
   const awaiting = step.status === "AWAITING_DEV";
   const oos = outOfScopeFiles(step, events);
   const acc = latestAction(actions, "ACCEPT_STEP", step.id);
-  const accRetry = !acc || acc.status === "STALE" || acc.status === "EXPIRED";
+  const accRetry = actionRetryable(acc);
   const check = step.record?.check;
   const notPassed = check?.casesNotPassed ?? [];
   const canAllow = step.status === "IN_PROGRESS" || step.status === "AWAITING_DEV";
@@ -55,17 +56,18 @@ export function StepActions({ step, events, actions, actor, repoId, featureKey, 
         <button type="button" onClick={() => { setConfirm(true); setError(""); }}>Accept {step.id}</button>
       )}
       {awaiting && actor && accRetry && confirm && (
-        <div className="ga-confirm" role="group" aria-label={t("step.confirmAccept")}>
+        <div className="ga-confirm" role="group" aria-label={t("step.confirmAccept")}
+          onKeyDown={(e) => { if (e.key === "Escape" && !busy) { e.stopPropagation(); setConfirm(false); } }}>
           <p className="ga-q">Accept {step.id}?</p>
           <ul className="ga-paths">
-            <li>{t("step.casesPassed")}: {check ? `${check.casesPassed ?? 0}/${step.caseIds.length}` : t("step.noResult")}
+            <li>{t("step.casesPassed")}: {check ? `${caseRatio(check).passed}/${caseRatio(check).total}` : t("step.noResult")}
               {notPassed.length > 0 && <span className="pill bad">{t("step.notPassed", { list: notPassed.join(", ") })}</span>}</li>
             <li>{t("step.sizeVsBudget", { files: check?.files ?? 0, lines: check?.lines ?? 0, bf: step.budget.files, bl: step.budget.lines })}</li>
             {oos.length > 0 && <li className="bad">{t("step.outOfScope")}: {oos.join(", ")}</li>}
           </ul>
           <div className="ga-buttons">
             <button type="button" disabled={busy} onClick={() => send("ACCEPT_STEP")}>{t("step.confirmAccept")}</button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => setConfirm(false)}>{t("common.cancel")}</button>
+            <button type="button" className="secondary" disabled={busy} autoFocus onClick={() => setConfirm(false)}>{t("common.cancel")}</button>
           </div>
         </div>
       )}
@@ -75,7 +77,7 @@ export function StepActions({ step, events, actions, actor, repoId, featureKey, 
           <ul className="ctl-list">
             {oos.map((p) => {
               const a = latestAction(actions, "ALLOW_SCOPE", step.id, p);
-              const retry = !a || a.status === "STALE" || a.status === "EXPIRED";
+              const retry = actionRetryable(a);
               return (
                 <li key={p}>
                   <code className="path">{p}</code>

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"aisdlc/internal/snapshot"
 	"aisdlc/internal/web/httpx"
 	"aisdlc/internal/web/store"
 )
@@ -85,13 +86,18 @@ func (s *Service) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		var capturedAt time.Time
 		if capturedAt, err = validateSnapshot(tree); err == nil {
-			var accepted, skew bool
-			accepted, skew, err = s.UpsertSnapshot(r.Context(), login(r), tree, raw, capturedAt)
+			var accepted, skew, stale bool
+			accepted, skew, stale, err = s.UpsertSnapshot(r.Context(), login(r), tree, raw, capturedAt)
 			if err == nil {
+				code := ""
+				if stale {
+					code = snapshot.ErrCodeStaleAttempt
+				}
 				httpx.WriteJSON(w, 200, struct {
-					Accepted  bool `json:"accepted"`
-					ClockSkew bool `json:"clockSkew"`
-				}{accepted, skew})
+					Accepted  bool   `json:"accepted"`
+					ClockSkew bool   `json:"clockSkew"`
+					Code      string `json:"code,omitempty"`
+				}{accepted, skew, code})
 				return
 			}
 		}

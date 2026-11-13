@@ -416,7 +416,7 @@ func TestBoardJSONMatchesUIFixture(t *testing.T) {
 	if !reflect.DeepEqual(at(d, "snapshot", "reviewCards"), want) {
 		t.Fatalf("reviewCards khác fixture")
 	}
-	if got := keys(d); !reflect.DeepEqual(got, []string{"approvalsMode", "clockSkew", "column", "labels", "lastSender", "owner",
+	if got := keys(d); !reflect.DeepEqual(got, []string{"approvalsMode", "attempt", "clockSkew", "column", "labels", "lastSender", "owner",
 		"pendingImports", "snapshot", "submittedPaths", "syncedAt"}) {
 		t.Fatal(got)
 	}
@@ -425,7 +425,7 @@ func TestBoardJSONMatchesUIFixture(t *testing.T) {
 		t.Fatal(got)
 	}
 	card := at(b, "cards", 0)
-	if got := keys(card); !reflect.DeepEqual(got, []string{"approvalsMode", "branch", "clockSkew", "column", "eval", "flow", "key",
+	if got := keys(card); !reflect.DeepEqual(got, []string{"approvalsMode", "attempt", "branch", "clockSkew", "column", "eval", "flow", "key",
 		"labels", "owner", "repoId", "riskLevel", "session", "syncedAt", "title"}) {
 		t.Fatal(got)
 	}

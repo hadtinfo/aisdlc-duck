@@ -227,3 +227,13 @@ func ParseInstant(s string) (time.Time, error) { return parseInstant(s) }
 func isBlank(s string) bool { return javaish.IsBlank(s) }
 
 func javaWhitespace(r rune) bool { return javaish.IsWhitespace(r) }
+
+// attemptOf là lần làm của snapshot: thiếu, không phải số nguyên hay < 1 thì tính là 1 (CLI cũ không gửi).
+func attemptOf(tree any) int {
+	if n, ok := path(tree, "attempt").(json.Number); ok {
+		if v, err := n.Int64(); err == nil && v >= 1 && v < 1<<31 {
+			return int(v)
+		}
+	}
+	return 1
+}

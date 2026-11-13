@@ -55,6 +55,9 @@ type Publisher struct {
 	Err io.Writer
 	// RepoID là định danh repo của lô event; nil → snapshot.RepoID của Root (tính một lần).
 	RepoID func() string
+	// OnStale được gọi (nếu có) với KEY khi server bỏ qua snapshot vì lần làm cũ (STALE_ATTEMPT): snapshot đã bị
+	// bỏ khỏi outbox, nơi gọi làm mới cache cổng.
+	OnStale func(featureKey string)
 
 	mu       sync.Mutex
 	repoID   *string
@@ -369,6 +372,9 @@ func (p *Publisher) doFlush(ctx context.Context, c *Client, deadline time.Time) 
 			if err := p.take(file, st, false); err != nil {
 				return outcome{}, err
 			}
+			if snap && p.OnStale != nil && staleResponse(resp.Body) {
+				p.guard(func() error { p.OnStale(snapshotKey(body)); return nil })
+			}
 			sent++
 			handled++
 		case s/100 == 4 && s != 401 && s != 408 && s != 429:
@@ -527,4 +533,24 @@ func LastOK(root string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(string(b)), true
+}
+
+// staleResponse: phản hồi ingest {"accepted":false,"code":"STALE_ATTEMPT"}.
+func staleResponse(body []byte) bool {
+	var r struct {
+		Accepted bool   `json:"accepted"`
+		Code     string `json:"code"`
+	}
+	return json.Unmarshal(body, &r) == nil && !r.Accepted && r.Code == snapshot.ErrCodeStaleAttempt
+}
+
+// snapshotKey là feature.key của snapshot ("" nếu không đọc được).
+func snapshotKey(body []byte) string {
+	var s struct {
+		Feature struct {
+			Key string `json:"key"`
+		} `json:"feature"`
+	}
+	_ = json.Unmarshal(body, &s)
+	return s.Feature.Key
 }

@@ -19,6 +19,7 @@ import (
 	"aisdlc/internal/model"
 	"aisdlc/internal/review"
 	"aisdlc/internal/run"
+	"aisdlc/internal/snapshot"
 	"aisdlc/internal/spec"
 	"aisdlc/internal/step"
 )
@@ -493,5 +494,30 @@ func TestSnapshotJSONDoesNotEscapeHTML(t *testing.T) {
 	}
 	if bytes.Contains([]byte(j), []byte("\n")) {
 		t.Fatal("JSON có xuống dòng thừa")
+	}
+}
+
+type attemptStore struct {
+	gate.GateStore
+	st snapshot.FeatureGateState
+	ok bool
+}
+
+func (a attemptStore) State() (snapshot.FeatureGateState, bool) { return a.st, a.ok }
+
+func TestCachedAttempt(t *testing.T) {
+	for _, c := range []struct {
+		st   gate.GateStore
+		want int
+	}{
+		{attemptStore{st: snapshot.FeatureGateState{Attempt: 3}, ok: true}, 3},
+		{attemptStore{st: snapshot.FeatureGateState{Attempt: 1}, ok: true}, 0},
+		{attemptStore{st: snapshot.FeatureGateState{}, ok: true}, 0},
+		{attemptStore{st: snapshot.FeatureGateState{Attempt: 3}, ok: false}, 0},
+		{nil, 0},
+	} {
+		if got := cachedAttempt(c.st); got != c.want {
+			t.Fatalf("%+v: %d", c.st, got)
+		}
 	}
 }

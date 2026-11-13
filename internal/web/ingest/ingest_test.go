@@ -454,3 +454,50 @@ func TestPurgeOld(t *testing.T) {
 		t.Fatal(n)
 	}
 }
+
+// withAttempt chèn "attempt":n vào snapshot mẫu (n<0: không chèn).
+func withAttempt(body string, n int) string {
+	if n < 0 {
+		return body
+	}
+	return strings.Replace(body, `"truncated":false`, fmt.Sprintf(`"truncated":false,"attempt":%d`, n), 1)
+}
+
+func TestIngest_OldAttemptIgnored(t *testing.T) {
+	f := newFixture(t)
+	f.post("/api/ingest/snapshot", snap(t1, "A"), f.token)
+	f.exec(t, "UPDATE features SET attempt = 2 WHERE feature_key = 'PAY-1'")
+	n0 := len(f.changes())
+
+	for _, a := range []int{1, -1, 0} {
+		r := f.post("/api/ingest/snapshot", withAttempt(snap(t2, "B"), a), f.token)
+		if r.Status != 200 || !strings.Contains(r.Body, `"accepted":false`) || !strings.Contains(r.Body, `"code":"STALE_ATTEMPT"`) {
+			t.Fatalf("attempt %d: %d %s", a, r.Status, r.Body)
+		}
+	}
+	if n := f.count(t, "SELECT count(*) FROM features WHERE captured_at = $1::timestamptz", t1); n != 1 {
+		t.Fatal("hàng bị ghi đè", n)
+	}
+	if len(f.changes()) != n0 {
+		t.Fatal("không được phát FeatureChanged")
+	}
+
+	r := f.post("/api/ingest/snapshot", withAttempt(snap(t2, "B"), 2), f.token)
+	if r.Status != 200 || !strings.Contains(r.Body, `"accepted":true`) || strings.Contains(r.Body, "STALE_ATTEMPT") {
+		t.Fatalf("%d %s", r.Status, r.Body)
+	}
+	if n := f.count(t, "SELECT count(*) FROM features WHERE captured_at = $1::timestamptz", t2); n != 1 {
+		t.Fatal(n)
+	}
+}
+
+func TestIngest_MissingAttemptOkWhenServerAttemptOne(t *testing.T) {
+	f := newFixture(t)
+	f.post("/api/ingest/snapshot", snap(t1, "A"), f.token)
+	for i, body := range []string{snap(t2, "A"), withAttempt(snap("2026-11-03T12:00:00Z", "A"), 1)} {
+		r := f.post("/api/ingest/snapshot", body, f.token)
+		if r.Status != 200 || !strings.Contains(r.Body, `"accepted":true`) {
+			t.Fatalf("%d: %d %s", i, r.Status, r.Body)
+		}
+	}
+}

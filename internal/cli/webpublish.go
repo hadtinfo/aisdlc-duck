@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 
 	"aisdlc/internal/gate"
+	"aisdlc/internal/i18n"
 	"aisdlc/internal/model"
 	"aisdlc/internal/risk"
 	"aisdlc/internal/snapshot"
@@ -70,6 +72,18 @@ func (c *Context) newPublisher(root string, errw io.Writer, warn bool) *webclien
 	p.Now = c.now
 	p.Spawn = func() error { return c.SpawnFlush(root) }
 	p.RepoID = func() string { return snapshot.RepoID(c.std, c.Git(root), root) }
+	staleSeen := map[string]bool{}
+	p.OnStale = func(key string) {
+		k, err := model.ParseFeatureKey(key)
+		if err != nil || staleSeen[key] {
+			return
+		}
+		staleSeen[key] = true
+		NewWebCache(c, root).Refresh(k) // lấy lần làm mới về cache cổng; lượt snapshot sau sẽ mang attempt mới
+		if errw != nil {
+			fmt.Fprintln(errw, fmt.Sprintf(i18n.T("Tính năng %s đã được quay về trên web; đã làm mới trạng thái."), key))
+		}
+	}
 	return p
 }
 

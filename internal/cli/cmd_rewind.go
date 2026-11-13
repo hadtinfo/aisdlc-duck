@@ -101,12 +101,13 @@ func runRewind(ctx *Context, f *Feature, args []string) (int, error) {
 	}
 	if web {
 		// Server trước: dấu đang dở ghi trước để đứt giữa chừng thì chạy lại dùng cùng requestId rồi Apply.
+		// Chạy tiếp: dấu đã có requestId; giữ nguyên để Apply biết ref dự phòng của lần trước (tránh ghi trùng REWIND).
 		var oldMarker []byte
 		if !resume {
 			oldMarker, _ = os.ReadFile(rewind.PendingFile(f.Paths)) // dấu của mốc khác (nếu có) để khôi phục khi bị từ chối
-		}
-		if err := rewind.WritePending(d, plan, backupRef, requestID); err != nil {
-			return 0, err
+			if err := rewind.WritePending(d, plan, backupRef, requestID); err != nil {
+				return 0, err
+			}
 		}
 		definite, err := f.Web.Rewind(f, plan.Target, plan.ClearGates, requestID, channel)
 		if err != nil {

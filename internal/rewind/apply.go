@@ -219,9 +219,10 @@ func Apply(ctx context.Context, d Deps, p Plan, backupRef string) error {
 	}
 	// Ghi dấu đang dở trước thay đổi đầu tiên: chạy lại sau sự cố dùng lại kế hoạch này. requestId của dấu cùng mốc
 	// (chế độ web đã gửi server) được giữ nguyên để server coi lần chạy lại là cùng một lần.
-	requestID := backupRef
+	// Ref dự phòng của dấu cũ cùng mốc: lần chạy trước có thể đã ghi dòng REWIND với ref đó.
+	requestID, prevRef := backupRef, backupRef
 	if pr, ok, err := Pending(d.Paths); err == nil && ok && pr.Plan.Target.ID == p.Target.ID {
-		requestID = pr.RequestID
+		requestID, prevRef = pr.RequestID, pr.BackupRef
 	}
 	if err := WritePending(d, p, backupRef, requestID); err != nil {
 		return err
@@ -263,7 +264,7 @@ func Apply(ctx context.Context, d Deps, p Plan, backupRef string) error {
 			}
 		}
 	}
-	if err := appendRewind(d, p, backupRef); err != nil {
+	if err := appendRewind(d, p, backupRef, prevRef); err != nil {
 		return err
 	}
 	if err := os.Remove(PendingFile(d.Paths)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -367,14 +368,18 @@ func WritePending(d Deps, p Plan, backupRef, requestID string) error {
 	return nil
 }
 
-// appendRewind ghi dòng REWIND vào feedback.md, trừ khi tiêu đề "## " cuối đã là REWIND cùng mốc và cùng ref.
-func appendRewind(d Deps, p Plan, backupRef string) error {
+// appendRewind ghi dòng REWIND (ref backupRef) vào feedback.md, trừ khi tiêu đề "## " cuối đã là REWIND cùng mốc với
+// backupRef hoặc một ref trong seen (bản dự phòng của lần chạy trước bị đứt).
+func appendRewind(d Deps, p Plan, backupRef string, seen ...string) error {
 	if d.AppendFeedback == nil {
 		return nil
 	}
-	if last := lastHeading(d.Paths.Feedback()); strings.HasPrefix(last, "## REWIND") &&
-		strings.Contains(last, " "+p.Target.ID+" ") && strings.HasSuffix(last, " "+backupRef+")") {
-		return nil
+	if last := lastHeading(d.Paths.Feedback()); strings.HasPrefix(last, "## REWIND") && strings.Contains(last, " "+p.Target.ID+" ") {
+		for _, ref := range append([]string{backupRef}, seen...) {
+			if strings.HasSuffix(last, " "+ref+")") {
+				return nil
+			}
+		}
 	}
 	at := d.Now().UTC().Format(time.RFC3339Nano) // cùng định dạng tiêu đề feedback của gate.Service
 	return d.AppendFeedback(i18n.Tf("## REWIND — quay về %s bởi %s lúc %s (dự phòng: %s)\n\n",

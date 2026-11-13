@@ -644,6 +644,33 @@ func TestApply_StepCheckpointDropsStaleRecords(t *testing.T) {
 	}
 }
 
+// TestApply_ResumeWithFreshBackupNoDuplicateFeedback: lần chạy trước đã ghi dòng REWIND (ref A) rồi đứt trước khi gỡ
+// dấu; chạy lại với bản dự phòng mới B không ghi thêm dòng REWIND thứ hai, và giữ requestId của dấu.
+func TestApply_ResumeWithFreshBackupNoDuplicateFeedback(t *testing.T) {
+	f := newFixture(t)
+	p := f.plan("S2")
+	d := f.deps()
+	if err := ResolveCode(bg, d, &p); err != nil {
+		t.Fatal(err)
+	}
+	refA, _ := Backup(bg, d)
+	if err := WritePending(d, p, refA, "req-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendRewind(d, p, refA); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(time.Hour)
+	d = f.deps()
+	refB, _ := Backup(bg, d)
+	if err := Apply(bg, d, p, refB); err != nil {
+		t.Fatal(err)
+	}
+	if l := f.rewindLines(); len(l) != 1 || !strings.Contains(l[0], refA) {
+		t.Fatalf("feedback: %v", l)
+	}
+}
+
 func TestApply_DeleteRefusesPendingMarker(t *testing.T) {
 	f := newFixture(t)
 	p := f.plan("review")
